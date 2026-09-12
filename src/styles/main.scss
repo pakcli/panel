@@ -292,67 +292,181 @@
    Codeblock Wrapping, Flow Clip & Scale Fit Modes
    ========================================================================= */
 
-/* Ensure editor lines in Live Preview Mode never get per-line scrollbars and respect pre formatting */
-.markdown-source-view.mod-cm6 .cm-content .cm-line.HyperMD-codeblock,
-.markdown-source-view.mod-cm6 .cm-line.HyperMD-codeblock,
-.cm-line.HyperMD-codeblock {
-    word-break: normal;
-    word-wrap: normal;
-    overflow-wrap: normal;
-    overflow-x: visible;
-    overflow-y: visible;
+/* Base container bounds: codeblocks must never bleed out of their container */
+.markdown-rendered pre,
+.markdown-rendered pre code,
+.markdown-source-view.mod-cm6 .cm-embed-block,
+.markdown-source-view.mod-cm6 .HyperMD-codeblock-bg {
+    max-width: 100% !important;
+    box-sizing: border-box !important;
 }
 
-.markdown-rendered pre {
-    max-width: 100%;
-}
-
-body.codeblock-flowclip {
+/* -------------------------------------------------------------------------
+   1. FLOW CLIP MODE (Horizontal scrollbar on overflow, zero text spilling)
+   ------------------------------------------------------------------------- */
+body.codeblock-flowclip,
+body.pakcli-flowclip {
     .markdown-rendered pre {
-        white-space: pre;
-        word-break: normal;
-        word-wrap: normal;
-        overflow-x: auto;
+        white-space: pre !important;
+        word-break: normal !important;
+        word-wrap: normal !important;
+        overflow-x: auto !important;
+        overflow-y: hidden !important;
+        max-width: 100% !important;
+        width: 100% !important;
+        contain: inline-size !important;
+        box-sizing: border-box !important;
+
+        code {
+            white-space: pre !important;
+            word-break: normal !important;
+            overflow-x: visible !important;
+        }
     }
 
-    .markdown-rendered pre code {
-        white-space: pre;
-        word-break: normal;
-        overflow-x: visible;
-    }
-
-    .markdown-source-view.mod-cm6 .cm-content .cm-line.HyperMD-codeblock {
-        white-space: pre;
+    .markdown-source-view.mod-cm6 .cm-content .cm-line.HyperMD-codeblock,
+    .markdown-source-view.mod-cm6 .cm-line.HyperMD-codeblock {
+        white-space: pre !important;
+        word-break: normal !important;
+        word-wrap: normal !important;
+        overflow-x: auto !important;
+        overflow-y: hidden !important;
+        max-width: 100% !important;
+        width: 100% !important;
+        contain: inline-size !important;
+        box-sizing: border-box !important;
     }
 }
 
-body.codeblock-wrap {
+/* -------------------------------------------------------------------------
+   2. WORD WRAP MODE (Wrap long lines, break long words, zero horizontal overflow)
+   ------------------------------------------------------------------------- */
+body.codeblock-wrap,
+body.pakcli-wrap {
     .markdown-rendered pre,
     .markdown-rendered pre code {
-        white-space: pre-wrap;
-        word-break: break-all;
-        overflow-wrap: anywhere;
-        overflow-x: hidden;
+        white-space: pre-wrap !important;
+        word-break: break-all !important;
+        overflow-wrap: anywhere !important;
+        word-wrap: break-word !important;
+        overflow-x: hidden !important;
+        max-width: 100% !important;
+        width: 100% !important;
+        box-sizing: border-box !important;
     }
 
-    .markdown-source-view.mod-cm6 .cm-content .cm-line.HyperMD-codeblock {
-        white-space: pre-wrap;
-        word-break: break-all;
+    .markdown-source-view.mod-cm6 .cm-content .cm-line.HyperMD-codeblock,
+    .markdown-source-view.mod-cm6 .cm-line.HyperMD-codeblock {
+        white-space: pre-wrap !important;
+        word-break: break-all !important;
+        overflow-wrap: anywhere !important;
+        word-wrap: break-word !important;
+        overflow-x: hidden !important;
+        max-width: 100% !important;
+        width: 100% !important;
+        box-sizing: border-box !important;
     }
 }
 
-body.codeblock-scalefit {
+/* -------------------------------------------------------------------------
+   3. SCALE FIT MODE (Auto vector scaling or responsive fitting)
+   ------------------------------------------------------------------------- */
+body.codeblock-scalefit,
+body.pakcli-scalefit {
     .markdown-rendered pre,
     .markdown-rendered pre code {
         white-space: pre;
         word-break: normal;
-        overflow-x: hidden;
+        max-width: 100% !important;
+        width: 100% !important;
+        overflow-x: auto !important;
+        box-sizing: border-box !important;
+        contain: inline-size !important;
         font-family: var(--font-monospace), monospace;
     }
 
-    .markdown-source-view.mod-cm6 .cm-content .cm-line.HyperMD-codeblock {
+    .markdown-source-view.mod-cm6 .cm-content .cm-line.HyperMD-codeblock,
+    .markdown-source-view.mod-cm6 .cm-line.HyperMD-codeblock {
         white-space: pre;
         font-family: var(--font-monospace), monospace;
+        font-size: min(var(--code-size, 13px), 2.2vw);
+        overflow-x: auto !important;
+        max-width: 100% !important;
+        width: 100% !important;
+        contain: inline-size !important;
+        box-sizing: border-box !important;
+    }
+}
+
+/* =========================================================================
+   PER-BLOCK OVERRIDES (Strictly beats any body default setting via higher specificity)
+   ========================================================================= */
+
+/* Per-block Flowclip */
+body .markdown-rendered pre.pakcli-codeblock-flowclip,
+body .markdown-rendered pre.pakcli-codeblock-flowclip code,
+body .markdown-source-view.mod-cm6 .cm-line.HyperMD-codeblock.pakcli-codeblock-line-flowclip,
+.markdown-rendered pre.pakcli-codeblock-flowclip,
+.markdown-rendered pre.pakcli-codeblock-flowclip code,
+.markdown-source-view.mod-cm6 .cm-line.HyperMD-codeblock.pakcli-codeblock-line-flowclip {
+    white-space: pre !important;
+    word-break: normal !important;
+    word-wrap: normal !important;
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
+    max-width: 100% !important;
+    width: 100% !important;
+    contain: inline-size !important;
+    box-sizing: border-box !important;
+
+    code {
+        white-space: pre !important;
+        word-break: normal !important;
+        overflow-x: visible !important;
+    }
+}
+
+/* Per-block Wrap */
+body .markdown-rendered pre.pakcli-codeblock-wrap,
+body .markdown-rendered pre.pakcli-codeblock-wrap code,
+body .markdown-source-view.mod-cm6 .cm-line.HyperMD-codeblock.pakcli-codeblock-wrap,
+.markdown-rendered pre.pakcli-codeblock-wrap,
+.markdown-rendered pre.pakcli-codeblock-wrap code,
+.markdown-source-view.mod-cm6 .cm-line.HyperMD-codeblock.pakcli-codeblock-wrap {
+    white-space: pre-wrap !important;
+    word-break: break-all !important;
+    overflow-wrap: anywhere !important;
+    word-wrap: break-word !important;
+    overflow-x: hidden !important;
+    max-width: 100% !important;
+    width: 100% !important;
+    box-sizing: border-box !important;
+}
+
+/* Per-block Scalefit */
+body .markdown-rendered pre.pakcli-codeblock-scalefit,
+body .markdown-source-view.mod-cm6 .cm-line.HyperMD-codeblock.pakcli-codeblock-line-scalefit,
+.markdown-rendered pre.pakcli-codeblock-scalefit,
+.markdown-source-view.mod-cm6 .cm-line.HyperMD-codeblock.pakcli-codeblock-line-scalefit {
+    max-width: 100% !important;
+    width: 100% !important;
+    overflow-x: auto !important;
+    box-sizing: border-box !important;
+    contain: inline-size !important;
+
+    .pakcli-ascii-svg-wrapper {
+        width: 100%;
+        max-width: 100%;
+        overflow: hidden;
+        display: flex;
+        justify-content: center;
+
+        svg.pakcli-ascii-svg {
+            width: 100% !important;
+            max-width: 100% !important;
+            height: auto !important;
+            display: block;
+        }
     }
 }
 

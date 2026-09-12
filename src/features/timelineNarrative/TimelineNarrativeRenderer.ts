@@ -14,6 +14,7 @@ export class TimelineNarrativeRenderer extends MarkdownRenderChild {
   private tree: TimelineTree;
   private layout: DiagramLayout;
   private rawAutocomplete: RawTextareaAutocomplete | null = null;
+  private mergeJumps: boolean = false;
 
   // Zoom & Pan state
   private zoom: number = 1.0;
@@ -35,7 +36,7 @@ export class TimelineNarrativeRenderer extends MarkdownRenderChild {
     try {
       this.tree = parseTimelineSource(source);
       this.resolveFrontmatterMetadata();
-      this.layout = computeTimelineLayout(this.tree);
+      this.layout = computeTimelineLayout(this.tree, { mergeJumps: this.mergeJumps });
     } catch (err) {
       console.error('[Timeline Narrative] Parse/Layout error:', err);
       this.tree = { roots: [], allNodes: new Map(), nodesByLabel: new Map(), rawLines: [] };
@@ -117,6 +118,10 @@ export class TimelineNarrativeRenderer extends MarkdownRenderChild {
       }
 
       this.containerEl.empty();
+
+      this.tree = parseTimelineSource(this.source);
+      this.resolveFrontmatterMetadata();
+      this.layout = computeTimelineLayout(this.tree, { mergeJumps: this.mergeJumps });
 
       const wrapper = this.containerEl.createDiv({ cls: 'timeline-narrative-container' });
 
@@ -203,28 +208,41 @@ export class TimelineNarrativeRenderer extends MarkdownRenderChild {
       };
     });
 
-    // Right zoom controls (for flowchart modes)
-    if (this.currentMode === 'timeline-view' || this.currentMode === 'timeline-edit') {
+    // Right controls (for flowchart and outline modes)
+    if (this.currentMode === 'timeline-view' || this.currentMode === 'timeline-edit' || this.currentMode === 'outline') {
       const right = toolbar.createDiv({ cls: 'toolbar-right' });
 
-      const zoomOut = right.createEl('button', { cls: 'action-btn', text: '−', title: 'Zoom Out' });
-      zoomOut.onclick = () => {
-        this.zoom = Math.max(0.4, this.zoom - 0.15);
-        this.updateTransform();
+      // Merge Jumps Toggle Button (default OFF)
+      const mergeBtn = right.createEl('button', {
+        cls: `action-btn merge-toggle-btn ${this.mergeJumps ? 'active' : ''}`,
+        text: this.mergeJumps ? '🔀 Merge Jumps: ON' : '🔀 Merge Jumps: OFF',
+        title: 'Merge jump target trees into 1 continuous flow line (default: OFF)',
+      });
+      mergeBtn.onclick = () => {
+        this.mergeJumps = !this.mergeJumps;
+        this.render();
       };
 
-      const resetZoom = right.createEl('button', { cls: 'action-btn', text: '⟲', title: 'Reset View' });
-      resetZoom.onclick = () => {
-        this.zoom = 1.0;
-        this.pan = { x: 0, y: 0 };
-        this.updateTransform();
-      };
+      if (this.currentMode === 'timeline-view' || this.currentMode === 'timeline-edit') {
+        const zoomOut = right.createEl('button', { cls: 'action-btn', text: '−', title: 'Zoom Out' });
+        zoomOut.onclick = () => {
+          this.zoom = Math.max(0.4, this.zoom - 0.15);
+          this.updateTransform();
+        };
 
-      const zoomIn = right.createEl('button', { cls: 'action-btn', text: '+', title: 'Zoom In' });
-      zoomIn.onclick = () => {
-        this.zoom = Math.min(2.5, this.zoom + 0.15);
-        this.updateTransform();
-      };
+        const resetZoom = right.createEl('button', { cls: 'action-btn', text: '⟲', title: 'Reset View' });
+        resetZoom.onclick = () => {
+          this.zoom = 1.0;
+          this.pan = { x: 0, y: 0 };
+          this.updateTransform();
+        };
+
+        const zoomIn = right.createEl('button', { cls: 'action-btn', text: '+', title: 'Zoom In' });
+        zoomIn.onclick = () => {
+          this.zoom = Math.min(2.5, this.zoom + 0.15);
+          this.updateTransform();
+        };
+      }
     }
   }
 

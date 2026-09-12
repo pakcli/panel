@@ -11,13 +11,16 @@ export function parseWikilink(text: string): WikilinkTarget | undefined {
 }
 
 export function formatTimestamp(rawTimestamp: string): string {
-  // raw format: _yyyy-mm-dd_hh-mm_
+  // raw format: _yyyy-mm-dd_hh-mm_ or _hh-mm_ or _hh:mm_ or hh:mm
   const cleaned = rawTimestamp.replace(/^_|_$/g, '');
   const parts = cleaned.split('_');
   if (parts.length === 2) {
     const date = parts[0];
     const time = parts[1].replace('-', ':');
     return `${date} ${time}`;
+  }
+  if (parts.length === 1) {
+    return parts[0].replace('-', ':');
   }
   return cleaned.replace(/_/g, ' ');
 }
@@ -84,10 +87,10 @@ export function parseTimelineSource(source: string): TimelineTree {
       content = content.slice(0, jumpMatch.index).trim();
     }
 
-    // 4. Extract Timestamp at start: _yyyy-mm-dd_hh-mm_
+    // 4. Extract Timestamp at start: _yyyy-mm-dd_hh-mm_ or _hh-mm_ or hh:mm
     let rawTimestamp: string | undefined;
     let timestamp: string | undefined;
-    const timeMatch = content.match(/^(_\d{4}-\d{2}-\d{2}_\d{2}-\d{2}_)\s*/);
+    const timeMatch = content.match(/^(_\d{4}-\d{2}-\d{2}_\d{2}-\d{2}_|_\d{2}-\d{2}_|_\d{2}:\d{2}_|\b\d{2}:\d{2}\b)\s*/);
     if (timeMatch) {
       rawTimestamp = timeMatch[1];
       timestamp = formatTimestamp(rawTimestamp);
@@ -99,6 +102,34 @@ export function parseTimelineSource(source: string): TimelineTree {
     const wikilink = parseWikilink(rawLabel);
     const cleanLabel = wikilink ? (wikilink.alias || wikilink.path) : rawLabel;
 
+    // Check if a node with this label already exists (merge duplicate into one node)
+    const existingList = nodesByLabel.get(cleanLabel) || (wikilink ? nodesByLabel.get(wikilink.path) : undefined);
+    if (existingList && existingList.length > 0 && depth === 0) {
+      const targetNode = existingList[0];
+      if (jumpTarget) {
+        if (!targetNode.jumpTargets) {
+          targetNode.jumpTargets = targetNode.jumpTarget ? [targetNode.jumpTarget] : [];
+        }
+        if (!targetNode.jumpTargets.includes(jumpTarget)) {
+          targetNode.jumpTargets.push(jumpTarget);
+        }
+        targetNode.jumpTarget = jumpTarget;
+      }
+      if (note && !targetNode.note) {
+        targetNode.note = note;
+        targetNode.noteWikilink = noteWikilink;
+      }
+      if (rawTimestamp && !targetNode.rawTimestamp) {
+        targetNode.rawTimestamp = rawTimestamp;
+        targetNode.timestamp = timestamp;
+      }
+
+      // Update stack so any subsequent indented lines attach to this merged node
+      stack.length = 0;
+      stack.push({ depth: 0, node: targetNode });
+      return;
+    }
+
     const node: TimelineNode = {
       id: `node-${lineIndex}-${Math.random().toString(36).slice(2, 7)}`,
       lineIndex,
@@ -109,6 +140,7 @@ export function parseTimelineSource(source: string): TimelineTree {
       label: cleanLabel,
       wikilink,
       jumpTarget,
+      jumpTargets: jumpTarget ? [jumpTarget] : [],
       note,
       noteWikilink,
       children: [],

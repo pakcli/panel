@@ -567,8 +567,12 @@ export default class PakCLITablePlugin extends Plugin {
 	}
 
 	applyCodeblockStyle() {
-		document.body.classList.remove('pakcli-flowclip', 'pakcli-wrap', 'pakcli-scalefit');
-		document.body.classList.add(`pakcli-${this.settings.codeblockWrapMode || 'flowclip'}`);
+		const mode = this.settings.codeblockWrapMode || 'flowclip';
+		document.body.classList.remove(
+			'pakcli-flowclip', 'pakcli-wrap', 'pakcli-scalefit',
+			'codeblock-flowclip', 'codeblock-wrap', 'codeblock-scalefit'
+		);
+		document.body.classList.add(`pakcli-${mode}`, `codeblock-${mode}`);
 	}
 
 	getFileColumnConfig(filePath: string, columnCount: number): ColumnConfig {

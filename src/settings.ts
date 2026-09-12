@@ -100,8 +100,7 @@ export const DEFAULT_TABLE_SETTINGS: PakCLITableSettings = {
     dateFormat: '_{yyyy}{mm}{dd}',
     codeblockWrapMode: 'flowclip',
     codeblockLanguageRules: [
-        { id: '1', language: 'asci', behavior: 'scalefit' },
-        { id: '2', language: 'ascii', behavior: 'scalefit' }
+        { id: '1', language: 'ascii', behavior: 'scalefit' }
     ],
     enableAssetDrag: true,
     carouselOrientation: 'horizontal',

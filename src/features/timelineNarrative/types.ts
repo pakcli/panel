@@ -18,6 +18,7 @@ export interface TimelineNode {
   label: string;            // Clean label text
   wikilink?: WikilinkTarget;
   jumpTarget?: string;      // Target node label or wikilink
+  jumpTargets?: string[];   // All jump targets if multiple or merged
   note?: string;            // Plain text note or wikilink note
   noteWikilink?: WikilinkTarget;
   children: TimelineNode[];

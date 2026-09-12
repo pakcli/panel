@@ -1,4 +1,5 @@
 import { MarkdownView } from 'obsidian';
+import { EditorView, ViewPlugin, ViewUpdate } from '@codemirror/view';
 import type PakCLIPlugin from '../../main';
 
 export interface CodeblockLanguageRule {
@@ -8,12 +9,35 @@ export interface CodeblockLanguageRule {
 }
 
 /**
+ * Creates a CodeMirror 6 ViewPlugin that continuously attaches behavior classes
+ * to codeblocks in Live Preview as the user types, edits, or scrolls.
+ */
+export function createCodeblockLivePreviewPlugin(scaler: CodeblockScaler) {
+	return ViewPlugin.fromClass(
+		class {
+			constructor(view: EditorView) {
+				scaler.processContainer(view.dom);
+			}
+			update(update: ViewUpdate) {
+				if (update.docChanged || update.viewportChanged) {
+					scaler.processContainer(update.view.dom);
+				}
+			}
+		}
+	);
+}
+
+/**
  * Renders an ASCII art text string as an SVG diagram widget (like Mermaid JS),
  * ensuring 100% fit to width, zero text wrapping, zero horizontal scrollbars,
  * and exact 1:1 vector aspect ratio scaling.
  */
-export function renderAsciiSvg(source: string, container: HTMLElement): void {
-	container.empty();
+export function renderAsciiSvg(source: string, container: HTMLElement, codeElToHide?: HTMLElement): void {
+	if (codeElToHide && codeElToHide !== container) {
+		codeElToHide.style.display = 'none';
+	} else {
+		container.empty();
+	}
 
 	const lines = source.split('\n');
 	while (lines.length > 0 && lines[0].trim() === '') {
@@ -76,12 +100,19 @@ export class CodeblockScaler {
 	constructor(private plugin: PakCLIPlugin) { }
 
 	init(): void {
-		// 1. Register Post Processor for Reading View
+		// 1. Register CodeMirror 6 Live Preview Extension for real-time line tagging
+		try {
+			this.plugin.registerEditorExtension(createCodeblockLivePreviewPlugin(this));
+		} catch (err) {
+			console.warn('[PakCLI CodeblockScaler] Failed to register CM6 extension:', err);
+		}
+
+		// 2. Register Post Processor for Reading View
 		this.plugin.registerMarkdownPostProcessor((element) => {
 			this.processContainer(element);
 		});
 
-		// 2. Register Workspace & Editor events
+		// 3. Register Workspace & Editor events
 		this.plugin.registerEvent(
 			this.plugin.app.workspace.on('layout-change', () => this.scheduleRescale())
 		);
@@ -99,7 +130,7 @@ export class CodeblockScaler {
 		}
 		this.debounceTimer = window.setTimeout(() => {
 			this.rescaleAll();
-		}, 100);
+		}, 50);
 	}
 
 	rescaleAll(): void {
@@ -107,10 +138,20 @@ export class CodeblockScaler {
 		this.isProcessing = true;
 
 		try {
-			const activeView = this.plugin.app.workspace.getActiveViewOfType(MarkdownView);
-			if (activeView && activeView.contentEl) {
-				this.processContainer(activeView.contentEl);
-			}
+			// 1. Process all open markdown views across all leaves
+			this.plugin.app.workspace.iterateAllLeaves((leaf) => {
+				if (leaf.view instanceof MarkdownView && leaf.view.contentEl) {
+					this.processContainer(leaf.view.contentEl);
+				}
+			});
+
+			// 2. Process all visible rendered and source views in document (even when settings modal is open)
+			const roots = document.querySelectorAll(
+				'.markdown-rendered, .markdown-source-view.mod-cm6, .workspace-leaf, .popover'
+			);
+			roots.forEach((root) => {
+				this.processContainer(root as HTMLElement);
+			});
 		} finally {
 			this.isProcessing = false;
 		}
@@ -119,46 +160,84 @@ export class CodeblockScaler {
 	getBehaviorForLanguage(lang: string): 'scalefit' | 'flowclip' | 'wrap' {
 		const cleanLang = (lang || '').trim().toLowerCase();
 		const settings = this.plugin?.settings;
+		const defaultBehavior = settings?.codeblockWrapMode || 'flowclip';
 
+		if (!cleanLang) {
+			return defaultBehavior;
+		}
+
+		// 1. Explicit scalefit pseudo-language tag in markdown (e.g. ```scalefit)
+		if (cleanLang === 'scalefit') {
+			return 'scalefit';
+		}
+
+		// 2. Read through Per-Language Rules first
 		const rules = settings?.codeblockLanguageRules || [];
 		for (const rule of rules) {
-			const rLang = rule.language.trim().toLowerCase();
-			if (rLang && rLang === cleanLang) {
+			const rawRuleLang = (rule.language || '').trim().toLowerCase();
+			if (!rawRuleLang) continue;
+
+			// Support exact match or comma/space-separated aliases (e.g. "ascii, asci" or "py, python")
+			const aliases = rawRuleLang.split(/[,|\s]+/).map(s => s.trim().toLowerCase()).filter(Boolean);
+			if (aliases.includes(cleanLang) || rawRuleLang === cleanLang) {
 				return rule.behavior;
 			}
 		}
 
-		if (cleanLang === 'asci' || cleanLang === 'ascii' || cleanLang === 'scalefit') {
-			return 'scalefit';
+		// 3. If not configured in Per-Language Rules, strictly fallback to default codeblock wrap mode
+		return defaultBehavior;
+	}
+
+	getLanguageFromElement(preEl: HTMLElement, codeEl: HTMLElement): string {
+		// 1. Check data-language or data-lang attributes
+		const dataLang =
+			preEl.getAttribute('data-language') ||
+			preEl.getAttribute('data-lang') ||
+			codeEl.getAttribute('data-language') ||
+			codeEl.getAttribute('data-lang') ||
+			preEl.parentElement?.getAttribute('data-language') ||
+			preEl.parentElement?.getAttribute('data-lang');
+		if (dataLang) {
+			return dataLang.trim().toLowerCase();
 		}
 
-		return settings?.codeblockWrapMode || 'flowclip';
+		// 2. Check classes on codeEl, preEl, and immediate parentElement
+		const elementsToCheck = [codeEl, preEl, preEl.parentElement].filter(Boolean) as HTMLElement[];
+		for (const el of elementsToCheck) {
+			for (const cls of Array.from(el.classList)) {
+				const m = cls.match(/^(?:language|block-language)-([a-zA-Z0-9_-]+)$/i);
+				if (m) {
+					return m[1].toLowerCase();
+				}
+			}
+		}
+
+		// 3. Check closest container with language class
+		const containerWithLang = preEl.closest('[class*="language-"], [class*="block-language-"]');
+		if (containerWithLang) {
+			for (const cls of Array.from(containerWithLang.classList)) {
+				const m = cls.match(/^(?:language|block-language)-([a-zA-Z0-9_-]+)$/i);
+				if (m) {
+					return m[1].toLowerCase();
+				}
+			}
+		}
+
+		// 4. Check any badge / flair element (e.g. .code-block-flair)
+		const flair = preEl.parentElement?.querySelector('.code-block-flair, .code-block-language, .code-language');
+		if (flair && flair.textContent) {
+			const tag = flair.textContent.trim().toLowerCase();
+			if (tag && tag.length < 30) {
+				return tag;
+			}
+		}
+
+		return '';
 	}
 
 	getBehaviorForElement(preEl: HTMLElement, codeEl: HTMLElement): 'scalefit' | 'flowclip' | 'wrap' {
-		const classList = Array.from(codeEl.classList).concat(Array.from(preEl.classList));
-		const settings = this.plugin?.settings;
-		const rules = settings?.codeblockLanguageRules || [];
-
-		for (const rule of rules) {
-			const target = rule.language.trim().toLowerCase();
-			if (!target) continue;
-
-			const match = classList.some((cls) => {
-				const c = cls.toLowerCase();
-				return c === `language-${target}` || c === `block-language-${target}` || c === target || c.includes(target);
-			});
-
-			if (match) {
-				return rule.behavior;
-			}
-		}
-
-		if (classList.some((c) => c.toLowerCase().includes('asci') || c.toLowerCase().includes('scalefit'))) {
-			return 'scalefit';
-		}
-
-		return settings?.codeblockWrapMode || 'flowclip';
+		const lang = this.getLanguageFromElement(preEl, codeEl);
+		return this.getBehaviorForLanguage(lang);
 	}
 
 	processContainer(container: HTMLElement): void {
@@ -168,20 +247,31 @@ export class CodeblockScaler {
 			const codeEl = pre.querySelector('code') ?? pre;
 			const behavior = this.getBehaviorForElement(pre, codeEl);
 
-			pre.classList.remove('pakcli-codeblock-wrap', 'pakcli-codeblock-flowclip');
+			pre.classList.remove('pakcli-codeblock-wrap', 'pakcli-codeblock-flowclip', 'pakcli-codeblock-scalefit');
+
+			const existingSvg = pre.querySelector('.pakcli-ascii-svg-wrapper');
 
 			if (behavior === 'scalefit') {
-				if (!pre.querySelector('.pakcli-ascii-svg-wrapper')) {
+				pre.classList.add('pakcli-codeblock-scalefit');
+				if (!existingSvg) {
 					const text = codeEl.textContent || pre.textContent || '';
 					if (text.trim()) {
-						renderAsciiSvg(text, pre);
+						renderAsciiSvg(text, pre, codeEl);
 					}
 				}
-			} else if (behavior === 'wrap') {
-				pre.classList.add('pakcli-codeblock-wrap');
 			} else {
-				// Flowclip: Each pre is INDIVIDUAL slider!
-				pre.classList.add('pakcli-codeblock-flowclip');
+				// Restore original code element if previously converted to SVG
+				if (existingSvg) {
+					existingSvg.remove();
+					if (codeEl) codeEl.style.display = '';
+				}
+
+				if (behavior === 'wrap') {
+					pre.classList.add('pakcli-codeblock-wrap');
+				} else {
+					// Flowclip: Individual horizontal scrollbar
+					pre.classList.add('pakcli-codeblock-flowclip');
+				}
 			}
 		});
 
@@ -222,14 +312,14 @@ export class CodeblockScaler {
 
 			if (line.classList.contains('HyperMD-codeblock-begin')) {
 				flushBlock();
-				currentLanguage = text.replace(/^```/, '').trim().toLowerCase();
+				currentLanguage = text.replace(/^`+/, '').trim().toLowerCase();
 				currentBlockLines.push(line);
 			} else if (line.classList.contains('HyperMD-codeblock-end')) {
 				currentBlockLines.push(line);
 				flushBlock();
 			} else {
 				if (!currentLanguage && text.startsWith('```')) {
-					currentLanguage = text.replace(/^```/, '').trim().toLowerCase();
+					currentLanguage = text.replace(/^`+/, '').trim().toLowerCase();
 				}
 				currentBlockLines.push(line);
 			}
