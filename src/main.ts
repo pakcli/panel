@@ -17,7 +17,8 @@ import { DiagramRenderer } from './features/tree/renderers/DiagramRenderer';
 import { registerCommands as registerTreeCommands } from './features/tree/commands/index';
 import { FolderSuggest } from './features/tree/ui/folder-suggest';
 import { ConfirmModal } from './features/tree/ui/modals';
-import { TitleOverrideOption } from './features/tree/types';
+import { TimelineNarrativeRenderer } from './features/timelineNarrative/TimelineNarrativeRenderer';
+import { TimelineNarrativeEditorSuggest } from './features/timelineNarrative/timelineAutocomplete';
 
 // SQLSeal & Database Imports
 import { mainModule } from './features/sqlseal/modules/main/module';
@@ -121,6 +122,16 @@ export default class PakCLITablePlugin extends Plugin {
 		this.registerMarkdownCodeBlockProcessor('tree', async (source, el, ctx) => {
 			ctx.addChild(new DiagramRenderer(this, source, el, ctx));
 		});
+
+		this.registerMarkdownCodeBlockProcessor('timeline-narrative', async (source, el, ctx) => {
+			ctx.addChild(new TimelineNarrativeRenderer(this.app, source, el, ctx));
+		});
+
+		this.registerMarkdownCodeBlockProcessor('timeline-tree', async (source, el, ctx) => {
+			ctx.addChild(new TimelineNarrativeRenderer(this.app, source, el, ctx));
+		});
+
+		this.registerEditorSuggest(new TimelineNarrativeEditorSuggest(this.app));
 
 		registerTreeCommands(this);
 
@@ -229,6 +240,100 @@ export default class PakCLITablePlugin extends Plugin {
 					this.splitViewManager.applyLayout();
 				}
 				new Notice(`Explorer Split View: ${this.settings.explorerSplitEnabled ? 'Enabled' : 'Disabled'}`);
+			}
+		});
+
+		this.addRibbonIcon('git-fork', 'Create New Timeline Narrative Note', async () => {
+			const sample = [
+				'# Timeline Narrative Decision Tree',
+				'',
+				'```timeline-narrative',
+				'_2027-03-01_09-40_ Mission Start',
+				'\tTalk to Captain',
+				'\t\tSearch for Clues',
+				'\t\t\tConfront Deviant Outside',
+				'\t\t\t\tNegotiate',
+				'\t\t\t\t\tBe Honest > Deviant Jumps (honesty risks trust)',
+				'\t\t\t\t\tBuild Trust > Deviant Jumps',
+				'\t\t\t\t\t[[Use Gun Ending]]',
+				'\t\t\t\t\t[[Sacrifice Self Ending]] (no return from here)',
+				'',
+				'Deviant Jumps',
+				'\t[[Connor Leapt and Fell]]',
+				'\t[[Snipers Shot Deviant]]',
+				'```',
+				''
+			].join('\n');
+			let path = 'Timeline Narrative Demo.md';
+			let count = 1;
+			while (this.app.vault.getAbstractFileByPath(path)) {
+				path = `Timeline Narrative Demo ${count++}.md`;
+			}
+			const file = await this.app.vault.create(path, sample);
+			const leaf = this.app.workspace.getLeaf(false);
+			await leaf.openFile(file);
+			new Notice('Created and opened Timeline Narrative note!');
+		});
+
+		this.addCommand({
+			id: 'insert-timeline-narrative-template',
+			name: 'Insert Timeline Narrative Decision Tree (Detroit Style)',
+			editorCallback: (editor) => {
+				const sample = [
+					'```timeline-narrative',
+					'_2027-03-01_09-40_ Mission Start',
+					'\tTalk to Captain',
+					'\t\tSearch for Clues',
+					'\t\t\tConfront Deviant Outside',
+					'\t\t\t\tNegotiate',
+					'\t\t\t\t\tBe Honest > Deviant Jumps (honesty risks trust)',
+					'\t\t\t\t\tBuild Trust > Deviant Jumps',
+					'\t\t\t\t\t[[Use Gun Ending]]',
+					'\t\t\t\t\t[[Sacrifice Self Ending]] (no return from here)',
+					'',
+					'Deviant Jumps',
+					'\t[[Connor Leapt and Fell]]',
+					'\t[[Snipers Shot Deviant]]',
+					'```',
+					''
+				].join('\n');
+				editor.replaceSelection(sample);
+			}
+		});
+
+		this.addCommand({
+			id: 'create-timeline-narrative-note',
+			name: 'Create New Timeline Narrative Note (Detroit Style)',
+			callback: async () => {
+				const sample = [
+					'# Timeline Narrative Decision Tree',
+					'',
+					'```timeline-narrative',
+					'_2027-03-01_09-40_ Mission Start',
+					'\tTalk to Captain',
+					'\t\tSearch for Clues',
+					'\t\t\tConfront Deviant Outside',
+					'\t\t\t\tNegotiate',
+					'\t\t\t\t\tBe Honest > Deviant Jumps (honesty risks trust)',
+					'\t\t\t\t\tBuild Trust > Deviant Jumps',
+					'\t\t\t\t\t[[Use Gun Ending]]',
+					'\t\t\t\t\t[[Sacrifice Self Ending]] (no return from here)',
+					'',
+					'Deviant Jumps',
+					'\t[[Connor Leapt and Fell]]',
+					'\t[[Snipers Shot Deviant]]',
+					'```',
+					''
+				].join('\n');
+				let path = 'Timeline Narrative Demo.md';
+				let count = 1;
+				while (this.app.vault.getAbstractFileByPath(path)) {
+					path = `Timeline Narrative Demo ${count++}.md`;
+				}
+				const file = await this.app.vault.create(path, sample);
+				const leaf = this.app.workspace.getLeaf(false);
+				await leaf.openFile(file);
+				new Notice('Created and opened Timeline Narrative note!');
 			}
 		});
 
