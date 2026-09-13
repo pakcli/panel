@@ -25,6 +25,7 @@ export interface BubbleGraphSettings {
     bubbleTimelapseVanillaSpeed: number;
     bubbleUseCaptainColors: boolean;
     bubbleMaxClusterDepth: number;
+    bubbleShowBreadcrumbs: boolean;
 }
 
 export interface PakCLITableSettings extends 
@@ -89,6 +90,7 @@ export const DEFAULT_BUBBLE_GRAPH_SETTINGS: BubbleGraphSettings = {
     bubbleTimelapseVanillaSpeed: 0.025,
     bubbleUseCaptainColors: false,
     bubbleMaxClusterDepth: 3,
+    bubbleShowBreadcrumbs: true,
 };
 
 export const DEFAULT_TABLE_SETTINGS: PakCLITableSettings = {

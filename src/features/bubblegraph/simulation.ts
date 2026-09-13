@@ -147,6 +147,10 @@ export class BubbleSimulation {
         let currentAngle = 0;
 
         topClusters.forEach((cluster) => {
+            if (topClusters.length === 1) {
+                cluster.centroid = { x: 0, y: 0 };
+                return;
+            }
             const r = cluster.radius;
             const arc = ((2 * r + gap) / totalDiameter) * Math.PI * 2;
             const angle = currentAngle + arc / 2;

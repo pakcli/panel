@@ -67,18 +67,23 @@ export default class PakCLITablePlugin extends Plugin {
 		}
 	}
 
-	async openBubbleGraphView(): Promise<void> {
+	async openBubbleGraphView(scopedFolder?: string): Promise<void> {
 		const existing = this.app.workspace.getLeavesOfType(BUBBLE_GRAPH_VIEW_TYPE);
-		if (existing.length > 0) {
-			this.app.workspace.revealLeaf(existing[0]);
-			return;
+		let targetLeaf = existing.length > 0 ? existing[0] : null;
+		if (targetLeaf) {
+			this.app.workspace.revealLeaf(targetLeaf);
+		} else {
+			targetLeaf = this.app.workspace.getLeaf('tab');
+			await targetLeaf.setViewState({
+				type: BUBBLE_GRAPH_VIEW_TYPE,
+				active: true
+			});
+			this.app.workspace.revealLeaf(targetLeaf);
 		}
-		const leaf = this.app.workspace.getLeaf('tab');
-		await leaf.setViewState({
-			type: BUBBLE_GRAPH_VIEW_TYPE,
-			active: true
-		});
-		this.app.workspace.revealLeaf(leaf);
+
+		if (scopedFolder && targetLeaf.view instanceof BubbleGraphView) {
+			targetLeaf.view.scopeToFolder(scopedFolder);
+		}
 	}
 
 	updateBubbleRibbon(): void {
@@ -509,11 +514,27 @@ export default class PakCLITablePlugin extends Plugin {
 						this.splitViewManager?.moveToBacklog(folder, true);
 					});
 			});
+
+			menu.addItem((item: any) => {
+				item.setTitle('Scope Bubble View to this folder')
+					.setIcon('circle-dot')
+					.onClick(async () => {
+						await this.openBubbleGraphView(folder.path);
+					});
+			});
 		};
 
 		this.registerEvent(
 			this.app.workspace.on('file-menu', (menu, file) => {
 				if (file instanceof TFile) {
+					menu.addItem((item) => {
+						item.setTitle('Scope Bubble View to parent folder')
+							.setIcon('circle-dot')
+							.onClick(async () => {
+								const parentFolder = file.parent && file.parent.path !== '/' ? file.parent.path : '';
+								await this.openBubbleGraphView(parentFolder);
+							});
+					});
 					menu.addItem((item) => {
 						item.setTitle('Move to Backlog')
 							.setIcon('archive')
@@ -783,6 +804,23 @@ export default class PakCLITablePlugin extends Plugin {
 							.setDynamicTooltip()
 							.onChange(async (v) => {
 								this.settings.bubbleMaxClusterDepth = v;
+								await this.saveSettings();
+								const leaves = this.app.workspace.getLeavesOfType(BUBBLE_GRAPH_VIEW_TYPE);
+								leaves.forEach((leaf) => {
+									if (leaf.view instanceof BubbleGraphView) {
+										leaf.view.reloadGraphData();
+									}
+								});
+							});
+					});
+
+				new Setting(containerEl)
+					.setName('Show Scoped Breadcrumbs Bar')
+					.setDesc('Display the interactive breadcrumb navigation bar and Out button in the Bubble Graph header when scoped to a folder.')
+					.addToggle((t) => {
+						t.setValue(this.settings.bubbleShowBreadcrumbs !== false)
+							.onChange(async (v) => {
+								this.settings.bubbleShowBreadcrumbs = v;
 								await this.saveSettings();
 								const leaves = this.app.workspace.getLeavesOfType(BUBBLE_GRAPH_VIEW_TYPE);
 								leaves.forEach((leaf) => {
@@ -1962,6 +2000,8 @@ export default class PakCLITablePlugin extends Plugin {
 						hRow.createEl('th', { text: 'Behavior' });
 						const thClip = hRow.createEl('th', { text: 'On Clipboard' });
 						thClip.title = 'Custom script triggered on copy. Use .{ scripts } or { scripts }invoke()';
+						const thReplace = hRow.createEl('th', { text: 'Replace Wrapper' });
+						thReplace.title = 'If Yes, scans prefix and suffix (.{}, {}.invoke(), @{}) and replaces already written wrappers instead of double-wrapping.';
 						hRow.createEl('th', { text: 'Delete' });
 
 						const tbody = table.createEl('tbody');
@@ -2056,6 +2096,34 @@ export default class PakCLITablePlugin extends Plugin {
 								};
 								clipArea.addEventListener('change', saveClipScript);
 								clipArea.addEventListener('blur',   saveClipScript);
+							}
+
+							// Replace Wrapper column (Yes / No)
+							const replaceTd = row.createEl('td', { cls: 'pakcli-cb-replace-td' });
+							if (isPs) {
+								const repSel = replaceTd.createEl('select', { cls: 'dropdown pakcli-cb-replace-select' });
+								[
+									{ label: 'Yes', value: 'true' },
+									{ label: 'No',  value: 'false' },
+								].forEach((optData) => {
+									const opt = repSel.createEl('option', { text: optData.label });
+									opt.value = optData.value;
+									opt.selected = (rule.replaceExisting !== false && optData.value === 'true') ||
+									               (rule.replaceExisting === false && optData.value === 'false');
+								});
+								repSel.addEventListener('change', async () => {
+									try {
+										rule.replaceExisting = repSel.value === 'true';
+										await this.saveSettings();
+										this.codeblockScaler.scheduleRescale();
+										new Notice(`PowerShell replace wrapper: ${rule.replaceExisting ? 'Yes' : 'No'}`);
+									} catch (err) {
+										console.error('[PakCLI] replaceExisting save error:', err);
+										new Notice('Failed to save replace setting.');
+									}
+								});
+							} else {
+								replaceTd.createEl('span', { text: '—', cls: 'pakcli-cb-dash' });
 							}
 
 							const actTd = row.createEl('td');

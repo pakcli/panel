@@ -12,6 +12,11 @@ export interface CodeblockLanguageRule {
 	 *   • `{ <scripts> }invoke()`   – invoke style (auto-executes)
 	 */
 	onClipboard?: string;
+	/**
+	 * If true (default), scans prefix and suffix (.{}, {}.invoke(), @{})
+	 * and replaces already written wrappers instead of double-wrapping.
+	 */
+	replaceExisting?: boolean;
 }
 
 /**
@@ -103,7 +108,7 @@ export class CodeblockScaler {
 	private isProcessing = false;
 	private debounceTimer: number | null = null;
 	private observer: MutationObserver | null = null;
-	private pendingClipboardTransform: { timestamp: number; lang: string; template: string } | null = null;
+	private pendingClipboardTransform: { timestamp: number; lang: string; template: string; replaceExisting?: boolean } | null = null;
 
 	constructor(private plugin: PakCLIPlugin) { }
 
@@ -660,22 +665,98 @@ export class CodeblockScaler {
 		}
 	}
 
+	/** Strips leading/trailing blank lines and unindents lines by common leading whitespace. */
+	unindentLines(inner: string): string {
+		let lines = inner.replace(/\r\n/g, '\n').split('\n');
+		while (lines.length > 0 && lines[0].trim() === '') {
+			lines.shift();
+		}
+		while (lines.length > 0 && lines[lines.length - 1].trim() === '') {
+			lines.pop();
+		}
+		if (lines.length === 0) return '';
+
+		let minIndent = Infinity;
+		for (const line of lines) {
+			if (line.trim().length === 0) continue;
+			const indentMatch = line.match(/^[ \t]+/);
+			const indentLen = indentMatch ? indentMatch[0].length : 0;
+			if (indentLen < minIndent) minIndent = indentLen;
+		}
+
+		if (minIndent > 0 && minIndent !== Infinity) {
+			lines = lines.map((line) => {
+				if (line.trim().length === 0) return '';
+				return line.slice(minIndent);
+			});
+		}
+
+		return lines.join('\n');
+	}
+
+	/**
+	 * Scans for and strips any existing wrapper prefixes and suffixes:
+	 *   - `.{ ... }`
+	 *   - `@{ ... }`
+	 *   - `{ ... }.invoke()` or `{ ... }invoke()`
+	 *   - `{ ... }`
+	 * Returns the unwrapped inner script content.
+	 */
+	unwrapExistingWrapper(content: string): string {
+		const s = (content || '').replace(/\r\n/g, '\n').trim();
+		if (!s) return content;
+
+		// 1. .{\n ... \n} or .{ ... }
+		const dotMatch = s.match(/^\.\s*\{([\s\S]*)\}\s*$/);
+		if (dotMatch) {
+			return this.unindentLines(dotMatch[1]);
+		}
+
+		// 2. @{\n ... \n} or @{ ... }
+		const atMatch = s.match(/^@\s*\{([\s\S]*)\}\s*$/);
+		if (atMatch) {
+			return this.unindentLines(atMatch[1]);
+		}
+
+		// 3. {\n ... \n}.invoke() or {\n ... \n}invoke() or { ... }.invoke()
+		const invokeMatch = s.match(/^\{([\s\S]*)\}\s*\.?\s*in[vc]oke\s*(?:\(\s*\))?\s*$/i);
+		if (invokeMatch) {
+			return this.unindentLines(invokeMatch[1]);
+		}
+
+		// 4. {\n ... \n} (plain script block wrapper)
+		const braceMatch = s.match(/^\{([\s\S]*)\}\s*$/);
+		if (braceMatch) {
+			return this.unindentLines(braceMatch[1]);
+		}
+
+		return content;
+	}
+
 	/** Transform codeblock content according to an onClipboard template or preset.
 	 *
 	 *  Supported templates / presets:
 	 *   1. PowerShell Presets:
-	 *      - `invoke` (or `{ }invoke()`): wraps in `{ \n\tscripts\n }invoke()`
-	 *      - `dot` (or `. prefix` or `.{ }`): wraps in `.{ \n\tscripts\n }`
-	 *      - `at` (or `@ prefix` or `@{ }`): wraps in `@{ \n\tscripts\n }`
+	 *      - `invoke` (or `{}.invoke()`): wraps in `{ \n\tscripts\n }.invoke()`
+	 *      - `dot` (or `.{}`): wraps in `.{ \n\tscripts\n }`
+	 *      - `at` (or `@{}`): wraps in `@{ \n\tscripts\n }`
 	 *   2. Custom Template with placeholder:
 	 *      - `<scripts>`, `scripts`, `<content>`, `content`, `{scripts}`, `{content}`, `$content`
 	 *   3. Custom Block:
-	 *      - `.{ ... }` or `{ ... }invoke()` or `{ ... }`
+	 *      - `.{ ... }` or `{ ... }.invoke()` or `{ ... }`
 	 */
-	transformClipboardContent(content: string, template: string, language: string): string {
-		const raw = (content || '').replace(/\r\n/g, '\n').trimEnd();
+	transformClipboardContent(content: string, template: string, language: string, replaceExisting: boolean = true): string {
+		let raw = (content || '').replace(/\r\n/g, '\n').trimEnd();
 		const t = (template || '').trim();
-		if (!t) return content;
+
+		const isPowerShell = ['powershell', 'ps1', 'pwsh', 'ps'].includes((language || '').trim().toLowerCase());
+
+		// When replaceExisting is enabled for PowerShell, unwrap any existing .{}, @{}, {}.invoke() wrapper first
+		if (replaceExisting && isPowerShell) {
+			raw = this.unwrapExistingWrapper(raw);
+		}
+
+		if (!t) return raw;
 
 		const indentWith = (str: string, indent: string = '\t') => {
 			return str
@@ -763,7 +844,7 @@ export class CodeblockScaler {
 					if (pending && (Date.now() - pending.timestamp < 3000)) {
 						console.log(`[PakCLI] Intercepted navigator.clipboard.writeText for "${pending.lang}" (${pending.template})`);
 						this.pendingClipboardTransform = null;
-						const transformed = this.transformClipboardContent(text, pending.template, pending.lang);
+						const transformed = this.transformClipboardContent(text, pending.template, pending.lang, pending.replaceExisting !== false);
 						new Notice(`[PakCLI] Copied with ${pending.lang} (${this.formatTemplateNoticeLabel(pending.template)}) template!`, 2500);
 						return originalWriteText(transformed);
 					}
@@ -783,7 +864,7 @@ export class CodeblockScaler {
 					if (pending && (Date.now() - pending.timestamp < 3000)) {
 						console.log(`[PakCLI] Intercepted activeDoc writeText for "${pending.lang}" (${pending.template})`);
 						this.pendingClipboardTransform = null;
-						const transformed = this.transformClipboardContent(text, pending.template, pending.lang);
+						const transformed = this.transformClipboardContent(text, pending.template, pending.lang, pending.replaceExisting !== false);
 						new Notice(`[PakCLI] Copied with ${pending.lang} (${this.formatTemplateNoticeLabel(pending.template)}) template!`, 2500);
 						return origDocWrite(transformed);
 					}
@@ -805,7 +886,7 @@ export class CodeblockScaler {
 					if (pending && (Date.now() - pending.timestamp < 3000)) {
 						console.log(`[PakCLI] Intercepted electron.clipboard.writeText for "${pending.lang}" (${pending.template})`);
 						this.pendingClipboardTransform = null;
-						const transformed = this.transformClipboardContent(text, pending.template, pending.lang);
+						const transformed = this.transformClipboardContent(text, pending.template, pending.lang, pending.replaceExisting !== false);
 						new Notice(`[PakCLI] Copied with ${pending.lang} (${this.formatTemplateNoticeLabel(pending.template)}) template!`, 2500);
 						return origElectronWrite(transformed, type);
 					}
@@ -898,9 +979,10 @@ export class CodeblockScaler {
 		this.pendingClipboardTransform = {
 			timestamp: Date.now(),
 			lang: detectedLang,
-			template: matchedRule.onClipboard.trim()
+			template: matchedRule.onClipboard.trim(),
+			replaceExisting: matchedRule.replaceExisting !== false
 		};
-		console.log(`[PakCLI Copy Click] Armed transform for "${detectedLang}" (${matchedRule.onClipboard})`);
+		console.log(`[PakCLI Copy Click] Armed transform for "${detectedLang}" (${matchedRule.onClipboard}, replaceExisting=${matchedRule.replaceExisting !== false})`);
 
 		// ─── B. Extract rawCode from DOM for 70ms fallback ───
 		let beginLine = copyBtn.closest('.cm-line.HyperMD-codeblock-begin, .HyperMD-codeblock-begin') as HTMLElement | null;
@@ -947,7 +1029,7 @@ export class CodeblockScaler {
 			if (pending && rawCode) {
 				console.log('[PakCLI] Fallback writeText triggered from extracted rawCode');
 				this.pendingClipboardTransform = null;
-				const transformed = this.transformClipboardContent(rawCode, pending.template, pending.lang);
+				const transformed = this.transformClipboardContent(rawCode, pending.template, pending.lang, pending.replaceExisting !== false);
 				if (this.originalClipboardWriteText) {
 					await this.originalClipboardWriteText(transformed);
 				} else if (navigator.clipboard?.writeText) {
@@ -999,7 +1081,8 @@ export class CodeblockScaler {
 			this.pendingClipboardTransform = {
 				timestamp: Date.now(),
 				lang,
-				template: rule.onClipboard.trim()
+				template: rule.onClipboard.trim(),
+				replaceExisting: rule.replaceExisting !== false
 			};
 		}
 	}
@@ -1055,10 +1138,11 @@ export class CodeblockScaler {
 		this.pendingClipboardTransform = {
 			timestamp: Date.now(),
 			lang: lang,
-			template: rule.onClipboard.trim()
+			template: rule.onClipboard.trim(),
+			replaceExisting: rule.replaceExisting !== false
 		};
 
-		const transformed = this.transformClipboardContent(selectedText, rule.onClipboard, lang);
+		const transformed = this.transformClipboardContent(selectedText, rule.onClipboard, lang, rule.replaceExisting !== false);
 		if (evt.clipboardData) {
 			evt.clipboardData.setData('text/plain', transformed);
 			evt.preventDefault();
@@ -1105,7 +1189,7 @@ export class CodeblockScaler {
 			clone.querySelectorAll('.copy-code-button, .pakcli-cb-copy-btn, .code-block-flair, .code-block-header, button').forEach((el) => el.remove());
 			const content = clone.textContent ?? '';
 
-			const transformed = curScript ? this.transformClipboardContent(content, curScript, lang) : content;
+			const transformed = curScript ? this.transformClipboardContent(content, curScript, lang, curRule?.replaceExisting !== false) : content;
 
 			const flash = () => {
 				btn.classList.add('pakcli-cb-copy-btn--done');

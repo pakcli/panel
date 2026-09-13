@@ -1,4 +1,4 @@
-import { ItemView, WorkspaceLeaf, setIcon, TFile } from 'obsidian';
+import { ItemView, WorkspaceLeaf, setIcon, TFile, Menu, normalizePath } from 'obsidian';
 import type PakCLITablePlugin from '../../main';
 import { BubbleNode, BubbleCluster } from './types';
 import { buildVaultGraph, BuiltGraph, getFolderColor, matchFolderRule } from './graphBuilder';
@@ -25,6 +25,7 @@ export class BubbleGraphView extends ItemView {
     private selectedNode: BubbleNode | null = null;
     private searchQuery: string = '';
     private scopeFilter: string = 'all';
+    private scopedFolder: string | null = null;
 
     // Label & Line Controls
     private showLabels: boolean = true;
@@ -49,6 +50,7 @@ export class BubbleGraphView extends ItemView {
 
     // UI Elements
     private statsPillEl!: HTMLElement;
+    private scopeBarEl!: HTMLElement;
     private inspectorEl!: HTMLElement;
     private isInspectorOpen: boolean = true;
     private depthButtons: HTMLElement[] = [];
@@ -141,6 +143,13 @@ export class BubbleGraphView extends ItemView {
             })
         );
 
+        // Listen for theme / css changes in Obsidian workspace to adjust adaptive accent colors
+        this.registerEvent(
+            this.app.workspace.on('css-change', () => {
+                this.applyCaptainFolderColors();
+            })
+        );
+
         // 6. Start Render Loop
         this.startRenderLoop();
     }
@@ -152,11 +161,33 @@ export class BubbleGraphView extends ItemView {
         }
     }
 
+    public scopeToFolder(folderPath: string | null): void {
+        this.scopedFolder = (folderPath && folderPath !== '/' && folderPath !== '.') ? normalizePath(folderPath) : null;
+        this.reloadGraphData();
+        this.updateScopeBar();
+        this.updateInspectorContent();
+        this.fitToView();
+    }
+
+    public scopeToParentFolder(): void {
+        if (!this.scopedFolder) return;
+        if (this.scopedFolder.includes('/')) {
+            const parent = this.scopedFolder.split('/').slice(0, -1).join('/');
+            this.scopeToFolder(parent);
+        } else {
+            this.scopeToFolder(null);
+        }
+    }
+
+    public resetScope(): void {
+        this.scopeToFolder(null);
+    }
+
     public reloadGraphData(): void {
         const activeFile = this.app.workspace.getActiveFile();
         const captainRules = this.plugin.settings.rules || [];
         const maxDepth = this.plugin.settings.bubbleMaxClusterDepth ?? 3;
-        this.graphData = buildVaultGraph(this.app, activeFile ? activeFile.path : null, captainRules, this.useCaptainColors, maxDepth);
+        this.graphData = buildVaultGraph(this.app, activeFile ? activeFile.path : null, captainRules, this.useCaptainColors, maxDepth, this.scopedFolder);
 
         // Sort all nodes chronologically by ctime for sequential vanilla timelapse
         this.sortedNodes = [...this.graphData.nodes].sort((a, b) => (a.ctime || 0) - (b.ctime || 0));
@@ -188,6 +219,7 @@ export class BubbleGraphView extends ItemView {
         );
 
         this.updateStatsPill();
+        this.updateScopeBar();
         if (activeFile) {
             const activeNode = this.graphData.nodeMap.get(activeFile.path);
             if (activeNode) {
@@ -243,6 +275,10 @@ export class BubbleGraphView extends ItemView {
             defaultTab.removeClass('active');
             this.simulation.setOptions({ layoutMode: 'bubble' });
         };
+
+        // Scope Navigation Bar & Breadcrumbs
+        this.scopeBarEl = leftGroup.createDiv({ cls: 'pakcli-scope-bar' });
+        this.updateScopeBar();
 
         // Middle Drag Depth Scrubber
         const depthGroup = headerEl.createDiv({ cls: 'pakcli-depth-group' });
@@ -503,10 +539,80 @@ export class BubbleGraphView extends ItemView {
         }
     }
 
+    private updateScopeBar(): void {
+        if (!this.scopeBarEl) return;
+        this.scopeBarEl.empty();
+
+        const showBreadcrumbs = this.plugin.settings.bubbleShowBreadcrumbs !== false;
+
+        if (!this.scopedFolder) {
+            // Unscoped: Showing All Notes in Vault
+            const rootBadge = this.scopeBarEl.createDiv({ cls: 'pakcli-scope-badge root', title: 'Showing all notes in vault' });
+            setIcon(rootBadge.createSpan({ cls: 'pakcli-scope-icon' }), 'globe');
+            rootBadge.createSpan({ text: 'All Notes', cls: 'pakcli-scope-text' });
+            return;
+        }
+
+        // Scoped View Active
+        const wrap = this.scopeBarEl.createDiv({ cls: 'pakcli-scope-wrap active' });
+
+        // 1. "⬅ Out" Button (Keluar folder ini / ke parent)
+        const outBtn = wrap.createEl('button', {
+            cls: 'pakcli-scope-out-btn',
+            title: 'Out this folder (Keluar ke parent folder)'
+        });
+        setIcon(outBtn, 'arrow-up-left');
+        outBtn.createSpan({ text: 'Out', cls: 'pakcli-scope-out-label' });
+        outBtn.onclick = () => this.scopeToParentFolder();
+
+        // 2. Interactive Breadcrumbs (can be disabled in Settings)
+        if (showBreadcrumbs) {
+            const crumbsWrap = wrap.createDiv({ cls: 'pakcli-scope-crumbs' });
+            
+            const rootCrumb = crumbsWrap.createSpan({ cls: 'pakcli-scope-crumb root', text: 'Vault' });
+            rootCrumb.onclick = () => this.resetScope();
+
+            const parts = this.scopedFolder.split('/');
+            let accumulated = '';
+
+            for (let i = 0; i < parts.length; i++) {
+                crumbsWrap.createSpan({ cls: 'pakcli-scope-crumb-sep', text: '/' });
+                accumulated = accumulated ? `${accumulated}/${parts[i]}` : parts[i];
+                const currentPath = accumulated;
+                const isLast = i === parts.length - 1;
+
+                const crumb = crumbsWrap.createSpan({
+                    cls: `pakcli-scope-crumb ${isLast ? 'active' : ''}`,
+                    text: parts[i],
+                    title: isLast ? `Currently scoped to: ${currentPath}` : `Jump up to: ${currentPath}`
+                });
+
+                if (!isLast) {
+                    crumb.onclick = () => this.scopeToFolder(currentPath);
+                }
+            }
+        } else {
+            // Minimal Scope Indicator when breadcrumbs are disabled
+            const folderName = this.scopedFolder.split('/').pop() || this.scopedFolder;
+            const badge = wrap.createDiv({ cls: 'pakcli-scope-badge scoped', title: `Scoped to: ${this.scopedFolder}` });
+            setIcon(badge.createSpan({ cls: 'pakcli-scope-icon' }), 'folder');
+            badge.createSpan({ text: folderName, cls: 'pakcli-scope-text' });
+        }
+
+        // 3. Reset Button (✕ Show All)
+        const resetBtn = wrap.createEl('button', {
+            cls: 'pakcli-scope-reset-btn',
+            title: 'Reset Scope (Show All notes)'
+        });
+        setIcon(resetBtn, 'x');
+        resetBtn.onclick = () => this.resetScope();
+    }
+
     private updateStatsPill(): void {
         if (!this.statsPillEl || !this.graphData) return;
         const s = this.graphData.stats;
-        this.statsPillEl.setText(`Nodes: ${s.totalNodes}  |  Clusters: ${s.totalClusters}  |  Venn Bridges: ${s.totalVennBridges}`);
+        const scopeLabel = this.scopedFolder ? `[Scoped: ${this.scopedFolder}] ` : '';
+        this.statsPillEl.setText(`${scopeLabel}Nodes: ${s.totalNodes}  |  Clusters: ${s.totalClusters}  |  Venn Bridges: ${s.totalVennBridges}`);
     }
 
     private renderInspector(parent: HTMLElement): void {
@@ -520,6 +626,17 @@ export class BubbleGraphView extends ItemView {
 
         const header = this.inspectorEl.createDiv({ cls: 'pakcli-inspector-header' });
         header.createSpan({ text: 'ℹ️ INSPECTOR', cls: 'pakcli-inspector-title' });
+
+        if (this.scopedFolder) {
+            const scopeBanner = this.inspectorEl.createDiv({ cls: 'pakcli-inspector-scope-banner' });
+            scopeBanner.createSpan({ text: `📍 Scoped: ${this.scopedFolder}`, cls: 'pakcli-inspector-scope-text' });
+            const outBtn = scopeBanner.createEl('button', {
+                cls: 'pakcli-inspector-out-btn',
+                text: '⬅ Out',
+                title: 'Out this folder (Keluar ke parent)'
+            });
+            outBtn.onclick = () => this.scopeToParentFolder();
+        }
 
         if (!this.selectedNode) {
             const emptyState = this.inspectorEl.createDiv({ cls: 'pakcli-inspector-empty' });
@@ -538,7 +655,17 @@ export class BubbleGraphView extends ItemView {
         // Folder
         const folderRow = details.createDiv({ cls: 'pakcli-inspector-row' });
         folderRow.createSpan({ text: 'Folder:', cls: 'pakcli-row-label' });
-        folderRow.createSpan({ text: `📁 ${node.folderPath || '/'}`, cls: 'pakcli-row-value' });
+        const folderVal = folderRow.createSpan({ cls: 'pakcli-row-value pakcli-folder-val-wrap' });
+        folderVal.createSpan({ text: `📁 ${node.folderPath || '/'}` });
+
+        if (node.folderPath && node.folderPath !== '/' && node.folderPath !== this.scopedFolder) {
+            const scopeBtn = folderVal.createEl('button', {
+                cls: 'pakcli-inspector-scope-btn',
+                text: '🔍 Masuk',
+                title: `Masuk folder "${node.folderPath}" (Scope bubble view)`
+            });
+            scopeBtn.onclick = () => this.scopeToFolder(node.folderPath);
+        }
 
         // Degree Centrality
         const degRow = details.createDiv({ cls: 'pakcli-inspector-row' });
@@ -758,6 +885,83 @@ export class BubbleGraphView extends ItemView {
             if (clickedNode) {
                 this.openNoteInWorkspace(clickedNode.id);
             }
+        });
+
+        canvas.addEventListener('contextmenu', (e: MouseEvent) => {
+            e.preventDefault();
+            const worldPos = this.screenToWorld(e.clientX, e.clientY);
+            const clickedNode = this.findNodeAt(worldPos.x, worldPos.y);
+            const clickedCluster = !clickedNode ? this.findClusterAt(worldPos.x, worldPos.y) : null;
+
+            const menu = new Menu();
+
+            if (clickedNode) {
+                const targetFolder = clickedNode.folderPath;
+                if (targetFolder && targetFolder !== '/' && targetFolder !== this.scopedFolder) {
+                    menu.addItem((item) => {
+                        item.setTitle(`Masuk folder "${targetFolder}"`)
+                            .setIcon('folder-input')
+                            .onClick(() => {
+                                this.scopeToFolder(targetFolder);
+                            });
+                    });
+                }
+
+                menu.addItem((item) => {
+                    item.setTitle(`Open "${clickedNode.name}"`)
+                        .setIcon('file-text')
+                        .onClick(() => {
+                            this.openNoteInWorkspace(clickedNode.id);
+                        });
+                });
+
+                menu.addSeparator();
+            } else if (clickedCluster) {
+                if (clickedCluster.id !== this.scopedFolder) {
+                    menu.addItem((item) => {
+                        item.setTitle(`Masuk folder "${clickedCluster.name}"`)
+                            .setIcon('folder-input')
+                            .onClick(() => {
+                                this.scopeToFolder(clickedCluster.id);
+                            });
+                    });
+                }
+                menu.addSeparator();
+            }
+
+            if (this.scopedFolder) {
+                menu.addItem((item) => {
+                    item.setTitle('Out this folder (Keluar ke parent)')
+                        .setIcon('arrow-up-left')
+                        .onClick(() => {
+                            this.scopeToParentFolder();
+                        });
+                });
+
+                menu.addItem((item) => {
+                    item.setTitle('Reset Scope (Show All notes)')
+                        .setIcon('rotate-ccw')
+                        .onClick(() => {
+                            this.resetScope();
+                        });
+                });
+
+                menu.addSeparator();
+            }
+
+            menu.addItem((item) => {
+                item.setTitle('Fit to View')
+                    .setIcon('maximize-2')
+                    .onClick(() => this.fitToView());
+            });
+
+            menu.addItem((item) => {
+                item.setTitle('Refresh Graph')
+                    .setIcon('refresh-cw')
+                    .onClick(() => this.reloadGraphData());
+            });
+
+            menu.showAtMouseEvent(e);
         });
     }
 

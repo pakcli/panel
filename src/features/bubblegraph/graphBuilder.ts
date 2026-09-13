@@ -3,9 +3,106 @@ import { BubbleNode, BubbleEdge, BubbleCluster, NodeGlyphType, GraphStats } from
 import { computeClusterRadius } from './simulation';
 import { FolderRule } from '../tree/types';
 
-// Critical design constraint: All non-captain folders (and all folders when captain colors toggle is off)
-// MUST remain dark gray. No random rainbow palettes.
+// Default fallback color
 export const DARK_GRAY_COLOR = '#4a5568';
+
+/**
+ * Resolves the theme-adaptive accent color for default nodes and clusters.
+ * In Dark Theme: Lighter shade of the accent color for high contrast & luminosity on dark backgrounds.
+ * In Light Theme: Darker shade of the accent color for rich readability on light backgrounds.
+ */
+export function getDefaultNodeColor(): string {
+    const isDark = typeof document !== 'undefined' ? document.body.classList.contains('theme-dark') : true;
+
+    let rawAccent = '';
+    if (typeof document !== 'undefined') {
+        const cs = getComputedStyle(document.body);
+        rawAccent = (
+            cs.getPropertyValue('--interactive-accent').trim() ||
+            cs.getPropertyValue('--text-accent').trim() ||
+            cs.getPropertyValue('--color-accent').trim()
+        );
+    }
+
+    if (!rawAccent) {
+        return isDark ? '#a78bfa' : '#5b21b6';
+    }
+
+    return adjustAccentLightness(rawAccent, isDark);
+}
+
+export function adjustAccentLightness(colorStr: string, isDark: boolean): string {
+    const hexMatch = colorStr.match(/^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/);
+    let r = 124, g = 58, b = 237;
+
+    if (hexMatch) {
+        let hex = hexMatch[1];
+        if (hex.length === 3) {
+            hex = hex.split('').map(c => c + c).join('');
+        }
+        r = parseInt(hex.substring(0, 2), 16);
+        g = parseInt(hex.substring(2, 4), 16);
+        b = parseInt(hex.substring(4, 6), 16);
+    } else {
+        const rgbMatch = colorStr.match(/rgba?\((\d+)[,\s]+(\d+)[,\s]+(\d+)/);
+        if (rgbMatch) {
+            r = parseInt(rgbMatch[1], 10);
+            g = parseInt(rgbMatch[2], 10);
+            b = parseInt(rgbMatch[3], 10);
+        }
+    }
+
+    // Convert RGB to HSL
+    const rNorm = r / 255;
+    const gNorm = g / 255;
+    const bNorm = b / 255;
+    const max = Math.max(rNorm, gNorm, bNorm);
+    const min = Math.min(rNorm, gNorm, bNorm);
+    let h = 0;
+    let s = 0;
+    let l = (max + min) / 2;
+
+    if (max !== min) {
+        const d = max - min;
+        s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+        switch (max) {
+            case rNorm: h = (gNorm - bNorm) / d + (gNorm < bNorm ? 6 : 0); break;
+            case gNorm: h = (bNorm - rNorm) / d + 2; break;
+            case bNorm: h = (rNorm - gNorm) / d + 4; break;
+        }
+        h /= 6;
+    }
+
+    // Adaptive lightness:
+    // Dark theme: Lighter accent (high contrast on dark background, target ~68%-75% lightness)
+    // Light theme: Darker accent (high contrast on light background, target ~30%-38% lightness)
+    if (isDark) {
+        l = Math.min(0.82, Math.max(l + 0.18, 0.70));
+        s = Math.min(1.0, Math.max(s, 0.65));
+    } else {
+        l = Math.max(0.24, Math.min(l - 0.20, 0.35));
+        s = Math.min(1.0, Math.max(s, 0.70));
+    }
+
+    // Convert back to RGB
+    const hue2rgb = (p: number, q: number, t: number) => {
+        if (t < 0) t += 1;
+        if (t > 1) t -= 1;
+        if (t < 1/6) return p + (q - p) * 6 * t;
+        if (t < 1/2) return q;
+        if (t < 2/3) return p + (q - p) * (2/3 - t) * 6;
+        return p;
+    };
+
+    const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+    const p = 2 * l - q;
+    const finalR = Math.round(hue2rgb(p, q, h + 1/3) * 255);
+    const finalG = Math.round(hue2rgb(p, q, h) * 255);
+    const finalB = Math.round(hue2rgb(p, q, h - 1/3) * 255);
+
+    const toHex = (n: number) => n.toString(16).padStart(2, '0');
+    return `#${toHex(finalR)}${toHex(finalG)}${toHex(finalB)}`;
+}
 
 export function matchFolderRule(folderPath: string, rules: FolderRule[]): FolderRule | null {
     if (!rules || rules.length === 0 || !folderPath) return null;
@@ -54,7 +151,7 @@ export function getFolderColor(
             return matchedRule.color;
         }
     }
-    return DARK_GRAY_COLOR;
+    return getDefaultNodeColor();
 }
 
 export interface BuiltGraph {
@@ -71,10 +168,20 @@ export function buildVaultGraph(
     activeFilePath: string | null = null,
     captainRules?: FolderRule[],
     useCaptainColors: boolean = false,
-    maxClusterDepth: number = 3
+    maxClusterDepth: number = 3,
+    scopedFolder: string | null = null
 ): BuiltGraph {
-    const files: TFile[] = app.vault.getMarkdownFiles();
+    let files: TFile[] = app.vault.getMarkdownFiles();
     const resolvedLinks = app.metadataCache.resolvedLinks || {};
+
+    const normalizedScoped = scopedFolder && scopedFolder !== '/' ? normalizePath(scopedFolder) : null;
+
+    if (normalizedScoped) {
+        files = files.filter(file => {
+            const folderPath = file.parent && file.parent.path !== '/' ? normalizePath(file.parent.path) : '';
+            return folderPath === normalizedScoped || folderPath.startsWith(normalizedScoped + '/');
+        });
+    }
 
     // 1. Calculate In/Out Degrees
     const outDegrees = new Map<string, number>();
@@ -99,7 +206,7 @@ export function buildVaultGraph(
         if (!folderToFiles.has(folder)) {
             folderToFiles.set(folder, []);
         }
-        folderToFiles.get(folder).push(file);
+        folderToFiles.get(folder)!.push(file);
     }
 
     // 3. Build Nodes
@@ -109,31 +216,47 @@ export function buildVaultGraph(
     for (const file of files) {
         const path = file.path;
         const name = file.basename;
-        const folderPath = file.parent && file.parent.path !== '/' ? file.parent.path : '';
+        const folderPath = file.parent && file.parent.path !== '/' ? normalizePath(file.parent.path) : '';
 
         let topLevelFolder = '/';
         let subFolder = '';
+        let clusterId = '/';
+        let subClusterId = '/';
 
-        if (folderPath && folderPath !== '/') {
-            const parts = folderPath.split('/');
-            topLevelFolder = parts[0];
-            subFolder = parts.length > 1 ? parts.slice(1).join('/') : '';
+        if (normalizedScoped) {
+            if (folderPath === normalizedScoped) {
+                topLevelFolder = normalizedScoped;
+                subFolder = '';
+                clusterId = normalizedScoped;
+                subClusterId = normalizedScoped;
+            } else if (folderPath.startsWith(normalizedScoped + '/')) {
+                const relPath = folderPath.slice(normalizedScoped.length + 1);
+                const relParts = relPath.split('/');
+                topLevelFolder = normalizedScoped + '/' + relParts[0];
+                subFolder = relParts.length > 1 ? relParts.slice(1).join('/') : '';
+                clusterId = normalizedScoped;
+                subClusterId = normalizedScoped + '/' + relParts.slice(0, Math.min(relParts.length, Math.max(1, maxClusterDepth - 1))).join('/');
+            }
+        } else {
+            if (folderPath && folderPath !== '/') {
+                const parts = folderPath.split('/');
+                topLevelFolder = parts[0];
+                subFolder = parts.length > 1 ? parts.slice(1).join('/') : '';
+                clusterId = topLevelFolder;
+                subClusterId = folderPath.split('/').slice(0, Math.min(parts.length, maxClusterDepth)).join('/');
+            }
         }
 
         const outDeg = outDegrees.get(path) || 0;
         const inDeg = inDegrees.get(path) || 0;
         const totalDeg = inDeg + outDeg;
 
-        const clusterId = topLevelFolder;
-        const subClusterId = folderPath && folderPath !== '/'
-            ? folderPath.split('/').slice(0, Math.min(folderPath.split('/').length, maxClusterDepth)).join('/')
-            : '/';
-
         // Check if index note of folder
         const folderFiles = folderToFiles.get(folderPath) || [];
         const isMaxDegreeInFolder = folderFiles.length > 1 && 
             folderFiles.every(f => (outDegrees.get(f.path) || 0) + (inDegrees.get(f.path) || 0) <= totalDeg);
-        const isNamedAfterFolder = name.toLowerCase() === (subFolder ? subFolder.split('/').pop() : topLevelFolder).toLowerCase();
+        const folderNameForMatch = subFolder ? subFolder.split('/').pop() : topLevelFolder.split('/').pop();
+        const isNamedAfterFolder = name.toLowerCase() === (folderNameForMatch || '').toLowerCase();
         const isIndexNote = isNamedAfterFolder || isMaxDegreeInFolder || name.toLowerCase() === 'readme' || name.toLowerCase() === 'index';
 
         const isActive = activeFilePath === path;
@@ -147,14 +270,12 @@ export function buildVaultGraph(
             radius = 8; // Fixed 8px + pulse aura
         } else if (isIndexNote && totalDeg >= 2) {
             glyph = 'hub';
-            // r = 6 + sqrt(deg_in + deg_out)
             radius = Math.round(6 + Math.sqrt(inDeg + outDeg));
         } else if (totalDeg <= 1) {
             glyph = 'leaf';
             radius = 2.5; // Compact 2.5px
         } else {
             glyph = 'document';
-            // r = 3 + sqrt(deg_total)
             radius = Math.round(3 + Math.sqrt(totalDeg));
         }
 
@@ -198,7 +319,9 @@ export function buildVaultGraph(
 
         if (!srcNode || !tgtNode) continue;
 
-        const isIntra = srcNode.topLevelFolder === tgtNode.topLevelFolder;
+        const isIntra = normalizedScoped
+            ? (srcNode.folderPath === tgtNode.folderPath)
+            : (srcNode.topLevelFolder === tgtNode.topLevelFolder);
         const tier = isIntra ? 'tier1_intra' : 'tier2_inter';
 
         if (tier === 'tier2_inter') {
@@ -217,26 +340,34 @@ export function buildVaultGraph(
     }
 
     // 5. Build Clusters — N-depth recursive folder hierarchy
-    // Each folder path segment up to maxClusterDepth gets its own cluster bubble.
-    // e.g. folderPath "a/b/c" with maxClusterDepth=5 → clusters: "a" (d1), "a/b" (d2), "a/b/c" (d3)
     const clusters: BubbleCluster[] = [];
     const clusterMap = new Map<string, BubbleCluster>();
 
-    // Collect all folder paths that appear in the graph
     const allFolderPaths = new Set<string>();
-    for (const node of nodes) {
-        if (!node.folderPath || node.topLevelFolder === '/') continue;
-        // Add every ancestor path up to maxClusterDepth
-        const parts = node.folderPath.split('/');
-        const maxParts = Math.min(parts.length, maxClusterDepth);
-        for (let d = 1; d <= maxParts; d++) {
-            allFolderPaths.add(parts.slice(0, d).join('/'));
+
+    if (normalizedScoped) {
+        allFolderPaths.add(normalizedScoped);
+        for (const node of nodes) {
+            if (!node.folderPath || !node.folderPath.startsWith(normalizedScoped)) continue;
+            if (node.folderPath === normalizedScoped) continue;
+            const relPath = node.folderPath.slice(normalizedScoped.length + 1);
+            const relParts = relPath.split('/');
+            const maxParts = Math.min(relParts.length, Math.max(1, maxClusterDepth - 1));
+            for (let d = 1; d <= maxParts; d++) {
+                allFolderPaths.add(normalizedScoped + '/' + relParts.slice(0, d).join('/'));
+            }
+        }
+    } else {
+        for (const node of nodes) {
+            if (!node.folderPath || node.topLevelFolder === '/') continue;
+            const parts = node.folderPath.split('/');
+            const maxParts = Math.min(parts.length, maxClusterDepth);
+            for (let d = 1; d <= maxParts; d++) {
+                allFolderPaths.add(parts.slice(0, d).join('/'));
+            }
         }
     }
 
-    // Map each cluster path → list of DIRECT child node ids (nodes whose folderPath matches exactly)
-    // Note: a cluster at depth d owns ALL nodes in that folder subtree for containment,
-    // but nodeIds for the cluster only lists nodes directly in that folder
     const clusterDirectNodeIds = new Map<string, string[]>();
     const clusterAllNodeIds = new Map<string, string[]>();
 
@@ -245,20 +376,46 @@ export function buildVaultGraph(
         clusterAllNodeIds.set(folderPath, []);
     }
 
-    for (const node of nodes) {
-        if (!node.folderPath || node.topLevelFolder === '/') continue;
-        const parts = node.folderPath.split('/');
-        const maxParts = Math.min(parts.length, maxClusterDepth);
-        for (let d = 1; d <= maxParts; d++) {
-            const ancestorPath = parts.slice(0, d).join('/');
-            if (clusterAllNodeIds.has(ancestorPath)) {
-                clusterAllNodeIds.get(ancestorPath).push(node.id);
+    if (normalizedScoped) {
+        for (const node of nodes) {
+            if (!node.folderPath) continue;
+            if (clusterAllNodeIds.has(normalizedScoped)) {
+                clusterAllNodeIds.get(normalizedScoped)!.push(node.id);
+            }
+            if (node.folderPath === normalizedScoped) {
+                if (clusterDirectNodeIds.has(normalizedScoped)) {
+                    clusterDirectNodeIds.get(normalizedScoped)!.push(node.id);
+                }
+            } else if (node.folderPath.startsWith(normalizedScoped + '/')) {
+                const relParts = node.folderPath.slice(normalizedScoped.length + 1).split('/');
+                const maxParts = Math.min(relParts.length, Math.max(1, maxClusterDepth - 1));
+                for (let d = 1; d <= maxParts; d++) {
+                    const ancestorPath = normalizedScoped + '/' + relParts.slice(0, d).join('/');
+                    if (clusterAllNodeIds.has(ancestorPath)) {
+                        clusterAllNodeIds.get(ancestorPath)!.push(node.id);
+                    }
+                }
+                const cappedPath = normalizedScoped + '/' + relParts.slice(0, Math.max(1, maxClusterDepth - 1)).join('/');
+                if (clusterDirectNodeIds.has(cappedPath)) {
+                    clusterDirectNodeIds.get(cappedPath)!.push(node.id);
+                }
             }
         }
-        // Direct membership: only at node's actual folder depth (capped to maxClusterDepth)
-        const cappedPath = parts.slice(0, maxClusterDepth).join('/');
-        if (clusterDirectNodeIds.has(cappedPath)) {
-            clusterDirectNodeIds.get(cappedPath).push(node.id);
+    } else {
+        for (const node of nodes) {
+            if (!node.folderPath || node.topLevelFolder === '/') continue;
+            const parts = node.folderPath.split('/');
+            const maxParts = Math.min(parts.length, maxClusterDepth);
+            for (let d = 1; d <= maxParts; d++) {
+                const ancestorPath = parts.slice(0, d).join('/');
+                if (clusterAllNodeIds.has(ancestorPath)) {
+                    clusterAllNodeIds.get(ancestorPath)!.push(node.id);
+                }
+            }
+            const cappedPath = parts.slice(0, maxClusterDepth).join('/');
+            if (clusterDirectNodeIds.has(cappedPath)) {
+                clusterDirectNodeIds.get(cappedPath)!.push(node.id);
+            }
         }
     }
 
@@ -270,13 +427,32 @@ export function buildVaultGraph(
     });
 
     for (const folderPath of sortedFolderPaths) {
-        const parts = folderPath.split('/');
-        const depth = parts.length;
-        if (depth > maxClusterDepth) continue;
+        let depth = 1;
+        let parentPath: string | null = null;
+        let name = '';
 
-        const parentPath = depth > 1 ? parts.slice(0, depth - 1).join('/') : null;
-        const name = parts[parts.length - 1];
-        // nodeIds contains ALL nodes in this folder and its sub-folders (for layout bounding)
+        if (normalizedScoped) {
+            if (folderPath === normalizedScoped) {
+                depth = 1;
+                parentPath = null;
+                name = normalizedScoped.split('/').pop() || normalizedScoped;
+            } else {
+                const relParts = folderPath.slice(normalizedScoped.length + 1).split('/');
+                depth = 1 + relParts.length;
+                if (depth > maxClusterDepth) continue;
+                parentPath = relParts.length === 1
+                    ? normalizedScoped
+                    : normalizedScoped + '/' + relParts.slice(0, -1).join('/');
+                name = relParts[relParts.length - 1];
+            }
+        } else {
+            const parts = folderPath.split('/');
+            depth = parts.length;
+            if (depth > maxClusterDepth) continue;
+            parentPath = depth > 1 ? parts.slice(0, depth - 1).join('/') : null;
+            name = parts[parts.length - 1];
+        }
+
         const allIds = [...new Set(clusterAllNodeIds.get(folderPath) || [])];
         if (allIds.length === 0) continue;
 

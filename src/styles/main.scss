@@ -3076,4 +3076,22 @@ pre:hover .pakcli-cb-copy-btn {
   width: 100%;
 }
 
+.pakcli-cb-replace-td {
+  padding: 4px 6px;
+  vertical-align: middle;
+  text-align: center;
+  min-width: 80px;
+}
+
+.pakcli-cb-replace-select {
+  width: 100%;
+  min-width: 65px;
+}
+
+.pakcli-cb-dash {
+  color: var(--text-faint);
+  display: block;
+  text-align: center;
+}
+
 

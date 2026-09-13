@@ -502,7 +502,7 @@ export class CanvasRenderer {
 
         ctx.save();
         ctx.translate(node.x, node.y);
-        ctx.fillStyle = isHovered ? '#ffffff' : 'rgba(203, 213, 225, 0.7)';
+        ctx.fillStyle = isHovered ? '#ffffff' : (node.color || 'rgba(203, 213, 225, 0.7)');
         ctx.fillRect(-size / 2, -size / 2, size, size);
         ctx.restore();
     }
