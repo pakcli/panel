@@ -11,6 +11,29 @@
   }
 }
 
+/* Base Explorer Mode Filter Styles */
+.pakcli-base-explorer-active {
+  /* Ensure non-base files remain hidden */
+  .nav-file:not(.pakcli-base-file),
+  .tree-item.nav-file:not(.pakcli-base-file),
+  .nav-file.pakcli-base-hidden,
+  .tree-item.nav-file.pakcli-base-hidden {
+    display: none !important;
+  }
+
+  /* Ensure unaffected folders remain hidden */
+  .nav-folder.pakcli-folder-hidden,
+  .tree-item.nav-folder.pakcli-folder-hidden {
+    display: none !important;
+  }
+
+  /* Subtle highlight for base files */
+  .nav-file.pakcli-base-file .nav-file-title,
+  .tree-item.nav-file.pakcli-base-file .nav-file-title {
+    font-weight: 600;
+  }
+}
+
 /* File explorer split container active layout */
 .nav-folder.mod-root.pakcli-explorer-split-active,
 .workspace-leaf-content[data-type="file-explorer"] .view-content.pakcli-explorer-split-active {

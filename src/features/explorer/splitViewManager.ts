@@ -15,6 +15,8 @@ export class SplitViewManager {
   private openTimes: Map<string, number> = new Map();
   private isDragging = false;
   private mutationObserver: MutationObserver | null = null;
+  private baseExplorerObserver: MutationObserver | null = null;
+  private baseExplorerDebounce: number | null = null;
   private saveCsvTimeout: ReturnType<typeof setTimeout> | null = null;
   private onFolderClickBound: ((e: MouseEvent) => void) | null = null;
 
@@ -46,6 +48,14 @@ export class SplitViewManager {
     if (this.mutationObserver) {
       this.mutationObserver.disconnect();
       this.mutationObserver = null;
+    }
+    if (this.baseExplorerObserver) {
+      this.baseExplorerObserver.disconnect();
+      this.baseExplorerObserver = null;
+    }
+    if (this.baseExplorerDebounce !== null) {
+      cancelAnimationFrame(this.baseExplorerDebounce);
+      this.baseExplorerDebounce = null;
     }
     this.detach();
   }
@@ -81,6 +91,14 @@ export class SplitViewManager {
       this.app.vault.on('delete', () => {
         this.refreshRecentFiles();
         this.applyBaseExplorerFilter();
+      })
+    );
+
+    this.plugin.registerEvent(
+      this.app.vault.on('create', () => {
+        if (this.plugin.settings.baseExplorerActive) {
+          this.applyBaseExplorerFilter();
+        }
       })
     );
   }
@@ -760,14 +778,57 @@ export class SplitViewManager {
 
   public isBaseFile(filePath: string): boolean {
     if (!filePath) return false;
-    const lower = filePath.toLowerCase().trim();
+    const normalized = filePath.replace(/\\/g, '/');
+    const fileName = normalized.split('/').pop()?.toLowerCase().trim() || '';
+    if (!fileName) return false;
+
+    // Direct exact or variant matches:
+    // thebase.base, *.base, thebase.md, thebase.json, *.base.md, *.base.json, etc.
     return (
-      lower.endsWith('.base') ||
-      lower.endsWith('.base.json') ||
-      lower.endsWith('.base.md') ||
-      lower.endsWith('index.md') ||
-      lower.includes('.base.')
+      fileName === 'thebase.base' ||
+      fileName.startsWith('thebase.') ||
+      fileName.endsWith('.base') ||
+      fileName.endsWith('.base.json') ||
+      fileName.endsWith('.base.md') ||
+      fileName.endsWith('.base.yaml') ||
+      fileName.endsWith('.base.canvas') ||
+      fileName.includes('.base.')
     );
+  }
+
+  private updateBaseExplorerObserver(containerEl: HTMLElement, active: boolean) {
+    if (this.baseExplorerObserver) {
+      this.baseExplorerObserver.disconnect();
+      this.baseExplorerObserver = null;
+    }
+    if (!active) return;
+
+    const targetEl = containerEl.querySelector('.nav-files-container:not(.pakcli-recent-list)') || containerEl;
+    if (!targetEl) return;
+
+    this.baseExplorerObserver = new MutationObserver((mutations) => {
+      let shouldReapply = false;
+      for (const m of mutations) {
+        if (m.addedNodes.length > 0) {
+          shouldReapply = true;
+          break;
+        }
+      }
+      if (shouldReapply) {
+        if (this.baseExplorerDebounce !== null) {
+          cancelAnimationFrame(this.baseExplorerDebounce);
+        }
+        this.baseExplorerDebounce = requestAnimationFrame(() => {
+          this.baseExplorerDebounce = null;
+          this.applyBaseExplorerFilter();
+        });
+      }
+    });
+
+    this.baseExplorerObserver.observe(targetEl, {
+      childList: true,
+      subtree: true,
+    });
   }
 
   public applyBaseExplorerFilter() {
@@ -777,56 +838,89 @@ export class SplitViewManager {
     if (!view) return;
 
     const isActive = !!this.plugin.settings.baseExplorerActive;
+    const containerEl = view.containerEl as HTMLElement;
+
+    if (containerEl) {
+      if (isActive) {
+        containerEl.addClass('pakcli-base-explorer-active');
+      } else {
+        containerEl.removeClass('pakcli-base-explorer-active');
+      }
+      this.updateBaseExplorerObserver(containerEl, isActive);
+    }
+
+    const normalize = (p: string) => (p || '').replace(/\\/g, '/').replace(/^\/+|\/+$/g, '').trim();
+
+    // 1. Scan vault files for base files and determine affected folder ancestry
+    const allFiles = this.app.vault.getFiles();
+    const baseFiles = allFiles.filter((f) => this.isBaseFile(f.path));
+    const foldersWithBase = new Set<string>();
+
+    for (const file of baseFiles) {
+      let curr = file.parent;
+      while (curr) {
+        const norm = normalize(curr.path);
+        if (norm && norm !== '') {
+          foldersWithBase.add(norm);
+        }
+        curr = curr.parent;
+      }
+    }
 
     // Approach 1: Use Obsidian native view.fileItems if available
     if (view.fileItems && typeof view.fileItems === 'object') {
-      const fileItemsMap = view.fileItems as Record<string, { el?: HTMLElement; file?: TAbstractFile }>;
+      const fileItemsMap = view.fileItems as Record<string, {
+        el?: HTMLElement;
+        file?: TAbstractFile;
+        collapsed?: boolean;
+        setCollapsed?: (collapsed: boolean) => Promise<void> | void;
+      }>;
 
-      // 1. Process files
       for (const [path, item] of Object.entries(fileItemsMap)) {
-        if (!item || !item.el || !(item.file instanceof TFile)) continue;
+        if (!item || !item.el) continue;
         if (item.el.closest('.pakcli-explorer-recent-pane')) continue;
 
         if (!isActive) {
-          item.el.style.display = '';
-        } else {
-          if (this.isBaseFile(path)) {
-            item.el.style.display = '';
+          item.el.style.removeProperty('display');
+          item.el.removeClass('pakcli-base-file');
+          item.el.removeClass('pakcli-base-hidden');
+          item.el.removeClass('pakcli-folder-hidden');
+          continue;
+        }
+
+        // When isActive is true:
+        if (item.file instanceof TFile) {
+          const isBase = this.isBaseFile(item.file.path || path);
+          if (isBase) {
+            item.el.style.removeProperty('display');
+            item.el.addClass('pakcli-base-file');
+            item.el.removeClass('pakcli-base-hidden');
           } else {
             item.el.style.display = 'none';
+            item.el.removeClass('pakcli-base-file');
+            item.el.addClass('pakcli-base-hidden');
           }
-        }
-      }
-
-      // 2. Process folders (sorted bottom-up by path length descending)
-      const folderEntries = Object.entries(fileItemsMap)
-        .filter(([path, item]) => item && item.el && item.file instanceof TFolder && path !== '/')
-        .sort((a, b) => b[0].length - a[0].length);
-
-      if (!isActive) {
-        folderEntries.forEach(([_, item]) => {
-          if (item && item.el) item.el.style.display = '';
-        });
-      } else {
-        for (const [_, item] of folderEntries) {
-          if (!item || !item.el) continue;
-          const folderEl = item.el;
-          const childrenContainer = folderEl.querySelector('.nav-folder-children');
-
-          if (!childrenContainer) {
-            folderEl.style.display = 'none';
+        } else if (item.file instanceof TFolder) {
+          if (path === '/' || item.file.path === '/') {
+            item.el.style.removeProperty('display');
             continue;
           }
 
-          const visibleFiles = Array.from(childrenContainer.querySelectorAll('.nav-file'))
-            .filter((el) => (el as HTMLElement).style.display !== 'none');
-          const visibleFolders = Array.from(childrenContainer.querySelectorAll('.nav-folder'))
-            .filter((el) => (el as HTMLElement).style.display !== 'none');
+          const norm = normalize(item.file.path || path);
+          // If no base files exist in vault, keep all folders visible so explorer is never empty!
+          // If base files exist, show folders containing base files, hide unaffected folders.
+          const shouldShowFolder = baseFiles.length === 0 || foldersWithBase.has(norm);
 
-          if (visibleFiles.length > 0 || visibleFolders.length > 0) {
-            folderEl.style.display = '';
+          if (shouldShowFolder) {
+            item.el.style.removeProperty('display');
+            item.el.removeClass('pakcli-folder-hidden');
+            // Auto-expand folder with base files so the user immediately sees thebase.base
+            if (baseFiles.length > 0 && item.collapsed && typeof item.setCollapsed === 'function') {
+              item.setCollapsed(false);
+            }
           } else {
-            folderEl.style.display = 'none';
+            item.el.style.display = 'none';
+            item.el.addClass('pakcli-folder-hidden');
           }
         }
       }
@@ -834,57 +928,59 @@ export class SplitViewManager {
     }
 
     // Approach 2: DOM fallback query selector
-    const containerEl = view.containerEl as HTMLElement;
     if (!containerEl) return;
-
     const originalTreeContainer = containerEl.querySelector('.nav-files-container:not(.pakcli-recent-list)') || containerEl;
-    const fileItems = originalTreeContainer.querySelectorAll('.nav-file');
 
-    fileItems.forEach((fileItem) => {
-      if (fileItem.closest('.pakcli-explorer-recent-pane')) return;
-
-      const titleEl = fileItem.querySelector('.nav-file-title') as HTMLElement;
-      const path = titleEl?.getAttribute('data-path') || fileItem.getAttribute('data-path') || titleEl?.textContent || '';
+    const fileElements = originalTreeContainer.querySelectorAll('.nav-file');
+    fileElements.forEach((fileEl) => {
+      if (fileEl.closest('.pakcli-explorer-recent-pane')) return;
+      const titleEl = fileEl.querySelector('.nav-file-title') as HTMLElement;
+      const path = normalize(titleEl?.getAttribute('data-path') || fileEl.getAttribute('data-path') || titleEl?.textContent || '');
 
       if (!isActive) {
-        (fileItem as HTMLElement).style.display = '';
+        (fileEl as HTMLElement).style.removeProperty('display');
+        fileEl.removeClass('pakcli-base-file');
+        fileEl.removeClass('pakcli-base-hidden');
       } else {
         if (this.isBaseFile(path)) {
-          (fileItem as HTMLElement).style.display = '';
+          (fileEl as HTMLElement).style.removeProperty('display');
+          fileEl.addClass('pakcli-base-file');
+          fileEl.removeClass('pakcli-base-hidden');
         } else {
-          (fileItem as HTMLElement).style.display = 'none';
+          (fileEl as HTMLElement).style.display = 'none';
+          fileEl.removeClass('pakcli-base-file');
+          fileEl.addClass('pakcli-base-hidden');
         }
       }
     });
 
-    const folderItems = Array.from(originalTreeContainer.querySelectorAll('.nav-folder'));
+    const folderElements = originalTreeContainer.querySelectorAll('.nav-folder');
+    folderElements.forEach((folderEl) => {
+      if (folderEl.closest('.pakcli-explorer-recent-pane')) return;
+      if (folderEl.classList.contains('mod-root')) return;
 
-    if (!isActive) {
-      folderItems.forEach((folderItem) => {
-        (folderItem as HTMLElement).style.display = '';
-      });
-    } else {
-      for (let i = folderItems.length - 1; i >= 0; i--) {
-        const folderItem = folderItems[i] as HTMLElement;
-        const childrenContainer = folderItem.querySelector('.nav-folder-children');
+      const titleEl = folderEl.querySelector('.nav-folder-title') as HTMLElement;
+      const path = normalize(titleEl?.getAttribute('data-path') || folderEl.getAttribute('data-path') || '');
 
-        if (!childrenContainer) {
-          folderItem.style.display = 'none';
-          continue;
-        }
-
-        const visibleFiles = Array.from(childrenContainer.querySelectorAll(':scope > .nav-file, :scope > .tree-item.nav-file'))
-          .filter((el) => (el as HTMLElement).style.display !== 'none');
-        const visibleFolders = Array.from(childrenContainer.querySelectorAll(':scope > .nav-folder, :scope > .tree-item.nav-folder'))
-          .filter((el) => (el as HTMLElement).style.display !== 'none');
-
-        if (visibleFiles.length > 0 || visibleFolders.length > 0) {
-          folderItem.style.display = '';
+      if (!isActive) {
+        (folderEl as HTMLElement).style.removeProperty('display');
+        folderEl.removeClass('pakcli-folder-hidden');
+      } else {
+        const shouldShow = baseFiles.length === 0 || foldersWithBase.has(path);
+        if (shouldShow) {
+          (folderEl as HTMLElement).style.removeProperty('display');
+          folderEl.removeClass('pakcli-folder-hidden');
+          if (baseFiles.length > 0 && folderEl.classList.contains('is-collapsed')) {
+            folderEl.classList.remove('is-collapsed');
+            const children = folderEl.querySelector('.nav-folder-children') as HTMLElement;
+            if (children) children.style.removeProperty('display');
+          }
         } else {
-          folderItem.style.display = 'none';
+          (folderEl as HTMLElement).style.display = 'none';
+          folderEl.addClass('pakcli-folder-hidden');
         }
       }
-    }
+    });
   }
 
   public getTimestampPrefix(): string {
@@ -918,6 +1014,15 @@ export class SplitViewManager {
   }
 
   private onFolderClick(e: MouseEvent) {
+    if (this.plugin.settings.baseExplorerActive) {
+      if (this.baseExplorerDebounce !== null) {
+        cancelAnimationFrame(this.baseExplorerDebounce);
+      }
+      this.baseExplorerDebounce = requestAnimationFrame(() => {
+        this.baseExplorerDebounce = null;
+        this.applyBaseExplorerFilter();
+      });
+    }
     if (!this.plugin.settings.enableAutoFolderIndex) return;
     const target = (e.target as HTMLElement)?.closest('.nav-folder-title') as HTMLElement;
     if (!target) return;
@@ -961,6 +1066,14 @@ export class SplitViewManager {
   }
 
   private detach() {
+    if (this.baseExplorerObserver) {
+      this.baseExplorerObserver.disconnect();
+      this.baseExplorerObserver = null;
+    }
+    if (this.baseExplorerDebounce !== null) {
+      cancelAnimationFrame(this.baseExplorerDebounce);
+      this.baseExplorerDebounce = null;
+    }
     if (this.splitBtnEl) {
       this.splitBtnEl.remove();
       this.splitBtnEl = null;
@@ -977,6 +1090,7 @@ export class SplitViewManager {
     if (leaves && leaves.length > 0) {
       const containerEl = (leaves[0].view as any)?.containerEl as HTMLElement;
       if (containerEl) {
+        containerEl.removeClass('pakcli-base-explorer-active');
         if (this.onFolderClickBound) {
           containerEl.removeEventListener('click', this.onFolderClickBound);
           this.onFolderClickBound = null;
