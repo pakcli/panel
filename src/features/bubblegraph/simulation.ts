@@ -139,8 +139,8 @@ export function computeAllClusterRadii(
 
         if (childSubs.length === 0) {
             c.isDense = isDirectDense;
-            c.radius = baseR;
             c.baseRadius = baseR;
+            c.radius = Math.max(c.radius || 0, baseR);
             continue;
         }
 
@@ -154,8 +154,8 @@ export function computeAllClusterRadii(
 
         if (childSubs.length === 1 && directNodes.length === 0) {
             const singleR = childSubs[0].radius + (isScopedRoot ? 14 : (isParentDense ? 8 : 5));
-            c.radius = singleR;
             c.baseRadius = singleR;
+            c.radius = Math.max(c.radius || 0, singleR);
             continue;
         }
 
@@ -187,8 +187,8 @@ export function computeAllClusterRadii(
         const directExtra = directArea > 0 ? Math.ceil(Math.sqrt(directArea / Math.PI) * (isScopedRoot ? 0.8 : (isParentDense ? 0.6 : 0.4))) : 0;
         let finalR = Math.max(baseR, packingR, maxSubRadius + directExtra + (isScopedRoot ? 14 : (isParentDense ? 8 : 4)));
 
-        c.radius = finalR;
         c.baseRadius = finalR;
+        c.radius = Math.max(c.radius || 0, finalR);
     }
 }
 
@@ -535,6 +535,7 @@ export class BubbleSimulation {
             for (const c of this.clusters) prevPos.set(c.id, { x: c.centroid.x, y: c.centroid.y });
 
             // 1. Group-level centering: pull collective center of mass of top folders to (0, 0)
+            const isSingleOrScoped = topClusters.length === 1 || Boolean(this.options.scopedFolder);
             let activeTopCount = 0;
             let comX = 0;
             let comY = 0;
@@ -544,7 +545,7 @@ export class BubbleSimulation {
                 comY += c.centroid.y;
                 activeTopCount++;
             }
-            if (activeTopCount > 0 && !this.isDragging) {
+            if (activeTopCount > 0 && !this.isDragging && !isSingleOrScoped) {
                 comX /= activeTopCount;
                 comY /= activeTopCount;
                 const groupPullK = 0.05;
@@ -558,8 +559,21 @@ export class BubbleSimulation {
             // 2. Top-level individual cluster gravity: steady inward pull toward (0,0)
             for (const c of topClusters) {
                 if (c.radius === 0) continue;
-                const d = Math.hypot(c.centroid.x, c.centroid.y) || 0.001;
-                const pullSpeed = Math.min(d * 0.035 + 1.2, 7.0);
+                if (isSingleOrScoped) {
+                    if (!this.isDragging) {
+                        c.centroid.x = 0;
+                        c.centroid.y = 0;
+                    }
+                    continue;
+                }
+                const d = Math.hypot(c.centroid.x, c.centroid.y);
+                if (d < 0.5) {
+                    c.centroid.x = 0;
+                    c.centroid.y = 0;
+                    continue;
+                }
+                // Proportional pull capped at d * 0.5 to prevent overshoot oscillation
+                const pullSpeed = Math.min(d * 0.5, Math.max(0.1, d * 0.035 * Math.max(alpha, 0.3)));
                 c.centroid.x -= (c.centroid.x / d) * pullSpeed;
                 c.centroid.y -= (c.centroid.y / d) * pullSpeed;
             }
@@ -711,7 +725,8 @@ export class BubbleSimulation {
                         totalW += 4;
                     }
 
-                    if (totalW > 0 && !this.isDragging) {
+                    const isScopedRoot = Boolean(this.options.scopedFolder && (p.id === this.options.scopedFolder || p.depth === 1));
+                    if (totalW > 0 && !this.isDragging && !isScopedRoot && topClusters.length > 1) {
                         const comX = sumX / totalW;
                         const comY = sumY / totalW;
                         p.centroid.x = p.centroid.x * 0.90 + comX * 0.10;
@@ -736,7 +751,7 @@ export class BubbleSimulation {
                     if (maxReqR > p.radius) {
                         p.radius = maxReqR;
                     } else if (p.radius > minParentR) {
-                        p.radius = Math.max(minParentR, Math.round(p.radius * 0.90 + minParentR * 0.10));
+                        p.radius = Math.max(minParentR, Math.round(p.radius * 0.95 + minParentR * 0.05));
                     }
                 }
             }
@@ -802,6 +817,7 @@ export class BubbleSimulation {
                 if (spd > 2.0) { node.vx = (node.vx / spd) * 2.0; node.vy = (node.vy / spd) * 2.0; }
                 node.x += node.vx; node.y += node.vy;
                 node.vx *= 0.65; node.vy *= 0.65;
+                if (spd < 0.02) { node.vx = 0; node.vy = 0; }
             }
 
             // D. Group direct nodes by their immediate container cluster
@@ -922,7 +938,7 @@ export class BubbleSimulation {
                             const sd = Math.hypot(sdx, sdy) || 0.001;
                             const minSd = sub.radius + node.radius + (isContainerScopedRoot ? 6.0 : (isDense ? 4.0 : 2.5));
                             if (sd < minSd) {
-                                const push = (minSd - sd) / sd;
+                                const push = ((minSd - sd) * 0.6) / sd;
                                 node.x += sdx * push;
                                 node.y += sdy * push;
                             }
@@ -958,7 +974,7 @@ export class BubbleSimulation {
                     if (maxReqR > container.radius) {
                         container.radius = maxReqR;
                     } else if (container.radius > baseR) {
-                        container.radius = Math.max(baseR, Math.round(container.radius * 0.90 + baseR * 0.10));
+                        container.radius = Math.max(baseR, Math.round(container.radius * 0.95 + baseR * 0.05));
                     }
                 }
             }
