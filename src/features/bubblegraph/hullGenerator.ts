@@ -131,7 +131,7 @@ export function createSmoothHullPath(ctx: CanvasRenderingContext2D, points: Poin
 export function updateClusterHulls(
     clusters: BubbleCluster[],
     nodeMap: Map<string, BubbleNode>,
-    padding: number = 18,
+    padding: number = 8,
     visibleNodeIds?: Set<string> | null,
     isBubbleMode: boolean = false
 ): void {
@@ -197,13 +197,13 @@ export function updateClusterHulls(
             if (d > maxR) maxR = d;
         }
 
-        // 3. Compute aesthetic circular radius with generous breathing room
-        const effPadding = cluster.depth === 1 ? padding + 8 : padding + 4;
+        // 3. Compute aesthetic circular radius with compact, snug margins
+        const effPadding = cluster.depth === 1 ? padding + 4 : padding + 2;
         const minR = clusterNodes.length <= 1 
-            ? (cluster.depth === 1 ? 36 : 22)
+            ? 12
             : clusterNodes.length === 2 
-                ? (cluster.depth === 1 ? 46 : 30) 
-                : (cluster.depth === 1 ? Math.max(54, cluster.radius || 0) : Math.max(26, cluster.radius || 0));
+                ? 16 
+                : Math.max(18, cluster.radius || 0);
 
         cluster.radius = Math.max(minR, maxR + effPadding, cluster.radius || 0);
 

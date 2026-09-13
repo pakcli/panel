@@ -1172,11 +1172,22 @@ export class BubbleGraphView extends ItemView {
             maxY = Math.max(maxY, node.y);
         }
 
-        const width = maxX - minX + 120;
-        const height = maxY - minY + 120;
+        if (this.currentSettings.layoutMode === 'bubble') {
+            for (const c of this.graphData.clusters) {
+                if (c.radius > 0) {
+                    minX = Math.min(minX, c.centroid.x - c.radius);
+                    minY = Math.min(minY, c.centroid.y - c.radius);
+                    maxX = Math.max(maxX, c.centroid.x + c.radius);
+                    maxY = Math.max(maxY, c.centroid.y + c.radius);
+                }
+            }
+        }
+
+        const width = Math.max(80, maxX - minX + 60);
+        const height = Math.max(80, maxY - minY + 60);
         const scaleX = this.canvasEl.width / width;
         const scaleY = this.canvasEl.height / height;
-        const newZoom = Math.min(2.0, Math.max(0.3, Math.min(scaleX, scaleY)));
+        const newZoom = Math.min(2.5, Math.max(0.3, Math.min(scaleX, scaleY)));
 
         this.transform.zoom = newZoom;
         this.transform.panX = -((minX + maxX) / 2) * newZoom;
