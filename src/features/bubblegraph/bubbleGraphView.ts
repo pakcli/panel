@@ -211,12 +211,15 @@ export class BubbleGraphView extends ItemView {
         // 3. Update UI states
         if (this.linesToggleBtnEl) {
             this.linesToggleBtnEl.toggleClass('active', this.showLines);
+            this.linesToggleBtnEl.setAttribute('aria-pressed', this.showLines ? 'true' : 'false');
         }
         if (this.textToggleBtnEl) {
             this.textToggleBtnEl.toggleClass('active', this.showLabels);
+            this.textToggleBtnEl.setAttribute('aria-pressed', this.showLabels ? 'true' : 'false');
         }
         if (this.captainColorsBtnEl) {
             this.captainColorsBtnEl.toggleClass('active', this.useCaptainColors);
+            this.captainColorsBtnEl.setAttribute('aria-pressed', this.useCaptainColors ? 'true' : 'false');
         }
         if (this.depthButtons) {
             this.depthButtons.forEach(btn => {
@@ -224,11 +227,14 @@ export class BubbleGraphView extends ItemView {
                 const isMatch = text.startsWith(`${this.maxDragDepth}:`) ||
                     (this.maxDragDepth === 99 && text.includes('Node'));
                 btn.toggleClass('active', isMatch);
+                btn.setAttribute('aria-pressed', isMatch ? 'true' : 'false');
             });
         }
         if (this.levelButtons) {
             this.levelButtons.forEach((btn, idx) => {
-                btn.toggleClass('active', idx === this.labelRangeLevel);
+                const isMatch = idx === this.labelRangeLevel;
+                btn.toggleClass('active', isMatch);
+                btn.setAttribute('aria-pressed', isMatch ? 'true' : 'false');
             });
         }
         if (this.fontSizeSliderEl) {
@@ -246,6 +252,7 @@ export class BubbleGraphView extends ItemView {
         }
         if (this.inspectorBtnEl) {
             this.inspectorBtnEl.toggleClass('active', this.isInspectorOpen);
+            this.inspectorBtnEl.setAttribute('aria-pressed', this.isInspectorOpen ? 'true' : 'false');
         }
 
         // 4. Update Simulation & Colors
@@ -335,22 +342,28 @@ export class BubbleGraphView extends ItemView {
             text: 'Graph View',
             cls: `pakcli-tab-btn ${this.layoutMode === 'default' ? 'active' : ''}`
         });
+        defaultTab.setAttribute('aria-pressed', this.layoutMode === 'default' ? 'true' : 'false');
         const bubbleTab = tabsWrap.createEl('button', {
             text: '★ Bubble View',
             cls: `pakcli-tab-btn ${this.layoutMode === 'bubble' ? 'active' : ''}`
         });
+        bubbleTab.setAttribute('aria-pressed', this.layoutMode === 'bubble' ? 'true' : 'false');
 
         defaultTab.onclick = () => {
             this.layoutMode = 'default';
             defaultTab.addClass('active');
+            defaultTab.setAttribute('aria-pressed', 'true');
             bubbleTab.removeClass('active');
+            bubbleTab.setAttribute('aria-pressed', 'false');
             this.simulation.setOptions({ layoutMode: 'default' });
         };
 
         bubbleTab.onclick = () => {
             this.layoutMode = 'bubble';
             bubbleTab.addClass('active');
+            bubbleTab.setAttribute('aria-pressed', 'true');
             defaultTab.removeClass('active');
+            defaultTab.setAttribute('aria-pressed', 'false');
             this.simulation.setOptions({ layoutMode: 'bubble' });
         };
 
@@ -375,14 +388,19 @@ export class BubbleGraphView extends ItemView {
         depths.push({ level: 99, label: 'Node' });
 
         this.depthButtons = depths.map(d => {
+            const isMatch = this.maxDragDepth === d.level;
             const btn = depthWrap.createEl('button', {
                 text: d.label,
-                cls: `pakcli-depth-btn ${this.maxDragDepth === d.level ? 'active' : ''}`
+                cls: `pakcli-depth-btn ${isMatch ? 'active' : ''}`
             });
+            btn.setAttribute('aria-pressed', isMatch ? 'true' : 'false');
             btn.onclick = async () => {
                 this.maxDragDepth = d.level;
-                this.depthButtons.forEach(b => b.removeClass('active'));
-                btn.addClass('active');
+                this.depthButtons.forEach(b => {
+                    const active = b === btn;
+                    b.toggleClass('active', active);
+                    b.setAttribute('aria-pressed', active ? 'true' : 'false');
+                });
                 this.simulation.setOptions({ maxDragDepth: d.level });
                 this.plugin.settings.bubbleMaxDragDepth = d.level;
                 await this.plugin.saveSettings();
@@ -398,14 +416,12 @@ export class BubbleGraphView extends ItemView {
             cls: `pakcli-icon-btn pakcli-lines-toggle-btn ${this.showLines ? 'active' : ''}`,
             title: 'Toggle Lines (Show/Hide)'
         });
+        this.linesToggleBtnEl.setAttribute('aria-pressed', this.showLines ? 'true' : 'false');
         setIcon(this.linesToggleBtnEl, 'link');
         this.linesToggleBtnEl.onclick = async () => {
             this.showLines = !this.showLines;
-            if (this.showLines) {
-                this.linesToggleBtnEl.addClass('active');
-            } else {
-                this.linesToggleBtnEl.removeClass('active');
-            }
+            this.linesToggleBtnEl.toggleClass('active', this.showLines);
+            this.linesToggleBtnEl.setAttribute('aria-pressed', this.showLines ? 'true' : 'false');
             this.plugin.settings.bubbleShowLines = this.showLines;
             await this.plugin.saveSettings();
         };
@@ -415,14 +431,12 @@ export class BubbleGraphView extends ItemView {
             cls: `pakcli-icon-btn pakcli-text-toggle-btn ${this.showLabels ? 'active' : ''}`,
             title: 'Toggle Text Labels'
         });
+        this.textToggleBtnEl.setAttribute('aria-pressed', this.showLabels ? 'true' : 'false');
         setIcon(this.textToggleBtnEl, 'type');
         this.textToggleBtnEl.onclick = async () => {
             this.showLabels = !this.showLabels;
-            if (this.showLabels) {
-                this.textToggleBtnEl.addClass('active');
-            } else {
-                this.textToggleBtnEl.removeClass('active');
-            }
+            this.textToggleBtnEl.toggleClass('active', this.showLabels);
+            this.textToggleBtnEl.setAttribute('aria-pressed', this.showLabels ? 'true' : 'false');
             this.plugin.settings.bubbleShowLabels = this.showLabels;
             await this.plugin.saveSettings();
         };
@@ -432,14 +446,12 @@ export class BubbleGraphView extends ItemView {
             cls: `pakcli-icon-btn pakcli-captain-colors-btn ${this.useCaptainColors ? 'active' : ''}`,
             title: 'Toggle Captain Folder Colors (show custom colors on Captain Folders)'
         });
+        this.captainColorsBtnEl.setAttribute('aria-pressed', this.useCaptainColors ? 'true' : 'false');
         setIcon(this.captainColorsBtnEl, 'anchor');
         this.captainColorsBtnEl.onclick = async () => {
             this.useCaptainColors = !this.useCaptainColors;
-            if (this.useCaptainColors) {
-                this.captainColorsBtnEl.addClass('active');
-            } else {
-                this.captainColorsBtnEl.removeClass('active');
-            }
+            this.captainColorsBtnEl.toggleClass('active', this.useCaptainColors);
+            this.captainColorsBtnEl.setAttribute('aria-pressed', this.useCaptainColors ? 'true' : 'false');
             this.plugin.settings.bubbleUseCaptainColors = this.useCaptainColors;
             await this.plugin.saveSettings();
             this.applyCaptainFolderColors();
@@ -458,15 +470,20 @@ export class BubbleGraphView extends ItemView {
         ];
 
         this.levelButtons = levels.map(l => {
+            const isMatch = this.labelRangeLevel === l.lvl;
             const btn = levelWrap.createEl('button', {
                 text: l.label,
-                cls: `pakcli-level-btn ${this.labelRangeLevel === l.lvl ? 'active' : ''}`,
+                cls: `pakcli-level-btn ${isMatch ? 'active' : ''}`,
                 title: l.title
             });
+            btn.setAttribute('aria-pressed', isMatch ? 'true' : 'false');
             btn.onclick = async () => {
                 this.labelRangeLevel = l.lvl;
-                this.levelButtons.forEach(b => b.removeClass('active'));
-                btn.addClass('active');
+                this.levelButtons.forEach((b, idx) => {
+                    const active = idx === l.lvl;
+                    b.toggleClass('active', active);
+                    b.setAttribute('aria-pressed', active ? 'true' : 'false');
+                });
                 this.plugin.settings.bubbleLabelRangeLevel = l.lvl;
                 await this.plugin.saveSettings();
             };
@@ -557,18 +574,21 @@ export class BubbleGraphView extends ItemView {
 
         // Inspector Toggle Button
         this.inspectorBtnEl = rightGroup.createEl('button', {
-            cls: `pakcli-icon-btn ${this.isInspectorOpen ? 'active' : ''}`,
+            cls: `pakcli-icon-btn pakcli-inspector-toggle-btn ${this.isInspectorOpen ? 'active' : ''}`,
             title: 'Toggle Inspector'
         });
+        this.inspectorBtnEl.setAttribute('aria-pressed', this.isInspectorOpen ? 'true' : 'false');
         setIcon(this.inspectorBtnEl, 'info');
         this.inspectorBtnEl.onclick = async () => {
             this.isInspectorOpen = !this.isInspectorOpen;
             if (this.isInspectorOpen) {
                 this.inspectorEl.removeClass('collapsed');
                 this.inspectorBtnEl.addClass('active');
+                this.inspectorBtnEl.setAttribute('aria-pressed', 'true');
             } else {
                 this.inspectorEl.addClass('collapsed');
                 this.inspectorBtnEl.removeClass('active');
+                this.inspectorBtnEl.setAttribute('aria-pressed', 'false');
             }
             this.plugin.settings.bubbleInspectorOpen = this.isInspectorOpen;
             await this.plugin.saveSettings();
@@ -630,9 +650,11 @@ export class BubbleGraphView extends ItemView {
         if (this.wandBtnEl) {
             if (this.isTimelapseRunning) {
                 this.wandBtnEl.addClass('active');
+                this.wandBtnEl.setAttribute('aria-pressed', 'true');
                 this.wandBtnEl.setAttribute('title', 'Pause timelapse animation');
             } else {
                 this.wandBtnEl.removeClass('active');
+                this.wandBtnEl.setAttribute('aria-pressed', 'false');
                 const modeLabel = this.timelapseMode === 'vanilla' ? 'Vanilla 0.025s/node' : 'Date-based';
                 this.wandBtnEl.setAttribute('title', `Start timelapse animation (${modeLabel})`);
             }
