@@ -92,7 +92,7 @@ export const DEFAULT_EXPLORER_SETTINGS: ExplorerSettings = {
   explorerMaxRecentFiles: 20,
   explorerRecentShowIcons: false,
   explorerRecentTimeFilter: 'all',
-  recentsArtifactFolderPath: 'artifacts/pakcli-table',
+  recentsArtifactFolderPath: 'artifacts/pakcli-panel',
   customRecentPaths: [],
   activeRecentFolderFilter: '',
   backlogFolderPath: 'Backlog',

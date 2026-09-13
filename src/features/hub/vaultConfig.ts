@@ -10,7 +10,7 @@ function getSnapshotsDir(app: App): string {
 }
 
 export interface VaultConfigPayload {
-  plugin: "pakcli-local" | "pakcli-table" | "pakcli-agent";
+  plugin: "pakcli-local" | "pakcli-panel" | "pakcli-agent";
   version: string;
   lastSaved: string;
   name?: string;
@@ -100,7 +100,7 @@ async function ensureConfigDir(app: App): Promise<void> {
  */
 export async function listVaultSnapshots(
   app: App,
-  pluginName: "pakcli-local" | "pakcli-table" | "pakcli-agent"
+  pluginName: "pakcli-local" | "pakcli-panel" | "pakcli-agent"
 ): Promise<SnapshotItem[]> {
   await ensureConfigDir(app);
   const prefix = pluginName.replace("pakcli-", "");
@@ -191,7 +191,7 @@ export async function listVaultSnapshots(
  */
 export async function saveVaultConfig(
   app: App,
-  pluginName: "pakcli-local" | "pakcli-table" | "pakcli-agent",
+  pluginName: "pakcli-local" | "pakcli-panel" | "pakcli-agent",
   settings: Record<string, unknown>,
   customName?: string
 ): Promise<void> {
@@ -221,7 +221,7 @@ export async function saveVaultConfig(
     const hour = String(now.getHours()).padStart(2, "0");
     const hourlyStamp = `${year}-${month}-${day}_${hour}h00`;
 
-    const snapPath = customName 
+    const snapPath = customName
       ? `${getSnapshotsDir(app)}/${prefix}-${customName}-${hourlyStamp}_${String(now.getMinutes()).padStart(2, "0")}${String(now.getSeconds()).padStart(2, "0")}.json`
       : `${getSnapshotsDir(app)}/${prefix}-${hourlyStamp}.json`
 
@@ -236,7 +236,7 @@ export async function saveVaultConfig(
  */
 export async function loadVaultConfig(
   app: App,
-  pluginName: "pakcli-local" | "pakcli-table" | "pakcli-agent",
+  pluginName: "pakcli-local" | "pakcli-panel" | "pakcli-agent",
   targetPath?: string
 ): Promise<Record<string, unknown> | null> {
   const filePath = targetPath || `${getVaultConfigDir(app)}/latest-${pluginName.replace("pakcli-", "")}.json`

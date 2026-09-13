@@ -243,6 +243,19 @@ export default class PakCLITablePlugin extends Plugin {
 			}
 		});
 
+		this.addCommand({
+			id: 'debug-codeblocks',
+			name: 'Debug Codeblocks: Inspect Styling & Language Rules',
+			callback: () => {
+				this.codeblockScaler.rescaleAll();
+				const report = this.codeblockScaler.debugInspect();
+				new Notice(
+					`[PakCLI Codeblock Debug]\nDefault: ${this.settings.codeblockWrapMode || 'flowclip'}\nRules: ${this.settings.codeblockLanguageRules?.length || 0}\nFound: ${report.codeblocksFound} <pre>, ${report.cmLinesFound} lines.\nSee DevTools Console (Ctrl+Shift+I) for full table!`,
+					7000
+				);
+			}
+		});
+
 		this.addRibbonIcon('git-fork', 'Create New Timeline Narrative Note', async () => {
 			const sample = [
 				'# Timeline Narrative Decision Tree',
@@ -542,7 +555,7 @@ export default class PakCLITablePlugin extends Plugin {
 
 		// 2. Persistent Snapshot on App Close / Unload
 		try {
-			await saveVaultConfig(this.app, 'pakcli-table', this.settings, 'session-close');
+			await saveVaultConfig(this.app, 'pakcli-panel', this.settings, 'session-close');
 		} catch {
 			// Vault config save failure ignored on unload
 		}
@@ -557,13 +570,13 @@ export default class PakCLITablePlugin extends Plugin {
 
 	async loadSettings() {
 		const stored = await this.loadData();
-		const fallback = await loadVaultConfig(this.app, 'pakcli-table');
+		const fallback = await loadVaultConfig(this.app, 'pakcli-panel');
 		this.settings = Object.assign({}, DEFAULT_TABLE_SETTINGS, fallback, stored);
 	}
 
 	async saveSettings() {
 		await this.saveData(this.settings);
-		await saveVaultConfig(this.app, 'pakcli-table', this.settings);
+		await saveVaultConfig(this.app, 'pakcli-panel', this.settings);
 	}
 
 	applyCodeblockStyle() {
@@ -634,22 +647,22 @@ export default class PakCLITablePlugin extends Plugin {
 					title: string;
 					desc: string;
 				}> = [
-					{
-						id: 'deactivate',
-						title: 'Deactivate',
-						desc: 'Bubble Graph feature is completely disabled. No ribbon icons or view overrides.'
-					},
-					{
-						id: 'replace',
-						title: 'Replace Vanilla GraphView',
-						desc: 'Automatically route and replace Obsidian standard graph view with Bubble Graph.'
-					},
-					{
-						id: 'second',
-						title: 'Add New as Second GraphView',
-						desc: 'Keep vanilla graph intact and add a dedicated icon to the Obsidian ribbon bar.'
-					}
-				];
+						{
+							id: 'deactivate',
+							title: 'Deactivate',
+							desc: 'Bubble Graph feature is completely disabled. No ribbon icons or view overrides.'
+						},
+						{
+							id: 'replace',
+							title: 'Replace Vanilla GraphView',
+							desc: 'Automatically route and replace Obsidian standard graph view with Bubble Graph.'
+						},
+						{
+							id: 'second',
+							title: 'Add New as Second GraphView',
+							desc: 'Keep vanilla graph intact and add a dedicated icon to the Obsidian ribbon bar.'
+						}
+					];
 
 				const ribbonSettingContainer = containerEl.createDiv({ cls: 'pakcli-ribbon-setting-wrap' });
 
@@ -1176,13 +1189,13 @@ export default class PakCLITablePlugin extends Plugin {
 				let recentsFolderInput: TextComponent | null = null;
 				new Setting(containerEl)
 					.setName('Recent Files CSV Artifact Folder')
-					.setDesc('Vault folder where the recent files history CSV artifact (recents.csv with path, time last open, date last open) is stored (default: artifacts/pakcli-table).')
+					.setDesc('Vault folder where the recent files history CSV artifact (recents.csv with path, time last open, date last open) is stored (default: artifacts/pakcli-panel).')
 					.addText((text) => {
 						recentsFolderInput = text;
-						text.setPlaceholder('artifacts/pakcli-table')
-							.setValue(this.settings.recentsArtifactFolderPath || 'artifacts/pakcli-table')
+						text.setPlaceholder('artifacts/pakcli-panel')
+							.setValue(this.settings.recentsArtifactFolderPath || 'artifacts/pakcli-panel')
 							.onChange(async (val) => {
-								this.settings.recentsArtifactFolderPath = val.trim() || 'artifacts/pakcli-table';
+								this.settings.recentsArtifactFolderPath = val.trim() || 'artifacts/pakcli-panel';
 								await this.saveSettings();
 								if (this.splitViewManager) {
 									await this.splitViewManager.saveRecentsCsvArtifact();
@@ -1205,17 +1218,17 @@ export default class PakCLITablePlugin extends Plugin {
 					})
 					.addButton((btn) => {
 						btn.setButtonText('Reset')
-							.setTooltip('Reset folder back to default (artifacts/pakcli-table)')
+							.setTooltip('Reset folder back to default (artifacts/pakcli-panel)')
 							.onClick(async () => {
-								this.settings.recentsArtifactFolderPath = 'artifacts/pakcli-table';
+								this.settings.recentsArtifactFolderPath = 'artifacts/pakcli-panel';
 								if (recentsFolderInput) {
-									recentsFolderInput.setValue('artifacts/pakcli-table');
+									recentsFolderInput.setValue('artifacts/pakcli-panel');
 								}
 								await this.saveSettings();
 								if (this.splitViewManager) {
 									await this.splitViewManager.saveRecentsCsvArtifact();
 								}
-								new Notice('🔄 Reset recents CSV artifact folder to "artifacts/pakcli-table".');
+								new Notice('🔄 Reset recents CSV artifact folder to "artifacts/pakcli-panel".');
 							});
 					});
 
@@ -1928,8 +1941,10 @@ export default class PakCLITablePlugin extends Plugin {
 				const rulesBox = containerEl.createDiv({ cls: 'pakcli-codeblock-rules-section' });
 
 				const renderLangRules = () => {
+					console.log('[PakCLI DBG] renderLangRules called');
 					rulesBox.empty();
 					const rules = this.settings.codeblockLanguageRules || [];
+					console.log('[PakCLI DBG] rules array:', JSON.stringify(rules));
 
 					if (rules.length === 0) {
 						rulesBox.createEl('p', {
@@ -1940,27 +1955,108 @@ export default class PakCLITablePlugin extends Plugin {
 						const table = rulesBox.createEl('table');
 						table.style.width = '100%';
 						table.style.marginBottom = '12px';
+						table.style.borderCollapse = 'collapse';
 						const thead = table.createEl('thead');
 						const hRow = thead.createEl('tr');
 						hRow.createEl('th', { text: 'Language' });
 						hRow.createEl('th', { text: 'Behavior' });
-						hRow.createEl('th', { text: 'Actions' });
+						const thClip = hRow.createEl('th', { text: 'On Clipboard' });
+						thClip.title = 'Custom script triggered on copy. Use .{ scripts } or { scripts }invoke()';
+						hRow.createEl('th', { text: 'Delete' });
 
 						const tbody = table.createEl('tbody');
 						rules.forEach((rule, idx) => {
+							console.log(`[PakCLI DBG] rendering row ${idx}:`, JSON.stringify(rule));
 							const row = tbody.createEl('tr');
 							row.createEl('td', { text: rule.language });
 
 							const behaviorTd = row.createEl('td');
 							const sel = behaviorTd.createEl('select', { cls: 'dropdown' });
-							sel.createEl('option', { text: 'Scale Fit (Auto Vector)', value: 'scalefit' }).selected = rule.behavior === 'scalefit';
-							sel.createEl('option', { text: 'Flow Clip (Scrollbar)', value: 'flowclip' }).selected = rule.behavior === 'flowclip';
-							sel.createEl('option', { text: 'Word Wrap', value: 'wrap' }).selected = rule.behavior === 'wrap';
-							sel.onchange = async () => {
-								rule.behavior = sel.value as 'scalefit' | 'flowclip' | 'wrap';
-								await this.saveSettings();
-								this.codeblockScaler.scheduleRescale();
-							};
+							[
+								{ text: 'Scale Fit (Auto Vector)', value: 'scalefit' },
+								{ text: 'Flow Clip (Scrollbar)', value: 'flowclip' },
+								{ text: 'Word Wrap', value: 'wrap' },
+							].forEach(({ text, value }) => {
+								const opt = sel.createEl('option', { text });
+								opt.value = value;
+								opt.selected = rule.behavior === value;
+								console.log(`[PakCLI DBG] option created: text="${text}" value="${opt.value}" selected=${opt.selected}`);
+							});
+							console.log(`[PakCLI DBG] sel.value after options set = "${sel.value}"`);
+							sel.addEventListener('change', async () => {
+								console.log(`[PakCLI DBG] behavior change fired: sel.value="${sel.value}" rule was:`, JSON.stringify(rule));
+								try {
+									rule.behavior = sel.value as 'scalefit' | 'flowclip' | 'wrap';
+									console.log('[PakCLI DBG] calling saveSettings...');
+									await this.saveSettings();
+									console.log('[PakCLI DBG] saveSettings done, calling scheduleRescale...');
+									this.codeblockScaler.scheduleRescale();
+									console.log('[PakCLI DBG] scheduleRescale done. settings now:', JSON.stringify(this.settings.codeblockLanguageRules));
+								} catch (err) {
+									console.error('[PakCLI] behavior save error:', err);
+									new Notice('Failed to save behavior setting.');
+								}
+							});
+							console.log('[PakCLI DBG] behavior change listener registered on sel');
+
+							// On Clipboard column
+							const clipTd = row.createEl('td', { cls: 'pakcli-cb-clip-td' });
+
+							const isPs = ['powershell', 'ps1', 'pwsh', 'ps'].includes(rule.language.trim().toLowerCase());
+
+							if (isPs) {
+								// Hardcoded PowerShell presets as a dropdown
+								const PS_PRESETS: { label: string; value: string }[] = [
+									{ label: '— none —',    value: '' },
+									{ label: '{}.invoke()', value: 'invoke' },
+									{ label: '.{}',         value: 'dot' },
+									{ label: '@{}',         value: 'at' },
+								];
+
+								const psSel = clipTd.createEl('select', { cls: 'dropdown pakcli-cb-ps-select' });
+								const currentVal = (rule.onClipboard ?? '').trim();
+								PS_PRESETS.forEach((preset) => {
+									const opt = psSel.createEl('option', { text: preset.label });
+									opt.value = preset.value;
+									const isSelected =
+										currentVal === preset.value ||
+										(preset.value === 'invoke' && (currentVal.includes('invoke') || currentVal === '{}.invoke()' || currentVal === '{}.incvoke' || currentVal === 'invoke')) ||
+										(preset.value === 'dot' && (currentVal.startsWith('.{') || currentVal === '.{}' || currentVal.includes('. prefix') || currentVal === 'dot')) ||
+										(preset.value === 'at' && (currentVal.startsWith('@{') || currentVal === '@{}' || currentVal.includes('@ prefix') || currentVal.includes("'@'") || currentVal === 'at'));
+									opt.selected = isSelected;
+								});
+								psSel.addEventListener('change', async () => {
+									try {
+										rule.onClipboard = psSel.value;
+										await this.saveSettings();
+										this.codeblockScaler.scheduleRescale();
+										new Notice(`Saved PowerShell clipboard setting: ${psSel.options[psSel.selectedIndex]?.text}`);
+									} catch (err) {
+										console.error('[PakCLI] onClipboard save error:', err);
+										new Notice('Failed to save clipboard setting.');
+									}
+								});
+							} else {
+								// Free textarea for all other languages
+								const clipArea = clipTd.createEl('textarea', { cls: 'pakcli-cb-clip-area' });
+								clipArea.placeholder = '.{\n\tscripts\n}\n// or\n{\n\tscripts\n}invoke()';
+								clipArea.value = rule.onClipboard || '';
+								clipArea.rows = 2;
+								clipArea.title = 'Custom clipboard template. Use "scripts" where code should be inserted.';
+								const saveClipScript = async () => {
+									try {
+										rule.onClipboard = clipArea.value.trim();
+										await this.saveSettings();
+										this.codeblockScaler.scheduleRescale();
+										new Notice('Saved clipboard template.');
+									} catch (err) {
+										console.error('[PakCLI] clipboard script save error:', err);
+										new Notice('Failed to save clipboard script.');
+									}
+								};
+								clipArea.addEventListener('change', saveClipScript);
+								clipArea.addEventListener('blur',   saveClipScript);
+							}
 
 							const actTd = row.createEl('td');
 							const delBtn = new ButtonComponent(actTd)

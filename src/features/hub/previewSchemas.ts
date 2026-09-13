@@ -77,7 +77,7 @@ export const ECOSYSTEM_MODULES: BlueprintSection[] = [
     category: "table",
     title: "Graph Topology & Bubble View",
     icon: "circle-dot",
-    storeId: "pakcli-table",
+    storeId: "pakcli-panel",
     repoUrl: "https://github.com/pakcli/table",
     description: "Venn-cluster topology, organic contour hulls, smart 3-tier link hierarchy, and interactive graph inspector.",
     fields: [
@@ -92,7 +92,7 @@ export const ECOSYSTEM_MODULES: BlueprintSection[] = [
     category: "table",
     title: "CSV & Tablite Table Editor",
     icon: "table",
-    storeId: "pakcli-table",
+    storeId: "pakcli-panel",
     repoUrl: "https://github.com/pakcli/table",
     description: "Fast in-vault spreadsheet and database grid for CSV, TSV and JSON files.",
     fields: [
@@ -106,12 +106,12 @@ export const ECOSYSTEM_MODULES: BlueprintSection[] = [
     category: "table",
     title: "Explorer Additions",
     icon: "rows-2",
-    storeId: "pakcli-table",
+    storeId: "pakcli-panel",
     repoUrl: "https://github.com/pakcli/table",
     description: "Split view for Obsidian File Explorer featuring a recent files pane, folder-qualified index.md titles, and draggable section ordering.",
     fields: [
       { key: "explorerSplitEnabled", type: "toggle", name: "Apply Explorer Split View", desc: "Enable split view in the File Explorer with recent files pane.", defaultVal: false },
-      { key: "recentsArtifactFolderPath", type: "text", name: "Recents CSV Artifact Folder", desc: "Vault folder where recent files history CSV artifact (recents.csv) is stored.", defaultVal: "artifacts/pakcli-table" },
+      { key: "recentsArtifactFolderPath", type: "text", name: "Recents CSV Artifact Folder", desc: "Vault folder where recent files history CSV artifact (recents.csv) is stored.", defaultVal: "artifacts/pakcli-panel" },
       { key: "explorerSplitHeight", type: "text", name: "Recent Files Pane Height", desc: "Default height in pixels for the recent files pane.", defaultVal: "180" },
       { key: "explorerMaxRecentFiles", type: "text", name: "Max Recent Files", desc: "Maximum number of recently opened files to display.", defaultVal: "20" },
       { key: "explorerRecentShowIcons", type: "toggle", name: "Show File Icons", desc: "Display file type icons next to files in the recent list.", defaultVal: true },
@@ -122,7 +122,7 @@ export const ECOSYSTEM_MODULES: BlueprintSection[] = [
     category: "table",
     title: "Image Carousel & Folder Triage",
     icon: "gallery-thumbnails",
-    storeId: "pakcli-table",
+    storeId: "pakcli-panel",
     repoUrl: "https://github.com/pakcli/table",
     description: "Interactive card deck swiper and photo carousel for reviewing, triaging, renaming, and trashing folder images.",
     fields: [
@@ -141,7 +141,7 @@ export const ECOSYSTEM_MODULES: BlueprintSection[] = [
     category: "table",
     title: "Tree Diagram & Hierarchy Explorer",
     icon: "folder-tree",
-    storeId: "pakcli-table",
+    storeId: "pakcli-panel",
     repoUrl: "https://github.com/pakcli/table",
     description: "Visual folder structure diagrams and tree view generators for markdown.",
     fields: [
@@ -154,7 +154,7 @@ export const ECOSYSTEM_MODULES: BlueprintSection[] = [
     category: "table",
     title: "Asset Router & Attachment Manager",
     icon: "folder-input",
-    storeId: "pakcli-table",
+    storeId: "pakcli-panel",
     repoUrl: "https://github.com/pakcli/table",
     description: "Automatic attachment routing, centralized media vault, Captain Folders nested mode, and note link auto-updating.",
     fields: [
@@ -170,7 +170,7 @@ export const ECOSYSTEM_MODULES: BlueprintSection[] = [
     category: "table",
     title: "Codeblock Scaler & Themes",
     icon: "code",
-    storeId: "pakcli-table",
+    storeId: "pakcli-panel",
     repoUrl: "https://github.com/pakcli/table",
     description: "Syntax highlighter, auto-scaler, copy buttons, and responsive codeblock wrapping.",
     fields: [
@@ -183,7 +183,7 @@ export const ECOSYSTEM_MODULES: BlueprintSection[] = [
     category: "table",
     title: "ASCII Motion & Canvas Studio",
     icon: "sparkles",
-    storeId: "pakcli-table",
+    storeId: "pakcli-panel",
     repoUrl: "https://github.com/pakcli/table",
     description: "Interactive canvas for ASCII diagrams, architecture drawings, and frame animations.",
     fields: [
@@ -196,7 +196,7 @@ export const ECOSYSTEM_MODULES: BlueprintSection[] = [
     category: "table",
     title: "SQLSeal & Database Explorer",
     icon: "database",
-    storeId: "pakcli-table",
+    storeId: "pakcli-panel",
     repoUrl: "https://github.com/pakcli/table",
     description: "Embedded SQLite engine, relational queries, and in-vault database inspector.",
     fields: [
@@ -209,7 +209,7 @@ export const ECOSYSTEM_MODULES: BlueprintSection[] = [
     category: "table",
     title: "Leaflet Map Bases",
     icon: "map-pin",
-    storeId: "pakcli-table",
+    storeId: "pakcli-panel",
     repoUrl: "https://github.com/pakcli/table",
     description: "Embed interactive map coordinate bases with custom markers and overlays.",
     fields: [
@@ -219,7 +219,7 @@ export const ECOSYSTEM_MODULES: BlueprintSection[] = [
   },
 
   // 🤖 AGENT MODULES
-      {
+  {
     id: "agent-antigravity",
     category: "agent",
     title: "Antigravity AI Agent & CLI",

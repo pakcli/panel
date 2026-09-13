@@ -41,7 +41,7 @@ export class SplitViewManager {
     }
     // Flush: save history immediately on destroy so it survives exit/reload
     if (this.recentFilesList.length > 0) {
-      this.saveRecentsCsvArtifact().catch(() => {});
+      this.saveRecentsCsvArtifact().catch(() => { });
     }
     if (this.mutationObserver) {
       this.mutationObserver.disconnect();
@@ -995,7 +995,7 @@ export class SplitViewManager {
   }
 
   public getRecentsCsvPath(): string {
-    const folder = (this.plugin.settings.recentsArtifactFolderPath || 'artifacts/pakcli-table').trim().replace(/^\/+|\/+$/g, '') || 'artifacts/pakcli-table';
+    const folder = (this.plugin.settings.recentsArtifactFolderPath || 'artifacts/pakcli-panel').trim().replace(/^\/+|\/+$/g, '') || 'artifacts/pakcli-panel';
     return `${folder}/recents.csv`;
   }
 
@@ -1012,7 +1012,7 @@ export class SplitViewManager {
 
   public async saveRecentsCsvArtifact(): Promise<TFile | null> {
     try {
-      const folder = (this.plugin.settings.recentsArtifactFolderPath || 'artifacts/pakcli-table').trim().replace(/^\/+|\/+$/g, '') || 'artifacts/pakcli-table';
+      const folder = (this.plugin.settings.recentsArtifactFolderPath || 'artifacts/pakcli-panel').trim().replace(/^\/+|\/+$/g, '') || 'artifacts/pakcli-panel';
       await ensureFolderExists(this.app, folder);
 
       const csvPath = `${folder}/recents.csv`;
@@ -1049,7 +1049,7 @@ export class SplitViewManager {
       const primaryPath = this.getRecentsCsvPath();
       const possiblePaths = [
         primaryPath,
-        'artifacts/pakcli-table/recents.csv',
+        'artifacts/pakcli-panel/recents.csv',
         'artifacts/recents.csv',
         'csv_view_artifacts/recents.csv',
       ];

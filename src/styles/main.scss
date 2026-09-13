@@ -296,8 +296,22 @@
 .markdown-rendered pre,
 .markdown-rendered pre code,
 .markdown-source-view.mod-cm6 .cm-embed-block,
-.markdown-source-view.mod-cm6 .HyperMD-codeblock-bg {
+.markdown-source-view.mod-cm6 .cm-embed-block.markdown-rendered,
+.markdown-source-view.mod-cm6 .HyperMD-codeblock-bg,
+.cm-embed-block {
     max-width: 100% !important;
+    width: auto !important;
+    overflow: hidden !important;
+    box-sizing: border-box !important;
+}
+
+.cm-embed-block > div,
+.cm-embed-block [class*="block-language-"],
+[class*="block-language-"] {
+    max-width: 100% !important;
+    width: auto !important;
+    min-width: 0 !important;
+    overflow: hidden !important;
     box-sizing: border-box !important;
 }
 
@@ -306,21 +320,30 @@
    ------------------------------------------------------------------------- */
 body.codeblock-flowclip,
 body.pakcli-flowclip {
-    .markdown-rendered pre {
+    pre,
+    .markdown-rendered pre,
+    .markdown-source-view pre,
+    .cm-embed-block pre {
         white-space: pre !important;
         word-break: normal !important;
         word-wrap: normal !important;
         overflow-x: auto !important;
         overflow-y: hidden !important;
         max-width: 100% !important;
-        width: 100% !important;
-        contain: inline-size !important;
+        width: auto !important;
+        min-width: 0 !important;
+        contain: none !important;
         box-sizing: border-box !important;
 
         code {
+            display: inline-block !important;
+            width: auto !important;
+            min-width: 100% !important;
             white-space: pre !important;
             word-break: normal !important;
+            word-wrap: normal !important;
             overflow-x: visible !important;
+            box-sizing: border-box !important;
         }
     }
 
@@ -332,8 +355,9 @@ body.pakcli-flowclip {
         overflow-x: auto !important;
         overflow-y: hidden !important;
         max-width: 100% !important;
-        width: 100% !important;
-        contain: inline-size !important;
+        width: auto !important;
+        min-width: 0 !important;
+        contain: none !important;
         box-sizing: border-box !important;
     }
 }
@@ -343,15 +367,23 @@ body.pakcli-flowclip {
    ------------------------------------------------------------------------- */
 body.codeblock-wrap,
 body.pakcli-wrap {
+    pre,
+    pre code,
     .markdown-rendered pre,
-    .markdown-rendered pre code {
+    .markdown-rendered pre code,
+    .markdown-source-view pre,
+    .markdown-source-view pre code,
+    .cm-embed-block pre,
+    .cm-embed-block pre code {
         white-space: pre-wrap !important;
         word-break: break-all !important;
         overflow-wrap: anywhere !important;
         word-wrap: break-word !important;
         overflow-x: hidden !important;
         max-width: 100% !important;
-        width: 100% !important;
+        width: auto !important;
+        min-width: 0 !important;
+        contain: none !important;
         box-sizing: border-box !important;
     }
 
@@ -363,7 +395,9 @@ body.pakcli-wrap {
         word-wrap: break-word !important;
         overflow-x: hidden !important;
         max-width: 100% !important;
-        width: 100% !important;
+        width: auto !important;
+        min-width: 0 !important;
+        contain: none !important;
         box-sizing: border-box !important;
     }
 }
@@ -373,15 +407,22 @@ body.pakcli-wrap {
    ------------------------------------------------------------------------- */
 body.codeblock-scalefit,
 body.pakcli-scalefit {
+    pre,
+    pre code,
     .markdown-rendered pre,
-    .markdown-rendered pre code {
+    .markdown-rendered pre code,
+    .markdown-source-view pre,
+    .markdown-source-view pre code,
+    .cm-embed-block pre,
+    .cm-embed-block pre code {
         white-space: pre;
         word-break: normal;
         max-width: 100% !important;
-        width: 100% !important;
+        width: auto !important;
+        min-width: 0 !important;
         overflow-x: auto !important;
         box-sizing: border-box !important;
-        contain: inline-size !important;
+        contain: none !important;
         font-family: var(--font-monospace), monospace;
     }
 
@@ -392,8 +433,9 @@ body.pakcli-scalefit {
         font-size: min(var(--code-size, 13px), 2.2vw);
         overflow-x: auto !important;
         max-width: 100% !important;
-        width: 100% !important;
-        contain: inline-size !important;
+        width: auto !important;
+        min-width: 0 !important;
+        contain: none !important;
         box-sizing: border-box !important;
     }
 }
@@ -403,56 +445,91 @@ body.pakcli-scalefit {
    ========================================================================= */
 
 /* Per-block Flowclip */
+body pre.pakcli-codeblock-flowclip,
 body .markdown-rendered pre.pakcli-codeblock-flowclip,
-body .markdown-rendered pre.pakcli-codeblock-flowclip code,
+body .markdown-source-view pre.pakcli-codeblock-flowclip,
+body .cm-embed-block pre.pakcli-codeblock-flowclip,
 body .markdown-source-view.mod-cm6 .cm-line.HyperMD-codeblock.pakcli-codeblock-line-flowclip,
+pre.pakcli-codeblock-flowclip,
 .markdown-rendered pre.pakcli-codeblock-flowclip,
-.markdown-rendered pre.pakcli-codeblock-flowclip code,
-.markdown-source-view.mod-cm6 .cm-line.HyperMD-codeblock.pakcli-codeblock-line-flowclip {
+.markdown-source-view pre.pakcli-codeblock-flowclip,
+.cm-embed-block pre.pakcli-codeblock-flowclip,
+.cm-line.HyperMD-codeblock.pakcli-codeblock-line-flowclip {
     white-space: pre !important;
     word-break: normal !important;
     word-wrap: normal !important;
     overflow-x: auto !important;
     overflow-y: hidden !important;
     max-width: 100% !important;
-    width: 100% !important;
-    contain: inline-size !important;
+    width: auto !important;
+    min-width: 0 !important;
+    contain: none !important;
     box-sizing: border-box !important;
+}
 
-    code {
-        white-space: pre !important;
-        word-break: normal !important;
-        overflow-x: visible !important;
-    }
+body pre.pakcli-codeblock-flowclip code,
+body .markdown-rendered pre.pakcli-codeblock-flowclip code,
+body .markdown-source-view pre.pakcli-codeblock-flowclip code,
+body .cm-embed-block pre.pakcli-codeblock-flowclip code,
+pre.pakcli-codeblock-flowclip code {
+    display: inline-block !important;
+    width: auto !important;
+    min-width: 100% !important;
+    white-space: pre !important;
+    word-break: normal !important;
+    word-wrap: normal !important;
+    overflow-x: visible !important;
+    box-sizing: border-box !important;
 }
 
 /* Per-block Wrap */
+body pre.pakcli-codeblock-wrap,
+body pre.pakcli-codeblock-wrap code,
 body .markdown-rendered pre.pakcli-codeblock-wrap,
 body .markdown-rendered pre.pakcli-codeblock-wrap code,
+body .markdown-source-view pre.pakcli-codeblock-wrap,
+body .markdown-source-view pre.pakcli-codeblock-wrap code,
+body .cm-embed-block pre.pakcli-codeblock-wrap,
+body .cm-embed-block pre.pakcli-codeblock-wrap code,
 body .markdown-source-view.mod-cm6 .cm-line.HyperMD-codeblock.pakcli-codeblock-wrap,
+pre.pakcli-codeblock-wrap,
+pre.pakcli-codeblock-wrap code,
 .markdown-rendered pre.pakcli-codeblock-wrap,
 .markdown-rendered pre.pakcli-codeblock-wrap code,
-.markdown-source-view.mod-cm6 .cm-line.HyperMD-codeblock.pakcli-codeblock-wrap {
+.markdown-source-view pre.pakcli-codeblock-wrap,
+.markdown-source-view pre.pakcli-codeblock-wrap code,
+.cm-embed-block pre.pakcli-codeblock-wrap,
+.cm-embed-block pre.pakcli-codeblock-wrap code,
+.cm-line.HyperMD-codeblock.pakcli-codeblock-wrap {
     white-space: pre-wrap !important;
     word-break: break-all !important;
     overflow-wrap: anywhere !important;
     word-wrap: break-word !important;
     overflow-x: hidden !important;
     max-width: 100% !important;
-    width: 100% !important;
+    width: auto !important;
+    min-width: 0 !important;
+    contain: none !important;
     box-sizing: border-box !important;
 }
 
 /* Per-block Scalefit */
+body pre.pakcli-codeblock-scalefit,
 body .markdown-rendered pre.pakcli-codeblock-scalefit,
+body .markdown-source-view pre.pakcli-codeblock-scalefit,
+body .cm-embed-block pre.pakcli-codeblock-scalefit,
 body .markdown-source-view.mod-cm6 .cm-line.HyperMD-codeblock.pakcli-codeblock-line-scalefit,
+pre.pakcli-codeblock-scalefit,
 .markdown-rendered pre.pakcli-codeblock-scalefit,
-.markdown-source-view.mod-cm6 .cm-line.HyperMD-codeblock.pakcli-codeblock-line-scalefit {
+.markdown-source-view pre.pakcli-codeblock-scalefit,
+.cm-embed-block pre.pakcli-codeblock-scalefit,
+.cm-line.HyperMD-codeblock.pakcli-codeblock-line-scalefit {
     max-width: 100% !important;
-    width: 100% !important;
+    width: auto !important;
+    min-width: 0 !important;
     overflow-x: auto !important;
     box-sizing: border-box !important;
-    contain: inline-size !important;
+    contain: none !important;
 
     .pakcli-ascii-svg-wrapper {
         width: 100%;
@@ -2909,4 +2986,94 @@ th.tablite-frozen-cell {
     }
   }
 }
+
+/* ─── Codeblock Copy Button & Settings ─── */
+pre.pakcli-codeblock-flowclip,
+pre.pakcli-codeblock-wrap,
+pre.pakcli-codeblock-scalefit {
+  position: relative;
+}
+
+.pakcli-cb-copy-btn {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 5px;
+  background: var(--background-primary);
+  color: var(--text-muted);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s ease, color 0.15s ease, background 0.15s ease;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.15);
+}
+
+pre:hover .pakcli-cb-copy-btn {
+  opacity: 1;
+}
+
+.pakcli-cb-copy-btn:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+  border-color: var(--interactive-accent);
+}
+
+.pakcli-cb-copy-btn svg {
+  width: 14px;
+  height: 14px;
+  display: block;
+  pointer-events: none;
+}
+
+.pakcli-cb-copy-btn--done {
+  color: var(--color-green, #4caf50) !important;
+  background: var(--background-modifier-success, rgba(76,175,80,0.1)) !important;
+  border-color: var(--color-green, #4caf50) !important;
+  opacity: 1 !important;
+}
+
+/* ─── Settings: On Clipboard textarea column ─── */
+.pakcli-cb-clip-td {
+  padding: 4px 6px;
+  vertical-align: top;
+  min-width: 160px;
+  max-width: 260px;
+}
+
+.pakcli-cb-clip-area {
+  width: 100%;
+  min-height: 44px;
+  font-family: var(--font-monospace);
+  font-size: 11px;
+  line-height: 1.4;
+  resize: vertical;
+  background: var(--background-secondary);
+  color: var(--text-normal);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 4px;
+  padding: 4px 6px;
+  box-sizing: border-box;
+}
+
+.pakcli-cb-clip-area:focus {
+  border-color: var(--interactive-accent);
+  outline: none;
+}
+
+.pakcli-cb-clip-area::placeholder {
+  color: var(--text-faint);
+  opacity: 0.7;
+}
+
+.pakcli-cb-ps-select {
+  width: 100%;
+}
+
 

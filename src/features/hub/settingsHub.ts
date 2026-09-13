@@ -94,7 +94,7 @@ export class VaultConfigActionModal extends Modal {
     replaceCard.createDiv({ cls: "pakcli-card-desc", text: "Apply snapshot settings to your active plugin immediately." });
     const replaceBtn = replaceCard.createEl("button", { text: "Replace active", cls: "pakcli-btn-replace" });
     replaceBtn.onclick = async () => {
-      const pluginId = this.plugin.manifest.id as "pakcli-local" | "pakcli-table" | "pakcli-agent";
+      const pluginId = this.plugin.manifest.id as "pakcli-local" | "pakcli-panel" | "pakcli-agent";
       const restored = await loadVaultConfig(this.app, pluginId, this.selectedSnapshot.path);
       if (restored) {
         const pluginWithSettings = this.plugin as PluginWithSettings;
@@ -121,7 +121,7 @@ export class VaultConfigActionModal extends Modal {
     overwriteCard.createDiv({ cls: "pakcli-card-desc", text: "Overwrite this snapshot file with your current active settings." });
     const overwriteBtn = overwriteCard.createEl("button", { text: "Overwrite snapshot", cls: "pakcli-btn-overwrite" });
     overwriteBtn.onclick = async () => {
-      const pluginId = this.plugin.manifest.id as "pakcli-local" | "pakcli-table" | "pakcli-agent";
+      const pluginId = this.plugin.manifest.id as "pakcli-local" | "pakcli-panel" | "pakcli-agent";
       const pluginWithSettings = this.plugin as PluginWithSettings;
       await saveVaultConfig(this.app, pluginId, pluginWithSettings.settings || {});
       new Notice("Overwritten snapshot with current settings.");
@@ -135,7 +135,7 @@ export class VaultConfigActionModal extends Modal {
     duplicateCard.createDiv({ cls: "pakcli-card-desc", text: "Save current active settings as a new separate snapshot copy." });
     const duplicateBtn = duplicateCard.createEl("button", { text: "Duplicate new", cls: "pakcli-btn-duplicate" });
     duplicateBtn.onclick = async () => {
-      const pluginId = this.plugin.manifest.id as "pakcli-local" | "pakcli-table" | "pakcli-agent";
+      const pluginId = this.plugin.manifest.id as "pakcli-local" | "pakcli-panel" | "pakcli-agent";
       const pluginWithSettings = this.plugin as PluginWithSettings;
       await saveVaultConfig(this.app, pluginId, pluginWithSettings.settings || {}, "copy");
       new Notice("Created a new duplicated snapshot in pakcli-vault-config.");
@@ -170,7 +170,7 @@ export class MasterDetailSettingsTab extends PluginSettingTab {
   constructor(app: App, plugin: Plugin) {
     super(app, plugin);
     this.plugin = plugin;
-    this.activeSectionId = plugin.manifest.id === "pakcli-table" ? "table-csv" : (plugin.manifest.id === "pakcli-agent" ? "agent-antigravity" : "local-wizard");
+    this.activeSectionId = plugin.manifest.id === "pakcli-panel" ? "table-csv" : (plugin.manifest.id === "pakcli-agent" ? "agent-antigravity" : "local-wizard");
     const pluginWithSettings = plugin as PluginWithSettings;
     this.recordMemorySnapshot(pluginWithSettings.settings || {});
   }
@@ -327,7 +327,7 @@ export class MasterDetailSettingsTab extends PluginSettingTab {
       });
     }
 
-    const pluginId = this.plugin.manifest.id as "pakcli-local" | "pakcli-table" | "pakcli-agent";
+    const pluginId = this.plugin.manifest.id as "pakcli-local" | "pakcli-panel" | "pakcli-agent";
     const isLocalActive = this.isLocalPresent();
     const snapshots = isLocalActive ? await listVaultSnapshots(this.app, pluginId) : [];
 
@@ -366,7 +366,7 @@ export class MasterDetailSettingsTab extends PluginSettingTab {
       text: "Save config",
       cls: `pakcli-action-btn ${!isLocalActive ? "is-disabled-offline" : ""}`
     });
-    
+
     if (isLocalActive) {
       exportBtn.onclick = () => {
         void (async () => {
@@ -389,7 +389,7 @@ export class MasterDetailSettingsTab extends PluginSettingTab {
     const selectEl = dropdownWrap.createEl("select", {
       cls: `pakcli-snapshot-select dropdown ${!isLocalActive ? "is-disabled-offline" : ""}`
     });
-    
+
     const placeholderOpt = selectEl.createEl("option", {
       text: isLocalActive ? "Restore config ▼" : "Restore config (requires local)",
       value: ""
@@ -418,12 +418,12 @@ export class MasterDetailSettingsTab extends PluginSettingTab {
     // Mobile Toggle Bar
     const activeModObj = ECOSYSTEM_MODULES.find((m) => m.id === this.activeSectionId);
     const activeTitle = activeModObj ? activeModObj.title : "Settings";
-    
+
     const mobileBar = containerEl.createDiv({ cls: "pakcli-mobile-toggle-bar" });
     const mobileTitleEl = mobileBar.createDiv({ cls: "pakcli-mobile-current-title" });
     mobileTitleEl.createSpan({ text: "Current: ", cls: "pakcli-mobile-label" });
     mobileTitleEl.createSpan({ text: activeTitle, cls: "pakcli-mobile-value" });
-    
+
     const mobileToggleBtn = mobileBar.createEl("button", {
       text: this.isMobileSidebarOpen ? "✕ Close Menu" : "☰ Switch Module",
       cls: "pakcli-mobile-toggle-btn"
@@ -438,8 +438,8 @@ export class MasterDetailSettingsTab extends PluginSettingTab {
       }
     };
 
-    const layoutContainer = containerEl.createDiv({ 
-      cls: `pakcli-master-detail-layout ${this.isMobileSidebarOpen ? "mobile-sidebar-open" : ""}` 
+    const layoutContainer = containerEl.createDiv({
+      cls: `pakcli-master-detail-layout ${this.isMobileSidebarOpen ? "mobile-sidebar-open" : ""}`
     });
 
     // 1. LEFT SIDEBAR
@@ -478,7 +478,7 @@ export class MasterDetailSettingsTab extends PluginSettingTab {
     this.renderCategoryGroup(navContainer, "local", "⚙️ LOCAL", "pakcli-local", layoutContainer);
 
     // Group 3: ☐ TABLE
-    this.renderCategoryGroup(navContainer, "table", "☐ TABLE", "pakcli-table", layoutContainer);
+    this.renderCategoryGroup(navContainer, "table", "☐ TABLE", "pakcli-panel", layoutContainer);
   }
 
   private renderCategoryGroup(
@@ -574,7 +574,7 @@ export class MasterDetailSettingsTab extends PluginSettingTab {
 
   private renderContent(contentEl: HTMLElement): void {
     contentEl.empty();
-    
+
     // Quick switch button on mobile
     const quickSwitch = contentEl.createDiv({ cls: "pakcli-mobile-switch-btn" });
     quickSwitch.setText("Switch module");
@@ -871,7 +871,7 @@ export class MasterDetailSettingsTab extends PluginSettingTab {
       .setHeading();
 
     const depsBox = setupSection.createDiv({ cls: "pakcli-deps-box" });
-    
+
     const checkAndRender = async () => {
       depsBox.empty();
       depsBox.createDiv({ cls: "pakcli-deps-loading", text: "Checking system dependencies..." });

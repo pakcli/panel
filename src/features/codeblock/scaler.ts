@@ -1,4 +1,4 @@
-import { MarkdownView } from 'obsidian';
+import { MarkdownView, Notice } from 'obsidian';
 import { EditorView, ViewPlugin, ViewUpdate } from '@codemirror/view';
 import type PakCLIPlugin from '../../main';
 
@@ -6,6 +6,12 @@ export interface CodeblockLanguageRule {
 	id: string;
 	language: string;
 	behavior: 'scalefit' | 'flowclip' | 'wrap';
+	/** Optional script template fired on clipboard copy.
+	 *  Supports two styles:
+	 *   • `.{ <scripts> }`          – dot-block style
+	 *   • `{ <scripts> }invoke()`   – invoke style (auto-executes)
+	 */
+	onClipboard?: string;
 }
 
 /**
@@ -96,10 +102,14 @@ export function renderAsciiSvg(source: string, container: HTMLElement, codeElToH
 export class CodeblockScaler {
 	private isProcessing = false;
 	private debounceTimer: number | null = null;
+	private observer: MutationObserver | null = null;
+	private pendingClipboardTransform: { timestamp: number; lang: string; template: string } | null = null;
 
 	constructor(private plugin: PakCLIPlugin) { }
 
 	init(): void {
+		// 0. Patch navigator.clipboard.writeText as safety net
+		this.patchClipboardWriteText();
 		// 1. Register CodeMirror 6 Live Preview Extension for real-time line tagging
 		try {
 			this.plugin.registerEditorExtension(createCodeblockLivePreviewPlugin(this));
@@ -120,8 +130,137 @@ export class CodeblockScaler {
 			this.plugin.app.workspace.on('active-leaf-change', () => this.scheduleRescale())
 		);
 		this.plugin.registerEvent(
+			this.plugin.app.workspace.on('file-open', () => this.scheduleRescale())
+		);
+		this.plugin.registerEvent(
 			this.plugin.app.workspace.on('css-change', () => this.scheduleRescale())
 		);
+
+		// 4. Initial rescale when workspace layout is fully ready
+		this.plugin.app.workspace.onLayoutReady(() => {
+			console.log('[PakCLI CodeblockScaler] Workspace layout ready, running initial rescaleAll()');
+			this.rescaleAll();
+		});
+
+		// 5. DOM MutationObserver: Catches asynchronously rendered codeblock preview widgets
+		try {
+			this.observer = new MutationObserver((mutations) => {
+				for (const mut of mutations) {
+					for (const node of Array.from(mut.addedNodes)) {
+						if (node.nodeType === Node.ELEMENT_NODE) {
+							const el = node as HTMLElement;
+							if (
+								el.tagName === 'PRE' ||
+								el.querySelector?.('pre') ||
+								el.classList?.contains('HyperMD-codeblock')
+							) {
+								this.processContainer(el);
+							}
+						}
+					}
+				}
+			});
+			this.observer.observe(document.body, { childList: true, subtree: true });
+			console.log('[PakCLI CodeblockScaler] MutationObserver attached to document.body');
+		} catch (err) {
+			console.warn('[PakCLI CodeblockScaler] MutationObserver setup failed:', err);
+		}
+
+		// 6. Expose global debug function on window
+		(window as any).debugPakcli = () => this.debugInspect();
+
+		// 7. Global click interceptor (capture phase) for all codeblock copy buttons (Obsidian native and custom)
+		this.plugin.registerDomEvent(
+			document,
+			'click',
+			(evt: MouseEvent) => {
+				this.handleCodeblockCopyClick(evt);
+			},
+			true // capture phase: intercepts before Obsidian's native listener executes
+		);
+
+		// 8. Global copy event interceptor for highlighted text inside codeblocks
+		this.plugin.registerDomEvent(
+			document,
+			'copy',
+			(evt: ClipboardEvent) => {
+				this.handleCodeblockCopyEvent(evt);
+			},
+			true
+		);
+
+		// 9. Context menu interceptor to pre-arm transform on right-click copy
+		this.plugin.registerDomEvent(
+			document,
+			'contextmenu',
+			(evt: MouseEvent) => {
+				this.handleCodeblockContextMenu(evt);
+			},
+			true
+		);
+	}
+
+	debugInspect(targetEl?: HTMLElement): {
+		codeblocksFound: number;
+		cmLinesFound: number;
+		details: any[];
+	} {
+		const doc = targetEl || document.body;
+		const details: any[] = [];
+
+		const preElements = doc.querySelectorAll('pre');
+		preElements.forEach((pre, i) => {
+			const codeEl = pre.querySelector('code') ?? pre;
+			const detectedLang = this.getLanguageFromElement(pre, codeEl);
+			const resolvedBehavior = this.getBehaviorForElement(pre, codeEl);
+			const computed = window.getComputedStyle(pre);
+			const codeComputed = window.getComputedStyle(codeEl);
+
+			details.push({
+				type: 'pre',
+				index: i,
+				detectedLang,
+				resolvedBehavior,
+				classes: pre.className,
+				preOverflowX: computed.overflowX,
+				preWhiteSpace: computed.whiteSpace,
+				preWordBreak: computed.wordBreak,
+				codeWhiteSpace: codeComputed.whiteSpace
+			});
+		});
+
+		const cmLines = doc.querySelectorAll('.cm-line.HyperMD-codeblock');
+		cmLines.forEach((line, i) => {
+			const computed = window.getComputedStyle(line);
+			details.push({
+				type: 'cm-line',
+				index: i,
+				snippet: line.textContent?.substring(0, 30),
+				classes: line.className,
+				overflowX: computed.overflowX,
+				whiteSpace: computed.whiteSpace,
+				wordBreak: computed.wordBreak
+			});
+		});
+
+		console.group('[PakCLI Codeblock Debug Report]');
+		console.log('Settings:', {
+			defaultWrapMode: this.plugin.settings.codeblockWrapMode,
+			languageRules: this.plugin.settings.codeblockLanguageRules
+		});
+		console.log(`Found ${preElements.length} <pre> blocks and ${cmLines.length} CM6 code lines.`);
+		if (details.length > 0) {
+			console.table(details);
+		} else {
+			console.log('No codeblocks or CM6 code lines found in active container.');
+		}
+		console.groupEnd();
+
+		return {
+			codeblocksFound: preElements.length,
+			cmLinesFound: cmLines.length,
+			details
+		};
 	}
 
 	scheduleRescale(): void {
@@ -130,7 +269,7 @@ export class CodeblockScaler {
 		}
 		this.debounceTimer = window.setTimeout(() => {
 			this.rescaleAll();
-		}, 50);
+		}, 40);
 	}
 
 	rescaleAll(): void {
@@ -147,14 +286,156 @@ export class CodeblockScaler {
 
 			// 2. Process all visible rendered and source views in document (even when settings modal is open)
 			const roots = document.querySelectorAll(
-				'.markdown-rendered, .markdown-source-view.mod-cm6, .workspace-leaf, .popover'
+				'.markdown-rendered, .markdown-source-view, .cm-editor, .workspace-leaf, .popover'
 			);
 			roots.forEach((root) => {
 				this.processContainer(root as HTMLElement);
 			});
 		} finally {
 			this.isProcessing = false;
+			this.dumpDebugInfo();
 		}
+	}
+
+	async dumpDebugInfo(): Promise<void> {
+		try {
+			const activeFile = this.plugin.app.workspace.getActiveFile()?.path;
+			const preList: any[] = [];
+			document.querySelectorAll('pre').forEach((pre, i) => {
+				const codeEl = pre.querySelector('code') ?? pre;
+				const csPre = window.getComputedStyle(pre);
+				const csCode = window.getComputedStyle(codeEl);
+				const csParent = pre.parentElement ? window.getComputedStyle(pre.parentElement) : null;
+				const embed = pre.closest('.cm-embed-block');
+				const csEmbed = embed ? window.getComputedStyle(embed) : null;
+				const rPre = pre.getBoundingClientRect();
+				const rParent = pre.parentElement?.getBoundingClientRect();
+				const rEmbed = embed?.getBoundingClientRect();
+
+				preList.push({
+					index: i,
+					text: (pre.textContent || '').substring(0, 50),
+					detectedLang: this.getLanguageFromElement(pre, codeEl),
+					resolvedBehavior: this.getBehaviorForElement(pre, codeEl),
+					preClasses: pre.className,
+					parentTag: pre.parentElement?.tagName,
+					parentClasses: pre.parentElement?.className,
+					embedClasses: embed?.className,
+					preRect: { w: rPre.width, h: rPre.height, l: rPre.left, r: rPre.right },
+					parentRect: rParent ? { w: rParent.width, h: rParent.height, l: rParent.left, r: rParent.right } : null,
+					embedRect: rEmbed ? { w: rEmbed.width, h: rEmbed.height, l: rEmbed.left, r: rEmbed.right } : null,
+					preMetrics: { scrollWidth: pre.scrollWidth, clientWidth: pre.clientWidth, offsetWidth: pre.offsetWidth },
+					codeMetrics: { scrollWidth: codeEl.scrollWidth, clientWidth: codeEl.clientWidth },
+					preStyles: {
+						display: csPre.display,
+						width: csPre.width,
+						maxWidth: csPre.maxWidth,
+						minWidth: csPre.minWidth,
+						overflowX: csPre.overflowX,
+						overflowY: csPre.overflowY,
+						whiteSpace: csPre.whiteSpace,
+						wordBreak: csPre.wordBreak,
+						contain: (csPre as any).contain,
+						boxSizing: csPre.boxSizing,
+						background: csPre.backgroundColor
+					},
+					codeStyles: {
+						display: csCode.display,
+						width: csCode.width,
+						minWidth: csCode.minWidth,
+						whiteSpace: csCode.whiteSpace,
+						wordBreak: csCode.wordBreak
+					},
+					parentStyles: csParent ? {
+						display: csParent.display,
+						width: csParent.width,
+						maxWidth: csParent.maxWidth,
+						overflow: csParent.overflow,
+						boxSizing: csParent.boxSizing
+					} : null,
+					embedStyles: csEmbed ? {
+						display: csEmbed.display,
+						width: csEmbed.width,
+						maxWidth: csEmbed.maxWidth,
+						overflow: csEmbed.overflow,
+						boxSizing: csEmbed.boxSizing,
+						background: csEmbed.backgroundColor,
+						borderRadius: csEmbed.borderRadius
+					} : null
+				});
+			});
+
+			const cmLineList: any[] = [];
+			document.querySelectorAll('.cm-line.HyperMD-codeblock').forEach((line, i) => {
+				const cs = window.getComputedStyle(line);
+				const r = line.getBoundingClientRect();
+				cmLineList.push({
+					index: i,
+					text: (line.textContent || '').substring(0, 50),
+					classes: line.className,
+					rect: { w: r.width, h: r.height, l: r.left, r: r.right },
+					metrics: { scrollWidth: line.scrollWidth, clientWidth: line.clientWidth },
+					styles: {
+						width: cs.width,
+						maxWidth: cs.maxWidth,
+						overflowX: cs.overflowX,
+						whiteSpace: cs.whiteSpace,
+						wordBreak: cs.wordBreak,
+						contain: (cs as any).contain
+					}
+				});
+			});
+
+			const data = {
+				timestamp: new Date().toISOString(),
+				activeFile,
+				bodyClasses: document.body.className,
+				settings: {
+					defaultWrapMode: this.plugin.settings.codeblockWrapMode,
+					rules: this.plugin.settings.codeblockLanguageRules
+				},
+				preElements: preList,
+				cmLines: cmLineList
+			};
+
+			await this.plugin.app.vault.adapter.write('debug_codeblock.json', JSON.stringify(data, null, 2));
+		} catch (err) {
+			console.warn('[PakCLI Scaler] dumpDebugInfo error:', err);
+		}
+	}
+
+	findMatchingRule(lang: string, rules: CodeblockLanguageRule[]): CodeblockLanguageRule | null {
+		const cleanLang = (lang || '').trim().toLowerCase();
+		if (!cleanLang) return null;
+
+		const aliasGroups = [
+			['powershell', 'ps1', 'pwsh', 'ps'],
+			['javascript', 'js', 'node'],
+			['typescript', 'ts'],
+			['python', 'py'],
+			['bash', 'sh', 'shell', 'zsh'],
+			['markdown', 'md'],
+			['yaml', 'yml'],
+			['ascii', 'asci'],
+		];
+
+		for (const rule of rules) {
+			const ruleLang = (rule.language || '').trim().toLowerCase();
+			if (!ruleLang) continue;
+
+			if (ruleLang === cleanLang) return rule;
+
+			const ruleAliases = ruleLang.split(/[,|\s]+/).map((s) => s.trim().toLowerCase()).filter(Boolean);
+			if (ruleAliases.includes(cleanLang)) return rule;
+
+			for (const group of aliasGroups) {
+				if (group.includes(cleanLang) && (group.includes(ruleLang) || ruleAliases.some((a) => group.includes(a)))) {
+					return rule;
+				}
+			}
+		}
+
+		return null;
 	}
 
 	getBehaviorForLanguage(lang: string): 'scalefit' | 'flowclip' | 'wrap' {
@@ -171,38 +452,44 @@ export class CodeblockScaler {
 			return 'scalefit';
 		}
 
-		// 2. Read through Per-Language Rules first
+		// 2. Read through Per-Language Rules with alias support
 		const rules = settings?.codeblockLanguageRules || [];
-		for (const rule of rules) {
-			const rawRuleLang = (rule.language || '').trim().toLowerCase();
-			if (!rawRuleLang) continue;
-
-			// Support exact match or comma/space-separated aliases (e.g. "ascii, asci" or "py, python")
-			const aliases = rawRuleLang.split(/[,|\s]+/).map(s => s.trim().toLowerCase()).filter(Boolean);
-			if (aliases.includes(cleanLang) || rawRuleLang === cleanLang) {
-				return rule.behavior;
-			}
+		const matched = this.findMatchingRule(cleanLang, rules);
+		if (matched) {
+			console.log(`[PakCLI Scaler] Language "${cleanLang}" matched rule "${matched.language}" -> Behavior: "${matched.behavior}"`);
+			return matched.behavior;
 		}
 
 		// 3. If not configured in Per-Language Rules, strictly fallback to default codeblock wrap mode
+		console.log(`[PakCLI Scaler] Language "${cleanLang}" uncustomized in rules -> Fallback to default: "${defaultBehavior}"`);
 		return defaultBehavior;
 	}
 
 	getLanguageFromElement(preEl: HTMLElement, codeEl: HTMLElement): string {
-		// 1. Check data-language or data-lang attributes
+		// 1. Check data-language or data-lang attributes on pre, code, or any ancestor
 		const dataLang =
 			preEl.getAttribute('data-language') ||
 			preEl.getAttribute('data-lang') ||
 			codeEl.getAttribute('data-language') ||
 			codeEl.getAttribute('data-lang') ||
 			preEl.parentElement?.getAttribute('data-language') ||
-			preEl.parentElement?.getAttribute('data-lang');
+			preEl.parentElement?.getAttribute('data-lang') ||
+			preEl.closest('[data-language]')?.getAttribute('data-language') ||
+			preEl.closest('[data-lang]')?.getAttribute('data-lang');
 		if (dataLang) {
 			return dataLang.trim().toLowerCase();
 		}
 
-		// 2. Check classes on codeEl, preEl, and immediate parentElement
-		const elementsToCheck = [codeEl, preEl, preEl.parentElement].filter(Boolean) as HTMLElement[];
+		// 2. Check classes on codeEl, preEl, parentElement, or closest block container
+		const elementsToCheck = [
+			codeEl,
+			preEl,
+			preEl.parentElement,
+			preEl.closest('[class*="block-language-"]'),
+			preEl.closest('[class*="language-"]'),
+			preEl.closest('.cm-embed-block')
+		].filter(Boolean) as HTMLElement[];
+
 		for (const el of elementsToCheck) {
 			for (const cls of Array.from(el.classList)) {
 				const m = cls.match(/^(?:language|block-language)-([a-zA-Z0-9_-]+)$/i);
@@ -212,22 +499,12 @@ export class CodeblockScaler {
 			}
 		}
 
-		// 3. Check closest container with language class
-		const containerWithLang = preEl.closest('[class*="language-"], [class*="block-language-"]');
-		if (containerWithLang) {
-			for (const cls of Array.from(containerWithLang.classList)) {
-				const m = cls.match(/^(?:language|block-language)-([a-zA-Z0-9_-]+)$/i);
-				if (m) {
-					return m[1].toLowerCase();
-				}
-			}
-		}
-
-		// 4. Check any badge / flair element (e.g. .code-block-flair)
-		const flair = preEl.parentElement?.querySelector('.code-block-flair, .code-block-language, .code-language');
+		// 3. Check any badge / flair / header element inside the block wrapper
+		const wrapper = preEl.closest('.cm-embed-block, .block-language, [class*="block-language"]') || preEl.parentElement;
+		const flair = wrapper?.querySelector('.code-block-flair, .code-block-language, .code-language, .code-block-header span');
 		if (flair && flair.textContent) {
 			const tag = flair.textContent.trim().toLowerCase();
-			if (tag && tag.length < 30) {
+			if (tag && tag.length < 40) {
 				return tag;
 			}
 		}
@@ -241,8 +518,13 @@ export class CodeblockScaler {
 	}
 
 	processContainer(container: HTMLElement): void {
-		// Reading View <pre>
-		const preElements = container.querySelectorAll('pre');
+		// 1. All <pre> elements (Reading View AND Live Preview embed widgets)
+		const preElements: HTMLElement[] = [];
+		if (container.matches && container.matches('pre')) {
+			preElements.push(container);
+		}
+		container.querySelectorAll('pre').forEach((p) => preElements.push(p as HTMLElement));
+
 		preElements.forEach((pre) => {
 			const codeEl = pre.querySelector('code') ?? pre;
 			const behavior = this.getBehaviorForElement(pre, codeEl);
@@ -253,6 +535,28 @@ export class CodeblockScaler {
 
 			if (behavior === 'scalefit') {
 				pre.classList.add('pakcli-codeblock-scalefit');
+				pre.style.setProperty('max-width', '100%', 'important');
+				pre.style.setProperty('width', 'auto', 'important');
+				pre.style.setProperty('min-width', '0', 'important');
+				pre.style.setProperty('overflow-x', 'auto', 'important');
+				pre.style.setProperty('box-sizing', 'border-box', 'important');
+				pre.style.setProperty('contain', 'none', 'important');
+
+				const embedBlock = pre.closest('.cm-embed-block') as HTMLElement | null;
+				if (embedBlock) {
+					embedBlock.style.setProperty('max-width', '100%', 'important');
+					embedBlock.style.setProperty('width', 'auto', 'important');
+					embedBlock.style.setProperty('overflow', 'hidden', 'important');
+					embedBlock.style.setProperty('box-sizing', 'border-box', 'important');
+				}
+				if (pre.parentElement) {
+					pre.parentElement.style.setProperty('max-width', '100%', 'important');
+					pre.parentElement.style.setProperty('width', 'auto', 'important');
+					pre.parentElement.style.setProperty('min-width', '0', 'important');
+					pre.parentElement.style.setProperty('overflow', 'hidden', 'important');
+					pre.parentElement.style.setProperty('box-sizing', 'border-box', 'important');
+				}
+
 				if (!existingSvg) {
 					const text = codeEl.textContent || pre.textContent || '';
 					if (text.trim()) {
@@ -268,18 +572,575 @@ export class CodeblockScaler {
 
 				if (behavior === 'wrap') {
 					pre.classList.add('pakcli-codeblock-wrap');
+					pre.style.setProperty('white-space', 'pre-wrap', 'important');
+					pre.style.setProperty('word-break', 'break-all', 'important');
+					pre.style.setProperty('overflow-wrap', 'anywhere', 'important');
+					pre.style.setProperty('word-wrap', 'break-word', 'important');
+					pre.style.setProperty('overflow-x', 'hidden', 'important');
+					pre.style.setProperty('max-width', '100%', 'important');
+					pre.style.setProperty('width', 'auto', 'important');
+					pre.style.setProperty('min-width', '0', 'important');
+					pre.style.setProperty('box-sizing', 'border-box', 'important');
+					pre.style.setProperty('contain', 'none', 'important');
+
+					const embedBlock = pre.closest('.cm-embed-block') as HTMLElement | null;
+					if (embedBlock) {
+						embedBlock.style.setProperty('max-width', '100%', 'important');
+						embedBlock.style.setProperty('width', 'auto', 'important');
+						embedBlock.style.setProperty('overflow', 'hidden', 'important');
+						embedBlock.style.setProperty('box-sizing', 'border-box', 'important');
+					}
+					if (pre.parentElement) {
+						pre.parentElement.style.setProperty('max-width', '100%', 'important');
+						pre.parentElement.style.setProperty('width', 'auto', 'important');
+						pre.parentElement.style.setProperty('min-width', '0', 'important');
+						pre.parentElement.style.setProperty('box-sizing', 'border-box', 'important');
+					}
+
+					if (codeEl) {
+						codeEl.style.setProperty('white-space', 'pre-wrap', 'important');
+						codeEl.style.setProperty('word-break', 'break-all', 'important');
+						codeEl.style.setProperty('overflow-wrap', 'anywhere', 'important');
+						codeEl.style.setProperty('word-wrap', 'break-word', 'important');
+						codeEl.style.setProperty('display', 'block', 'important');
+						codeEl.style.setProperty('width', 'auto', 'important');
+						codeEl.style.setProperty('max-width', '100%', 'important');
+					}
 				} else {
-					// Flowclip: Individual horizontal scrollbar
+					// Flowclip: Horizontal scrollbar scoped to this codeblock only
 					pre.classList.add('pakcli-codeblock-flowclip');
+					pre.style.setProperty('white-space', 'pre', 'important');
+					pre.style.setProperty('word-break', 'normal', 'important');
+					pre.style.setProperty('word-wrap', 'normal', 'important');
+					pre.style.setProperty('overflow-x', 'auto', 'important');
+					pre.style.setProperty('overflow-y', 'hidden', 'important');
+					pre.style.setProperty('max-width', '100%', 'important');
+					pre.style.setProperty('width', 'auto', 'important');
+					pre.style.setProperty('min-width', '0', 'important');
+					pre.style.setProperty('box-sizing', 'border-box', 'important');
+					pre.style.setProperty('contain', 'none', 'important');
+
+					// Scope the scrollbar to the pre itself — clamp parent containers
+					const embedBlock = pre.closest('.cm-embed-block') as HTMLElement | null;
+					if (embedBlock) {
+						embedBlock.style.setProperty('max-width', '100%', 'important');
+						embedBlock.style.setProperty('width', 'auto', 'important');
+						// Use hidden on parent, auto on pre — so bar stays inside pre
+						embedBlock.style.setProperty('overflow', 'hidden', 'important');
+						embedBlock.style.setProperty('box-sizing', 'border-box', 'important');
+					}
+					if (pre.parentElement && !pre.parentElement.classList.contains('pakcli-cb-wrap')) {
+						pre.parentElement.style.setProperty('max-width', '100%', 'important');
+						pre.parentElement.style.setProperty('width', 'auto', 'important');
+						pre.parentElement.style.setProperty('min-width', '0', 'important');
+						pre.parentElement.style.setProperty('overflow', 'hidden', 'important');
+						pre.parentElement.style.setProperty('box-sizing', 'border-box', 'important');
+					}
+
+					if (codeEl) {
+						codeEl.style.setProperty('white-space', 'pre', 'important');
+						codeEl.style.setProperty('word-break', 'normal', 'important');
+						codeEl.style.setProperty('word-wrap', 'normal', 'important');
+						codeEl.style.setProperty('display', 'inline-block', 'important');
+						codeEl.style.setProperty('min-width', '100%', 'important');
+						codeEl.style.setProperty('width', 'auto', 'important');
+						codeEl.style.setProperty('box-sizing', 'border-box', 'important');
+					}
 				}
 			}
+
+			// Inject clipboard button overlay (once per pre)
+			this.injectClipboardButton(pre, codeEl);
 		});
 
-		// Live Preview CodeMirror lines (.cm-line.HyperMD-codeblock)
+		// 2. Live Preview CodeMirror lines (.cm-line.HyperMD-codeblock)
 		const cmLines = container.querySelectorAll('.cm-line.HyperMD-codeblock');
 		if (cmLines.length > 0) {
 			this.processCmLines(cmLines);
 		}
+	}
+
+	/** Transform codeblock content according to an onClipboard template or preset.
+	 *
+	 *  Supported templates / presets:
+	 *   1. PowerShell Presets:
+	 *      - `invoke` (or `{ }invoke()`): wraps in `{ \n\tscripts\n }invoke()`
+	 *      - `dot` (or `. prefix` or `.{ }`): wraps in `.{ \n\tscripts\n }`
+	 *      - `at` (or `@ prefix` or `@{ }`): wraps in `@{ \n\tscripts\n }`
+	 *   2. Custom Template with placeholder:
+	 *      - `<scripts>`, `scripts`, `<content>`, `content`, `{scripts}`, `{content}`, `$content`
+	 *   3. Custom Block:
+	 *      - `.{ ... }` or `{ ... }invoke()` or `{ ... }`
+	 */
+	transformClipboardContent(content: string, template: string, language: string): string {
+		const raw = (content || '').replace(/\r\n/g, '\n').trimEnd();
+		const t = (template || '').trim();
+		if (!t) return content;
+
+		const indentWith = (str: string, indent: string = '\t') => {
+			return str
+				.split('\n')
+				.map((line) => (line.length > 0 ? indent + line : line))
+				.join('\n');
+		};
+
+		// 1. PowerShell Presets
+		const isInvoke = t === 'invoke' || t === '{}.invoke()' || t === '{}.invoke' || t === '{}.incvoke' || /\{\s*\}\s*\.?\s*in[vc]oke/i.test(t);
+		const isDot = t === 'dot' || t === '.{}' || t === '. prefix' || /^\s*\.\s*\{\s*\}\s*$/i.test(t);
+		const isAt = t === 'at' || t === '@{}' || t === '@ prefix' || /^\s*@\s*\{\s*\}\s*$/i.test(t) || t.includes("'@'");
+
+		if (isInvoke) {
+			return `{\n${indentWith(raw, '\t')}\n}.invoke()`;
+		}
+		if (isDot) {
+			return `.{\n${indentWith(raw, '\t')}\n}`;
+		}
+		if (isAt) {
+			return `@{\n${indentWith(raw, '\t')}\n}`;
+		}
+
+		// 2. Custom template with placeholder keyword
+		const placeholderRegex = /<scripts>|scripts|<content>|content|\{scripts\}|\{content\}|\$content/i;
+		if (placeholderRegex.test(t)) {
+			const lines = t.split('\n');
+			let indent = '\t';
+			for (const line of lines) {
+				const match = line.match(/^([ \t]+)(?:<scripts>|scripts|<content>|content|\{scripts\}|\{content\}|\$content)/i);
+				if (match) {
+					indent = match[1];
+					break;
+				}
+			}
+			const indented = raw
+				.split('\n')
+				.map((l, i) => (i === 0 ? l : (l.length > 0 ? indent + l : l)))
+				.join('\n');
+			return t.replace(placeholderRegex, indented);
+		}
+
+		// 3. Dot-block template without placeholder: .{ ... } or { ... }invoke()
+		const dotBlockMatch = t.match(/^(\s*\.\s*\{)([\s\S]*?)(\}\s*)$/);
+		if (dotBlockMatch) {
+			return `${dotBlockMatch[1]}\n${indentWith(raw, '\t')}\n${dotBlockMatch[3]}`;
+		}
+
+		const invokeBlockMatch = t.match(/^(\s*\{)([\s\S]*?)(\}\s*\.?\s*in[vc]oke\s*(?:\(\s*\))?\s*)$/i);
+		if (invokeBlockMatch) {
+			return `${invokeBlockMatch[1]}\n${indentWith(raw, '\t')}\n}.invoke()`;
+		}
+
+		const genericBraceMatch = t.match(/^([\s\S]*?\{)([\s\S]*?)(\}[\s\S]*)$/);
+		if (genericBraceMatch) {
+			return `${genericBraceMatch[1]}\n${indentWith(raw, '\t')}\n${genericBraceMatch[3]}`;
+		}
+
+		// Fallback: prefix template
+		return `${t}\n${raw}`;
+	}
+
+	private originalClipboardWriteText: ((text: string) => Promise<void>) | null = null;
+
+	formatTemplateNoticeLabel(tpl: string): string {
+		const t = (tpl || '').trim();
+		if (t === 'invoke' || t === '{}.invoke()' || t === '{}.incvoke' || /invoke/i.test(t)) return '{}.invoke()';
+		if (t === 'dot' || t === '.{}' || t.includes('. prefix')) return '.{}';
+		if (t === 'at' || t === '@{}' || t.includes('@ prefix')) return '@{}';
+		return t;
+	}
+
+	/** Patches navigator.clipboard.writeText and Electron clipboard as guaranteed safety net */
+	private patchClipboardWriteText(): void {
+		// 1. Global / Window navigator.clipboard
+		if (typeof navigator !== 'undefined' && navigator.clipboard) {
+			const nav = navigator.clipboard as any;
+			if (!nav.__pakcliPatched) {
+				nav.__pakcliPatched = true;
+				const originalWriteText = nav.writeText.bind(navigator.clipboard);
+				this.originalClipboardWriteText = originalWriteText;
+
+				nav.writeText = async (text: string) => {
+					const pending = this.pendingClipboardTransform;
+					if (pending && (Date.now() - pending.timestamp < 3000)) {
+						console.log(`[PakCLI] Intercepted navigator.clipboard.writeText for "${pending.lang}" (${pending.template})`);
+						this.pendingClipboardTransform = null;
+						const transformed = this.transformClipboardContent(text, pending.template, pending.lang);
+						new Notice(`[PakCLI] Copied with ${pending.lang} (${this.formatTemplateNoticeLabel(pending.template)}) template!`, 2500);
+						return originalWriteText(transformed);
+					}
+					return originalWriteText(text);
+				};
+			}
+		}
+
+		// 2. activeDocument defaultView navigator.clipboard (popout windows / active leaves)
+		try {
+			const activeWin = (activeDocument as any)?.defaultView;
+			if (activeWin?.navigator?.clipboard && !activeWin.navigator.clipboard.__pakcliPatched) {
+				activeWin.navigator.clipboard.__pakcliPatched = true;
+				const origDocWrite = activeWin.navigator.clipboard.writeText.bind(activeWin.navigator.clipboard);
+				activeWin.navigator.clipboard.writeText = async (text: string) => {
+					const pending = this.pendingClipboardTransform;
+					if (pending && (Date.now() - pending.timestamp < 3000)) {
+						console.log(`[PakCLI] Intercepted activeDoc writeText for "${pending.lang}" (${pending.template})`);
+						this.pendingClipboardTransform = null;
+						const transformed = this.transformClipboardContent(text, pending.template, pending.lang);
+						new Notice(`[PakCLI] Copied with ${pending.lang} (${this.formatTemplateNoticeLabel(pending.template)}) template!`, 2500);
+						return origDocWrite(transformed);
+					}
+					return origDocWrite(text);
+				};
+			}
+		} catch (e) {
+			// ignore
+		}
+
+		// 3. Electron clipboard if available in Obsidian desktop
+		try {
+			const electron = (window as any).require?.('electron');
+			if (electron?.clipboard && !electron.clipboard.__pakcliPatched) {
+				electron.clipboard.__pakcliPatched = true;
+				const origElectronWrite = electron.clipboard.writeText.bind(electron.clipboard);
+				electron.clipboard.writeText = (text: string, type?: string) => {
+					const pending = this.pendingClipboardTransform;
+					if (pending && (Date.now() - pending.timestamp < 3000)) {
+						console.log(`[PakCLI] Intercepted electron.clipboard.writeText for "${pending.lang}" (${pending.template})`);
+						this.pendingClipboardTransform = null;
+						const transformed = this.transformClipboardContent(text, pending.template, pending.lang);
+						new Notice(`[PakCLI] Copied with ${pending.lang} (${this.formatTemplateNoticeLabel(pending.template)}) template!`, 2500);
+						return origElectronWrite(transformed, type);
+					}
+					return origElectronWrite(text, type);
+				};
+			}
+		} catch (e) {
+			// ignore
+		}
+	}
+
+	/** Intercepts clicks on Obsidian's built-in .code-block-flair, .copy-code-button, and custom copy buttons */
+	private async handleCodeblockCopyClick(evt: MouseEvent): Promise<void> {
+		const target = evt.target as HTMLElement | null;
+		if (!target) return;
+
+		// Match ANY copy button, flair element, or icon in Live Preview / Reading View
+		const copyBtn = target.closest(
+			'.code-block-flair, .copy-code-button, .pakcli-cb-copy-btn, button[aria-label*="Copy" i], button[aria-label*="copy" i], [aria-label*="Copy" i], [aria-label*="copy" i], [class*="code-block-flair"]'
+		) as HTMLElement | null;
+		if (!copyBtn) return;
+
+		let detectedLang = '';
+		let rawCode = '';
+
+		// ─── A. Language Detection ───
+		// 1. If copyBtn is or contains .code-block-flair (Obsidian Live Preview)
+		const flair = (copyBtn.classList.contains('code-block-flair') ? copyBtn : copyBtn.closest('.code-block-flair')) as HTMLElement | null;
+		if (flair && flair.textContent) {
+			detectedLang = flair.textContent.trim().toLowerCase().split(/\s+/)[0];
+		}
+
+		// 2. From closest pre > code or container (Reading View / Embed block)
+		if (!detectedLang) {
+			const pre = copyBtn.closest('pre') || copyBtn.closest('.cm-embed-block, .cm-preview-code-block')?.querySelector('pre');
+			if (pre) {
+				const codeEl = (pre.querySelector('code') ?? pre) as HTMLElement;
+				detectedLang = this.getLanguageFromElement(pre, codeEl);
+			}
+		}
+
+		// 3. From .cm-line.HyperMD-codeblock-begin
+		if (!detectedLang) {
+			let line = copyBtn.closest('.cm-line') as HTMLElement | null;
+			while (line) {
+				if (line.classList.contains('HyperMD-codeblock-begin')) {
+					const m = (line.textContent || '').match(/`{3,}\s*([a-zA-Z0-9_-]+)/);
+					if (m) {
+						detectedLang = m[1].toLowerCase();
+						break;
+					}
+				}
+				const f = line.querySelector('.code-block-flair');
+				if (f?.textContent?.trim()) {
+					detectedLang = f.textContent.trim().toLowerCase().split(/\s+/)[0];
+					break;
+				}
+				if (!line.classList.contains('HyperMD-codeblock') && !line.querySelector('.HyperMD-codeblock') && !line.className.includes('codeblock')) {
+					break;
+				}
+				line = line.previousElementSibling as HTMLElement | null;
+			}
+		}
+
+		// 4. From container class list (e.g. language-powershell, block-language-powershell)
+		if (!detectedLang) {
+			const block = copyBtn.closest('[class*="language-"], [class*="block-language-"]') as HTMLElement | null;
+			if (block) {
+				for (const cls of Array.from(block.classList)) {
+					const m = cls.match(/^(?:language|block-language)-([a-zA-Z0-9_-]+)$/i);
+					if (m) {
+						detectedLang = m[1].toLowerCase();
+						break;
+					}
+				}
+			}
+		}
+
+		console.log(`[PakCLI Copy Click] detectedLang="${detectedLang}"`);
+
+		const rules = this.plugin?.settings?.codeblockLanguageRules || [];
+		const matchedRule = this.findMatchingRule(detectedLang, rules);
+
+		if (!matchedRule?.onClipboard?.trim()) {
+			this.pendingClipboardTransform = null;
+			return; // Native copy without transform
+		}
+
+		// Arm safety net for writeText: when Obsidian calls writeText(code), it will be intercepted and transformed!
+		this.pendingClipboardTransform = {
+			timestamp: Date.now(),
+			lang: detectedLang,
+			template: matchedRule.onClipboard.trim()
+		};
+		console.log(`[PakCLI Copy Click] Armed transform for "${detectedLang}" (${matchedRule.onClipboard})`);
+
+		// ─── B. Extract rawCode from DOM for 70ms fallback ───
+		let beginLine = copyBtn.closest('.cm-line.HyperMD-codeblock-begin, .HyperMD-codeblock-begin') as HTMLElement | null;
+		if (!beginLine && flair) {
+			beginLine = (flair.closest('.cm-line.HyperMD-codeblock-begin') ||
+				flair.previousElementSibling?.closest('.cm-line.HyperMD-codeblock-begin') ||
+				flair.nextElementSibling?.closest('.cm-line.HyperMD-codeblock-begin') ||
+				flair.parentElement?.querySelector('.cm-line.HyperMD-codeblock-begin')) as HTMLElement | null;
+		}
+
+		if (beginLine) {
+			const codeLines: string[] = [];
+			let nextLine = beginLine.nextElementSibling as HTMLElement | null;
+			while (nextLine) {
+				if (nextLine.classList.contains('HyperMD-codeblock-end') || nextLine.textContent?.trim().startsWith('```')) {
+					break;
+				}
+				const clone = nextLine.cloneNode(true) as HTMLElement;
+				clone.querySelectorAll('.copy-code-button, .pakcli-cb-copy-btn, .code-block-flair, button').forEach(el => el.remove());
+				codeLines.push(clone.textContent ?? '');
+				nextLine = nextLine.nextElementSibling as HTMLElement | null;
+			}
+			rawCode = codeLines.join('\n');
+		}
+
+		if (!rawCode) {
+			const container = copyBtn.closest('pre') || copyBtn.closest('.cm-embed-block') || copyBtn.closest('.block-language, [class*="block-language"]') || copyBtn.parentElement;
+			if (container) {
+				const pre = (container.tagName === 'PRE' ? container : container.querySelector('pre')) as HTMLElement | null;
+				const codeEl = (pre?.querySelector('code') ?? pre ?? container.querySelector('code') ?? container) as HTMLElement;
+				const clone = (codeEl || pre || container).cloneNode(true) as HTMLElement;
+				clone.querySelectorAll('.copy-code-button, .pakcli-cb-copy-btn, .code-block-flair, .code-block-header, button').forEach((el) => el.remove());
+				rawCode = clone.textContent ?? '';
+			}
+		}
+
+		// Visual feedback
+		copyBtn.classList.add('pakcli-cb-copy-btn--done');
+		setTimeout(() => copyBtn.classList.remove('pakcli-cb-copy-btn--done'), 1500);
+
+		// Fallback timer (70ms): If Obsidian's writeText did not fire, write our transformed rawCode directly
+		window.setTimeout(async () => {
+			const pending = this.pendingClipboardTransform;
+			if (pending && rawCode) {
+				console.log('[PakCLI] Fallback writeText triggered from extracted rawCode');
+				this.pendingClipboardTransform = null;
+				const transformed = this.transformClipboardContent(rawCode, pending.template, pending.lang);
+				if (this.originalClipboardWriteText) {
+					await this.originalClipboardWriteText(transformed);
+				} else if (navigator.clipboard?.writeText) {
+					await navigator.clipboard.writeText(transformed);
+				}
+				new Notice(`[PakCLI] Copied with ${pending.lang} (${this.formatTemplateNoticeLabel(pending.template)}) template!`, 2500);
+			}
+		}, 70);
+	}
+
+	/** Pre-arms clipboard transform when user right-clicks on code or inside a codeblock */
+	private handleCodeblockContextMenu(evt: MouseEvent): void {
+		const target = evt.target as HTMLElement | null;
+		if (!target) return;
+
+		let lang = '';
+		const pre = target.closest('pre') || target.closest('.cm-embed-block, .cm-preview-code-block')?.querySelector('pre');
+		if (pre) {
+			const codeEl = (pre.querySelector('code') ?? pre) as HTMLElement;
+			lang = this.getLanguageFromElement(pre, codeEl);
+		}
+
+		if (!lang) {
+			let line = target.closest('.cm-line') as HTMLElement | null;
+			while (line) {
+				if (line.classList.contains('HyperMD-codeblock-begin')) {
+					const m = (line.textContent || '').match(/`{3,}\s*([a-zA-Z0-9_-]+)/);
+					if (m) {
+						lang = m[1].toLowerCase();
+						break;
+					}
+				}
+				const flair = line.querySelector('.code-block-flair');
+				if (flair?.textContent?.trim()) {
+					lang = flair.textContent.trim().toLowerCase().split(/\s+/)[0];
+					break;
+				}
+				if (!line.classList.contains('HyperMD-codeblock') && !line.querySelector('.HyperMD-codeblock') && !line.className.includes('codeblock')) {
+					break;
+				}
+				line = line.previousElementSibling as HTMLElement | null;
+			}
+		}
+
+		if (!lang) return;
+		const rules = this.plugin?.settings?.codeblockLanguageRules || [];
+		const rule = this.findMatchingRule(lang, rules);
+		if (rule?.onClipboard?.trim()) {
+			this.pendingClipboardTransform = {
+				timestamp: Date.now(),
+				lang,
+				template: rule.onClipboard.trim()
+			};
+		}
+	}
+
+	/** Intercepts keyboard Ctrl+C / Cmd+C inside codeblocks when template is configured */
+	private handleCodeblockCopyEvent(evt: ClipboardEvent): void {
+		const sel = window.getSelection();
+		if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return;
+
+		const anchor = (sel.anchorNode?.parentElement || sel.focusNode?.parentElement) as HTMLElement | null;
+		let lang = '';
+
+		// 1. Reading view or embed block: pre code
+		const pre = anchor?.closest('pre') || anchor?.closest('.cm-embed-block, .cm-preview-code-block')?.querySelector('pre');
+		if (pre) {
+			const codeEl = (pre.querySelector('code') ?? pre) as HTMLElement;
+			lang = this.getLanguageFromElement(pre, codeEl);
+		}
+
+		// 2. Live preview: walk backwards from anchor line to HyperMD-codeblock-begin
+		if (!lang) {
+			let line = anchor?.closest('.cm-line') as HTMLElement | null;
+			while (line) {
+				if (line.classList.contains('HyperMD-codeblock-begin')) {
+					const m = (line.textContent || '').match(/`{3,}\s*([a-zA-Z0-9_-]+)/);
+					if (m) {
+						lang = m[1].toLowerCase();
+						break;
+					}
+				}
+				const flair = line.querySelector('.code-block-flair');
+				if (flair?.textContent?.trim()) {
+					lang = flair.textContent.trim().toLowerCase().split(/\s+/)[0];
+					break;
+				}
+				if (!line.classList.contains('HyperMD-codeblock') && !line.querySelector('.HyperMD-codeblock') && !line.className.includes('codeblock')) {
+					break;
+				}
+				line = line.previousElementSibling as HTMLElement | null;
+			}
+		}
+
+		if (!lang) return;
+
+		const rules = this.plugin?.settings?.codeblockLanguageRules || [];
+		const rule = this.findMatchingRule(lang, rules);
+		if (!rule?.onClipboard?.trim()) return;
+
+		const selectedText = sel.toString();
+		if (!selectedText.trim()) return;
+
+		// Arm writeText safety net for Obsidian's editor:copy command
+		this.pendingClipboardTransform = {
+			timestamp: Date.now(),
+			lang: lang,
+			template: rule.onClipboard.trim()
+		};
+
+		const transformed = this.transformClipboardContent(selectedText, rule.onClipboard, lang);
+		if (evt.clipboardData) {
+			evt.clipboardData.setData('text/plain', transformed);
+			evt.preventDefault();
+			new Notice(`[PakCLI] Copied with ${lang} (${this.formatTemplateNoticeLabel(rule.onClipboard)}) template!`, 2000);
+		}
+	}
+
+	/** Injects (or refreshes) a clipboard button on a rendered pre element. */
+	private injectClipboardButton(pre: HTMLElement, codeEl: HTMLElement): void {
+		const lang = this.getLanguageFromElement(pre, codeEl);
+
+		const rules = this.plugin?.settings?.codeblockLanguageRules || [];
+		const matched = this.findMatchingRule(lang, rules);
+		const script = matched?.onClipboard?.trim() || '';
+
+		const COPY_ICON = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>`;
+		const SCRIPT_ICON = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>`;
+
+		// If already injected, just refresh icon/title to match current settings
+		const existing = pre.querySelector('.pakcli-cb-copy-btn') as HTMLButtonElement | null;
+		if (existing) {
+			const hasScript = !!script;
+			existing.innerHTML = hasScript ? SCRIPT_ICON : COPY_ICON;
+			existing.title = hasScript ? `Custom ${lang} clipboard action` : 'Copy code';
+			existing.setAttribute('aria-label', hasScript ? `Copy with ${lang} clipboard template` : 'Copy to clipboard');
+			return;
+		}
+
+		const btn = document.createElement('button');
+		btn.className = 'pakcli-cb-copy-btn';
+
+		const hasScript = !!script;
+		btn.innerHTML = hasScript ? SCRIPT_ICON : COPY_ICON;
+		btn.title = hasScript ? `Custom ${lang} clipboard action` : 'Copy code';
+		btn.setAttribute('aria-label', hasScript ? `Copy with ${lang} clipboard template` : 'Copy to clipboard');
+
+		btn.onclick = async (e) => {
+			e.stopPropagation();
+			const curRules = this.plugin?.settings?.codeblockLanguageRules || [];
+			const curRule = this.findMatchingRule(lang, curRules);
+			const curScript = curRule?.onClipboard?.trim() || '';
+
+			const clone = (codeEl || pre).cloneNode(true) as HTMLElement;
+			clone.querySelectorAll('.copy-code-button, .pakcli-cb-copy-btn, .code-block-flair, .code-block-header, button').forEach((el) => el.remove());
+			const content = clone.textContent ?? '';
+
+			const transformed = curScript ? this.transformClipboardContent(content, curScript, lang) : content;
+
+			const flash = () => {
+				btn.classList.add('pakcli-cb-copy-btn--done');
+				setTimeout(() => btn.classList.remove('pakcli-cb-copy-btn--done'), 1200);
+			};
+
+			try {
+				this.pendingClipboardTransform = null;
+				if (this.originalClipboardWriteText) {
+					await this.originalClipboardWriteText(transformed);
+				} else {
+					await navigator.clipboard.writeText(transformed);
+				}
+				flash();
+				if (curScript) {
+					new Notice(`[PakCLI] Copied with ${lang} (${this.formatTemplateNoticeLabel(curScript)}) template!`, 2000);
+				}
+			} catch {
+				const ta = document.createElement('textarea');
+				ta.value = transformed;
+				ta.style.position = 'fixed';
+				ta.style.opacity = '0';
+				document.body.appendChild(ta);
+				ta.focus();
+				ta.select();
+				document.execCommand('copy');
+				ta.remove();
+				flash();
+			}
+		};
+
+		if (getComputedStyle(pre).position === 'static') {
+			pre.style.position = 'relative';
+		}
+		pre.appendChild(btn);
 	}
 
 	private processCmLines(cmLines: NodeListOf<Element>): void {
@@ -293,12 +1154,38 @@ export class CodeblockScaler {
 
 			currentBlockLines.forEach((line) => {
 				line.classList.remove('pakcli-codeblock-wrap', 'pakcli-codeblock-line-flowclip', 'pakcli-codeblock-line-scalefit');
+				line.style.setProperty('contain', 'none', 'important');
 				if (behavior === 'wrap') {
 					line.classList.add('pakcli-codeblock-wrap');
+					line.style.setProperty('white-space', 'pre-wrap', 'important');
+					line.style.setProperty('word-break', 'break-all', 'important');
+					line.style.setProperty('overflow-wrap', 'anywhere', 'important');
+					line.style.setProperty('word-wrap', 'break-word', 'important');
+					line.style.setProperty('overflow-x', 'hidden', 'important');
+					line.style.setProperty('max-width', '100%', 'important');
+					line.style.setProperty('width', 'auto', 'important');
+					line.style.setProperty('min-width', '0', 'important');
+					line.style.setProperty('box-sizing', 'border-box', 'important');
 				} else if (behavior === 'scalefit') {
 					line.classList.add('pakcli-codeblock-line-scalefit');
+					line.style.setProperty('white-space', 'pre', 'important');
+					line.style.setProperty('font-size', 'min(var(--code-size, 13px), 2.2vw)', 'important');
+					line.style.setProperty('overflow-x', 'auto', 'important');
+					line.style.setProperty('max-width', '100%', 'important');
+					line.style.setProperty('width', 'auto', 'important');
+					line.style.setProperty('min-width', '0', 'important');
+					line.style.setProperty('box-sizing', 'border-box', 'important');
 				} else {
 					line.classList.add('pakcli-codeblock-line-flowclip');
+					line.style.setProperty('white-space', 'pre', 'important');
+					line.style.setProperty('word-break', 'normal', 'important');
+					line.style.setProperty('word-wrap', 'normal', 'important');
+					line.style.setProperty('overflow-x', 'auto', 'important');
+					line.style.setProperty('overflow-y', 'hidden', 'important');
+					line.style.setProperty('max-width', '100%', 'important');
+					line.style.setProperty('width', 'auto', 'important');
+					line.style.setProperty('min-width', '0', 'important');
+					line.style.setProperty('box-sizing', 'border-box', 'important');
 				}
 			});
 
@@ -329,6 +1216,10 @@ export class CodeblockScaler {
 	}
 
 	destroy(): void {
+		if (this.observer) {
+			this.observer.disconnect();
+			this.observer = null;
+		}
 		if (this.debounceTimer !== null) {
 			window.clearTimeout(this.debounceTimer);
 			this.debounceTimer = null;
