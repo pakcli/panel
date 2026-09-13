@@ -1,5 +1,5 @@
 import { Plugin, Notice, Setting, PluginSettingTab, ButtonComponent, TFile, TFolder, TextComponent, setIcon } from 'obsidian';
-import { PakCLITableSettings, DEFAULT_TABLE_SETTINGS } from './settings';
+import { PakCLITableSettings, DEFAULT_TABLE_SETTINGS, DEFAULT_BUBBLE_GRAPH_SETTINGS } from './settings';
 import { handleArtifactRename, moveArtifactsBetweenFolders } from './features/sqlseal/utils/views';
 import { SplitViewManager } from './features/explorer/splitViewManager';
 import { ExplorerSectionId, EXPLORER_SECTIONS_INFO, DEFAULT_EXPLORER_SECTION_ORDER } from './features/explorer/types';
@@ -13,6 +13,7 @@ import { saveVaultConfig, loadVaultConfig } from './features/hub/vaultConfig';
 
 // Tree & Asset Router Imports
 import { AssetRouter } from './features/tree/router';
+import { TitleOverrideOption } from './features/tree/types';
 import { DiagramRenderer } from './features/tree/renderers/DiagramRenderer';
 import { registerCommands as registerTreeCommands } from './features/tree/commands/index';
 import { FolderSuggest } from './features/tree/ui/folder-suggest';
@@ -183,6 +184,30 @@ export default class PakCLITablePlugin extends Plugin {
 			name: 'Open Bubble Graph View (Spec v18)',
 			callback: () => {
 				this.openBubbleGraphView();
+			}
+		});
+
+		this.addCommand({
+			id: 'reset-bubble-graph-settings',
+			name: 'Reset Bubble Graph View Settings to Default',
+			callback: async () => {
+				const leaves = this.app.workspace.getLeavesOfType(BUBBLE_GRAPH_VIEW_TYPE);
+				for (const leaf of leaves) {
+					if (leaf.view instanceof BubbleGraphView) {
+						await leaf.view.resetViewSettings();
+					}
+				}
+				if (leaves.length === 0) {
+					this.settings.bubbleMaxDragDepth = 2;
+					this.settings.bubbleShowLines = true;
+					this.settings.bubbleShowLabels = true;
+					this.settings.bubbleUseCaptainColors = false;
+					this.settings.bubbleLabelRangeLevel = 2;
+					this.settings.bubbleLabelFontSize = 11;
+					this.settings.bubbleInspectorOpen = true;
+					await this.saveSettings();
+					new Notice('Bubble View settings reset to default');
+				}
 			}
 		});
 
@@ -556,7 +581,7 @@ export default class PakCLITablePlugin extends Plugin {
 		);
 
 		this.registerEvent(
-			this.app.workspace.on('folder-menu', (menu, folder) => {
+			(this.app.workspace as any).on('folder-menu', (menu: any, folder: any) => {
 				if (folder instanceof TFolder) {
 					addFolderMenuItems(menu, folder);
 				}
@@ -652,6 +677,32 @@ export default class PakCLITablePlugin extends Plugin {
 							.setCta()
 							.onClick(() => {
 								this.openBubbleGraphView();
+							});
+					});
+
+				// Reset view settings button
+				new Setting(containerEl)
+					.setName('Reset Bubble View Controls')
+					.setDesc('Reset all toolbar controls (drag depth, lines, labels, captain colors, text level, font size) to their defaults.')
+					.addButton((b) => {
+						b.setButtonText('Reset to Defaults')
+							.setWarning()
+							.onClick(async () => {
+								this.settings.bubbleMaxDragDepth = DEFAULT_BUBBLE_GRAPH_SETTINGS.bubbleMaxDragDepth;
+								this.settings.bubbleShowLines = DEFAULT_BUBBLE_GRAPH_SETTINGS.bubbleShowLines;
+								this.settings.bubbleShowLabels = DEFAULT_BUBBLE_GRAPH_SETTINGS.bubbleShowLabels;
+								this.settings.bubbleUseCaptainColors = DEFAULT_BUBBLE_GRAPH_SETTINGS.bubbleUseCaptainColors;
+								this.settings.bubbleLabelRangeLevel = DEFAULT_BUBBLE_GRAPH_SETTINGS.bubbleLabelRangeLevel;
+								this.settings.bubbleLabelFontSize = DEFAULT_BUBBLE_GRAPH_SETTINGS.bubbleLabelFontSize;
+								this.settings.bubbleInspectorOpen = DEFAULT_BUBBLE_GRAPH_SETTINGS.bubbleInspectorOpen;
+								await this.saveSettings();
+								const leaves = this.app.workspace.getLeavesOfType(BUBBLE_GRAPH_VIEW_TYPE);
+								for (const leaf of leaves) {
+									if (leaf.view instanceof BubbleGraphView) {
+										await leaf.view.resetViewSettings();
+									}
+								}
+								new Notice('Bubble View controls reset to default');
 							});
 					});
 
@@ -804,6 +855,25 @@ export default class PakCLITablePlugin extends Plugin {
 							.setDynamicTooltip()
 							.onChange(async (v) => {
 								this.settings.bubbleMaxClusterDepth = v;
+								await this.saveSettings();
+								const leaves = this.app.workspace.getLeavesOfType(BUBBLE_GRAPH_VIEW_TYPE);
+								leaves.forEach((leaf) => {
+									if (leaf.view instanceof BubbleGraphView) {
+										leaf.view.reloadGraphData();
+									}
+								});
+							});
+					});
+
+				new Setting(containerEl)
+					.setName('Dense Bubble Size Scale')
+					.setDesc('Scale multiplier for crowded/dense bubbles (with 4+ notes or hub nodes) to provide comfortable breathing room. Range: 1.0 (no extra padding) to 1.50 (+125% area). Default: 1.15.')
+					.addSlider((s) => {
+						s.setLimits(1.0, 1.5, 0.05)
+							.setValue(this.settings.bubbleDenseScale ?? 1.15)
+							.setDynamicTooltip()
+							.onChange(async (v) => {
+								this.settings.bubbleDenseScale = v;
 								await this.saveSettings();
 								const leaves = this.app.workspace.getLeavesOfType(BUBBLE_GRAPH_VIEW_TYPE);
 								leaves.forEach((leaf) => {

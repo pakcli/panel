@@ -1,3 +1,4 @@
+import { normalizePath } from 'obsidian';
 import { BubbleNode, BubbleEdge, BubbleCluster } from './types';
 import { createSmoothHullPath } from './hullGenerator';
 
@@ -18,6 +19,7 @@ export interface RenderState {
     selectedNode: BubbleNode | null;
     searchQuery: string;
     scopeFilter: string;
+    scopedFolder?: string | null;
     showVennBridges: boolean;
     interLinkGlow: boolean;
     showLines: boolean;
@@ -135,6 +137,15 @@ export class CanvasRenderer {
                 if (!hasVisible) continue;
             }
 
+            const isExactScopedRoot = Boolean(
+                state.scopedFolder && (
+                    cluster.id === state.scopedFolder ||
+                    (cluster as any).folderPath === state.scopedFolder ||
+                    cluster.id === normalizePath(state.scopedFolder) ||
+                    (cluster.depth === 1 && state.scopedFolder)
+                )
+            );
+
             const isHovered = state.hoveredCluster?.id === cluster.id;
             const isDimmed = state.hoveredNode && !cluster.nodeIds.includes(state.hoveredNode.id);
 
@@ -147,7 +158,7 @@ export class CanvasRenderer {
             ctx.beginPath();
             ctx.arc(cluster.centroid.x, cluster.centroid.y, cluster.radius, 0, Math.PI * 2);
 
-            // Fill styling
+            // Fill styling: Always render bubble fill so the entered folder view is still visible
             const baseColor = cluster.color || '#4a5568';
             if (cluster.depth === 1) {
                 // Top-level Parent Bubble
@@ -155,26 +166,31 @@ export class CanvasRenderer {
                 ctx.fillStyle = this.hexToRgba(baseColor, fillAlpha);
                 ctx.fill();
 
-                // Glow contour stroke
-                if (isHovered) {
-                    ctx.shadowColor = baseColor;
-                    ctx.shadowBlur = 16;
-                    ctx.strokeStyle = this.hexToRgba(baseColor, 0.9);
-                    ctx.lineWidth = 2.5;
-                } else {
-                    ctx.strokeStyle = this.hexToRgba(baseColor, 0.35);
-                    ctx.lineWidth = 1.4;
+                // Glow contour stroke: Recolour border to fully transparent if this is the entered folder
+                if (!isExactScopedRoot) {
+                    if (isHovered) {
+                        ctx.shadowColor = baseColor;
+                        ctx.shadowBlur = 16;
+                        ctx.strokeStyle = this.hexToRgba(baseColor, 0.9);
+                        ctx.lineWidth = 2.5;
+                    } else {
+                        ctx.strokeStyle = this.hexToRgba(baseColor, 0.35);
+                        ctx.lineWidth = 1.4;
+                    }
+                    ctx.stroke();
                 }
-                ctx.stroke();
             } else {
                 // Nested Child Bubble (Depth 2 to 5) - Solid continuous stroke
                 const fillAlpha = isHovered ? 0.28 : Math.max(0.04, 0.10 - cluster.depth * 0.015);
                 ctx.fillStyle = this.hexToRgba(baseColor, fillAlpha);
                 ctx.fill();
 
-                ctx.strokeStyle = this.hexToRgba(baseColor, isHovered ? 0.90 : Math.max(0.35, 0.55 - cluster.depth * 0.05));
-                ctx.lineWidth = isHovered ? 1.8 : Math.max(1.0, 1.4 - cluster.depth * 0.1);
-                ctx.stroke();
+                // Recolour border to fully transparent if this is the entered folder
+                if (!isExactScopedRoot) {
+                    ctx.strokeStyle = this.hexToRgba(baseColor, isHovered ? 0.90 : Math.max(0.35, 0.55 - cluster.depth * 0.05));
+                    ctx.lineWidth = isHovered ? 1.8 : Math.max(1.0, 1.4 - cluster.depth * 0.1);
+                    ctx.stroke();
+                }
             }
 
             // Folder Label Tab Badge
@@ -215,7 +231,8 @@ export class CanvasRenderer {
         const tabHeight = 22;
 
         const tabX = cluster.centroid.x - tabWidth / 2;
-        const tabY = box.minY - 12;
+        const topY = (box && isFinite(box.minY) && box.minY !== 0) ? box.minY : (cluster.centroid.y - cluster.radius);
+        const tabY = topY - 12;
 
         ctx.save();
         // Pill background

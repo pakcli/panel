@@ -413,6 +413,24 @@
     }
 }
 
+.pakcli-reset-settings-btn {
+    transition: all 0.15s ease;
+
+    &:hover {
+        color: var(--interactive-accent);
+
+        svg {
+            transform: rotate(-45deg);
+            transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
+    }
+
+    &:active svg {
+        transform: rotate(-180deg);
+        transition: transform 0.15s ease;
+    }
+}
+
 /* 2. Workspace Split (Canvas + Inspector) */
 .pakcli-bubble-workspace {
     display: flex;

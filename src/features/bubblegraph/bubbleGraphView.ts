@@ -1,5 +1,6 @@
-import { ItemView, WorkspaceLeaf, setIcon, TFile, Menu, normalizePath } from 'obsidian';
+import { ItemView, WorkspaceLeaf, setIcon, TFile, Menu, normalizePath, Notice } from 'obsidian';
 import type PakCLITablePlugin from '../../main';
+import { DEFAULT_BUBBLE_GRAPH_SETTINGS } from '../../settings';
 import { BubbleNode, BubbleCluster } from './types';
 import { buildVaultGraph, BuiltGraph, getFolderColor, matchFolderRule } from './graphBuilder';
 import { BubbleSimulation } from './simulation';
@@ -52,6 +53,7 @@ export class BubbleGraphView extends ItemView {
     private statsPillEl!: HTMLElement;
     private scopeBarEl!: HTMLElement;
     private inspectorEl!: HTMLElement;
+    private inspectorBtnEl!: HTMLElement;
     private isInspectorOpen: boolean = true;
     private depthButtons: HTMLElement[] = [];
     private wandBtnEl!: HTMLElement;
@@ -92,11 +94,14 @@ export class BubbleGraphView extends ItemView {
         container.addClass('pakcli-bubble-graph-container');
 
         this.layoutMode = this.plugin.settings.bubbleDefaultLayout || 'bubble';
-        this.maxDragDepth = this.plugin.settings.bubbleMaxDragDepth ?? 2;
+        this.maxDragDepth = this.plugin.settings.bubbleMaxDragDepth ?? DEFAULT_BUBBLE_GRAPH_SETTINGS.bubbleMaxDragDepth;
         this.showLabels = this.plugin.settings.bubbleShowLabels !== false;
         this.showLines = this.plugin.settings.bubbleShowLines !== false;
         this.timelapseMode = this.plugin.settings.bubbleTimelapseMode || 'date';
         this.useCaptainColors = this.plugin.settings.bubbleUseCaptainColors === true;
+        this.labelRangeLevel = this.plugin.settings.bubbleLabelRangeLevel ?? DEFAULT_BUBBLE_GRAPH_SETTINGS.bubbleLabelRangeLevel;
+        this.labelFontSize = this.plugin.settings.bubbleLabelFontSize ?? DEFAULT_BUBBLE_GRAPH_SETTINGS.bubbleLabelFontSize;
+        this.isInspectorOpen = this.plugin.settings.bubbleInspectorOpen !== false;
 
         // 1. Build Header Bar
         this.renderHeader(container);
@@ -183,6 +188,77 @@ export class BubbleGraphView extends ItemView {
         this.scopeToFolder(null);
     }
 
+    public async resetViewSettings(): Promise<void> {
+        // 1. Reset values to DEFAULT_BUBBLE_GRAPH_SETTINGS
+        this.maxDragDepth = DEFAULT_BUBBLE_GRAPH_SETTINGS.bubbleMaxDragDepth;
+        this.showLines = DEFAULT_BUBBLE_GRAPH_SETTINGS.bubbleShowLines;
+        this.showLabels = DEFAULT_BUBBLE_GRAPH_SETTINGS.bubbleShowLabels;
+        this.useCaptainColors = DEFAULT_BUBBLE_GRAPH_SETTINGS.bubbleUseCaptainColors;
+        this.labelRangeLevel = DEFAULT_BUBBLE_GRAPH_SETTINGS.bubbleLabelRangeLevel;
+        this.labelFontSize = DEFAULT_BUBBLE_GRAPH_SETTINGS.bubbleLabelFontSize;
+        this.isInspectorOpen = DEFAULT_BUBBLE_GRAPH_SETTINGS.bubbleInspectorOpen;
+
+        // 2. Persist to plugin settings
+        this.plugin.settings.bubbleMaxDragDepth = this.maxDragDepth;
+        this.plugin.settings.bubbleShowLines = this.showLines;
+        this.plugin.settings.bubbleShowLabels = this.showLabels;
+        this.plugin.settings.bubbleUseCaptainColors = this.useCaptainColors;
+        this.plugin.settings.bubbleLabelRangeLevel = this.labelRangeLevel;
+        this.plugin.settings.bubbleLabelFontSize = this.labelFontSize;
+        this.plugin.settings.bubbleInspectorOpen = this.isInspectorOpen;
+        await this.plugin.saveSettings();
+
+        // 3. Update UI states
+        if (this.linesToggleBtnEl) {
+            this.linesToggleBtnEl.toggleClass('active', this.showLines);
+        }
+        if (this.textToggleBtnEl) {
+            this.textToggleBtnEl.toggleClass('active', this.showLabels);
+        }
+        if (this.captainColorsBtnEl) {
+            this.captainColorsBtnEl.toggleClass('active', this.useCaptainColors);
+        }
+        if (this.depthButtons) {
+            this.depthButtons.forEach(btn => {
+                const text = btn.innerText.trim();
+                const isMatch = text.startsWith(`${this.maxDragDepth}:`) ||
+                    (this.maxDragDepth === 99 && text.includes('Node'));
+                btn.toggleClass('active', isMatch);
+            });
+        }
+        if (this.levelButtons) {
+            this.levelButtons.forEach((btn, idx) => {
+                btn.toggleClass('active', idx === this.labelRangeLevel);
+            });
+        }
+        if (this.fontSizeSliderEl) {
+            this.fontSizeSliderEl.value = this.labelFontSize.toString();
+        }
+        if (this.fontSizeDisplayEl) {
+            this.fontSizeDisplayEl.setText(`${this.labelFontSize}px`);
+        }
+        if (this.inspectorEl) {
+            if (this.isInspectorOpen) {
+                this.inspectorEl.removeClass('collapsed');
+            } else {
+                this.inspectorEl.addClass('collapsed');
+            }
+        }
+        if (this.inspectorBtnEl) {
+            this.inspectorBtnEl.toggleClass('active', this.isInspectorOpen);
+        }
+
+        // 4. Update Simulation & Colors
+        if (this.simulation) {
+            this.simulation.setOptions({ maxDragDepth: this.maxDragDepth });
+            this.simulation.reheat(0.35);
+        }
+        this.applyCaptainFolderColors();
+        this.fitToView();
+
+        new Notice('Bubble View controls reset to default');
+    }
+
     public reloadGraphData(): void {
         const activeFile = this.app.workspace.getActiveFile();
         const captainRules = this.plugin.settings.rules || [];
@@ -214,7 +290,9 @@ export class BubbleGraphView extends ItemView {
             this.graphData.clusters,
             {
                 maxDragDepth: this.maxDragDepth,
-                layoutMode: this.layoutMode
+                layoutMode: this.layoutMode,
+                scopedFolder: this.scopedFolder,
+                denseScale: this.plugin.settings.bubbleDenseScale ?? 1.15
             }
         );
 
@@ -301,11 +379,13 @@ export class BubbleGraphView extends ItemView {
                 text: d.label,
                 cls: `pakcli-depth-btn ${this.maxDragDepth === d.level ? 'active' : ''}`
             });
-            btn.onclick = () => {
+            btn.onclick = async () => {
                 this.maxDragDepth = d.level;
                 this.depthButtons.forEach(b => b.removeClass('active'));
                 btn.addClass('active');
                 this.simulation.setOptions({ maxDragDepth: d.level });
+                this.plugin.settings.bubbleMaxDragDepth = d.level;
+                await this.plugin.saveSettings();
             };
             return btn;
         });
@@ -383,10 +463,12 @@ export class BubbleGraphView extends ItemView {
                 cls: `pakcli-level-btn ${this.labelRangeLevel === l.lvl ? 'active' : ''}`,
                 title: l.title
             });
-            btn.onclick = () => {
+            btn.onclick = async () => {
                 this.labelRangeLevel = l.lvl;
                 this.levelButtons.forEach(b => b.removeClass('active'));
                 btn.addClass('active');
+                this.plugin.settings.bubbleLabelRangeLevel = l.lvl;
+                await this.plugin.saveSettings();
             };
             return btn;
         });
@@ -411,6 +493,12 @@ export class BubbleGraphView extends ItemView {
         this.fontSizeSliderEl.oninput = () => {
             this.labelFontSize = parseInt(this.fontSizeSliderEl.value, 10) || 11;
             this.fontSizeDisplayEl.setText(`${this.labelFontSize}px`);
+        };
+
+        this.fontSizeSliderEl.onchange = async () => {
+            this.labelFontSize = parseInt(this.fontSizeSliderEl.value, 10) || 11;
+            this.plugin.settings.bubbleLabelFontSize = this.labelFontSize;
+            await this.plugin.saveSettings();
         };
 
         // Stats Pill
@@ -449,7 +537,7 @@ export class BubbleGraphView extends ItemView {
             }
         };
 
-        // Reset View Button
+        // Fit to View Button
         const fitBtn = rightGroup.createEl('button', { cls: 'pakcli-icon-btn', title: 'Fit to View' });
         setIcon(fitBtn, 'maximize-2');
         fitBtn.onclick = () => this.fitToView();
@@ -459,16 +547,31 @@ export class BubbleGraphView extends ItemView {
         setIcon(refreshBtn, 'refresh-cw');
         refreshBtn.onclick = () => this.reloadGraphData();
 
+        // Reset View Settings Button
+        const resetSettingsBtn = rightGroup.createEl('button', {
+            cls: 'pakcli-icon-btn pakcli-reset-settings-btn',
+            title: 'Reset View Settings to Default'
+        });
+        setIcon(resetSettingsBtn, 'rotate-ccw');
+        resetSettingsBtn.onclick = () => this.resetViewSettings();
+
         // Inspector Toggle Button
-        const inspectorBtn = rightGroup.createEl('button', { cls: 'pakcli-icon-btn', title: 'Toggle Inspector' });
-        setIcon(inspectorBtn, 'info');
-        inspectorBtn.onclick = () => {
+        this.inspectorBtnEl = rightGroup.createEl('button', {
+            cls: `pakcli-icon-btn ${this.isInspectorOpen ? 'active' : ''}`,
+            title: 'Toggle Inspector'
+        });
+        setIcon(this.inspectorBtnEl, 'info');
+        this.inspectorBtnEl.onclick = async () => {
             this.isInspectorOpen = !this.isInspectorOpen;
             if (this.isInspectorOpen) {
                 this.inspectorEl.removeClass('collapsed');
+                this.inspectorBtnEl.addClass('active');
             } else {
                 this.inspectorEl.addClass('collapsed');
+                this.inspectorBtnEl.removeClass('active');
             }
+            this.plugin.settings.bubbleInspectorOpen = this.isInspectorOpen;
+            await this.plugin.saveSettings();
         };
     }
 
@@ -617,6 +720,9 @@ export class BubbleGraphView extends ItemView {
 
     private renderInspector(parent: HTMLElement): void {
         this.inspectorEl = parent.createDiv({ cls: 'pakcli-bubble-inspector' });
+        if (!this.isInspectorOpen) {
+            this.inspectorEl.addClass('collapsed');
+        }
         this.updateInspectorContent();
     }
 
@@ -961,6 +1067,12 @@ export class BubbleGraphView extends ItemView {
                     .onClick(() => this.reloadGraphData());
             });
 
+            menu.addItem((item) => {
+                item.setTitle('Reset View Settings to Default')
+                    .setIcon('rotate-ccw')
+                    .onClick(() => this.resetViewSettings());
+            });
+
             menu.showAtMouseEvent(e);
         });
     }
@@ -1041,6 +1153,7 @@ export class BubbleGraphView extends ItemView {
                     selectedNode: this.selectedNode,
                     searchQuery: this.searchQuery,
                     scopeFilter: this.scopeFilter,
+                    scopedFolder: this.scopedFolder,
                     showVennBridges: this.plugin.settings.bubbleShowVennBridges !== false,
                     interLinkGlow: this.plugin.settings.bubbleInterLinkGlow !== false,
                     showLines: this.showLines,
@@ -1120,6 +1233,12 @@ export class BubbleGraphView extends ItemView {
 
         for (const cluster of sorted) {
             if (cluster.radius <= 0) continue;
+            if (this.scopedFolder && (
+                cluster.id === this.scopedFolder ||
+                (cluster as any).folderPath === this.scopedFolder ||
+                cluster.id === normalizePath(this.scopedFolder) ||
+                (this.scopedFolder && cluster.depth === 1)
+            )) continue;
 
             if (visibleSet || cutoff) {
                 const hasVisible = cluster.nodeIds.some(id => {
@@ -1158,7 +1277,10 @@ export class BubbleGraphView extends ItemView {
     }
 
     private fitToView(): void {
-        if (!this.graphData || this.graphData.nodes.length === 0) return;
+        if (!this.graphData || this.graphData.nodes.length === 0) {
+            this.transform = { panX: 0, panY: 0, zoom: 1 };
+            return;
+        }
 
         let minX = Infinity;
         let minY = Infinity;
@@ -1172,7 +1294,7 @@ export class BubbleGraphView extends ItemView {
             maxY = Math.max(maxY, node.y);
         }
 
-        if (this.currentSettings.layoutMode === 'bubble') {
+        if (this.layoutMode === 'bubble') {
             for (const c of this.graphData.clusters) {
                 if (c.radius > 0) {
                     minX = Math.min(minX, c.centroid.x - c.radius);
@@ -1183,10 +1305,17 @@ export class BubbleGraphView extends ItemView {
             }
         }
 
+        if (!isFinite(minX) || !isFinite(maxX) || !isFinite(minY) || !isFinite(maxY)) {
+            this.transform = { panX: 0, panY: 0, zoom: 1 };
+            return;
+        }
+
         const width = Math.max(80, maxX - minX + 60);
         const height = Math.max(80, maxY - minY + 60);
-        const scaleX = this.canvasEl.width / width;
-        const scaleY = this.canvasEl.height / height;
+        const canvasW = this.canvasEl.width > 0 ? this.canvasEl.width : 800;
+        const canvasH = this.canvasEl.height > 0 ? this.canvasEl.height : 600;
+        const scaleX = canvasW / width;
+        const scaleY = canvasH / height;
         const newZoom = Math.min(2.5, Math.max(0.3, Math.min(scaleX, scaleY)));
 
         this.transform.zoom = newZoom;

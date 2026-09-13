@@ -52,6 +52,8 @@ export interface BubbleCluster {
     smoothedHull: Array<{ x: number; y: number }>;
     boundingBox: { minX: number; minY: number; maxX: number; maxY: number };
     isHovered?: boolean;
+    isDense?: boolean;
+    baseRadius?: number;
 }
 
 export interface InspectorData {

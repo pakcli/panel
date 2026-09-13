@@ -26,6 +26,10 @@ export interface BubbleGraphSettings {
     bubbleUseCaptainColors: boolean;
     bubbleMaxClusterDepth: number;
     bubbleShowBreadcrumbs: boolean;
+    bubbleDenseScale: number;
+    bubbleLabelRangeLevel: number;
+    bubbleLabelFontSize: number;
+    bubbleInspectorOpen: boolean;
 }
 
 export interface PakCLITableSettings extends 
@@ -91,6 +95,10 @@ export const DEFAULT_BUBBLE_GRAPH_SETTINGS: BubbleGraphSettings = {
     bubbleUseCaptainColors: false,
     bubbleMaxClusterDepth: 3,
     bubbleShowBreadcrumbs: true,
+    bubbleDenseScale: 1.15,
+    bubbleLabelRangeLevel: 2,
+    bubbleLabelFontSize: 11,
+    bubbleInspectorOpen: true,
 };
 
 export const DEFAULT_TABLE_SETTINGS: PakCLITableSettings = {
