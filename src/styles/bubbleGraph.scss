@@ -263,13 +263,18 @@
     color: var(--text-muted);
 }
 
-.pakcli-level-buttons {
-    display: inline-flex;
-    align-items: center;
-    background: transparent;
-    border: none;
-    padding: 0;
-    gap: 3px;
+.pakcli-level-slider {
+    width: 55px;
+    cursor: pointer;
+}
+
+.pakcli-level-display {
+    font-size: 10px;
+    font-weight: 600;
+    font-family: var(--font-monospace);
+    color: var(--text-accent);
+    min-width: 14px;
+    text-align: center;
 }
 
 .pakcli-size-group {
@@ -427,7 +432,6 @@
     /* All toggle and segmented selection buttons */
     button.pakcli-tab-btn,
     button.pakcli-depth-btn,
-    button.pakcli-level-btn,
     button.pakcli-lines-toggle-btn,
     button.pakcli-text-toggle-btn,
     button.pakcli-captain-colors-btn,
@@ -499,13 +503,6 @@
     button.pakcli-depth-btn {
         font-size: 10px !important;
         padding: 3px 8px !important;
-        height: 25px !important;
-    }
-
-    button.pakcli-level-btn {
-        font-size: 11px !important;
-        padding: 2px 7px !important;
-        min-width: 23px !important;
         height: 25px !important;
     }
 

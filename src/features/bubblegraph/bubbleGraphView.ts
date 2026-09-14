@@ -271,12 +271,20 @@ export class BubbleGraphView extends ItemView {
                 btn.setAttribute('aria-pressed', isMatch ? 'true' : 'false');
             });
         }
-        if (this.levelButtons) {
-            this.levelButtons.forEach((btn, idx) => {
-                const isMatch = idx === this.labelRangeLevel;
-                btn.toggleClass('active', isMatch);
-                btn.setAttribute('aria-pressed', isMatch ? 'true' : 'false');
-            });
+        if (this.levelSliderEl) {
+            this.levelSliderEl.value = this.labelRangeLevel.toString();
+            const levelDescriptions = [
+                'Level 0: No labels (hover / select only)',
+                'Level 1: Hubs & active notes only',
+                'Level 2: Hubs & documents (2+ links)',
+                'Level 3: All notes including leaves'
+            ];
+            const desc = levelDescriptions[this.labelRangeLevel] || `Level ${this.labelRangeLevel}`;
+            this.levelSliderEl.title = desc;
+            if (this.levelDisplayEl) {
+                this.levelDisplayEl.setText(this.labelRangeLevel.toString());
+                this.levelDisplayEl.title = desc;
+            }
         }
         if (this.fontSizeSliderEl) {
             this.fontSizeSliderEl.value = this.labelFontSize.toString();
@@ -593,38 +601,48 @@ export class BubbleGraphView extends ItemView {
             }
         };
 
-        // 6. Show Text Range Level 0-3
+        // 6. Show Text Range Level 0-3 Slider
         const levelGroup = textGroup.createDiv({ cls: 'pakcli-level-group' });
         levelGroup.createSpan({ text: 'Text Level:', cls: 'pakcli-level-label' });
-        const levelWrap = levelGroup.createDiv({ cls: 'pakcli-level-buttons' });
+        this.levelSliderEl = levelGroup.createEl('input', {
+            type: 'range',
+            cls: 'pakcli-level-slider'
+        });
+        this.levelSliderEl.min = '0';
+        this.levelSliderEl.max = '3';
+        this.levelSliderEl.step = '1';
+        this.levelSliderEl.value = this.labelRangeLevel.toString();
 
-        const levels = [
-            { lvl: 0, label: '0', title: 'Level 0: No labels (hover / select only)' },
-            { lvl: 1, label: '1', title: 'Level 1: Hubs & active notes only' },
-            { lvl: 2, label: '2', title: 'Level 2: Hubs & documents (2+ links)' },
-            { lvl: 3, label: '3', title: 'Level 3: All notes including leaves' }
+        const levelDescriptions = [
+            'Level 0: No labels (hover / select only)',
+            'Level 1: Hubs & active notes only',
+            'Level 2: Hubs & documents (2+ links)',
+            'Level 3: All notes including leaves'
         ];
 
-        this.levelButtons = levels.map(l => {
-            const isMatch = this.labelRangeLevel === l.lvl;
-            const btn = levelWrap.createEl('button', {
-                text: l.label,
-                cls: `pakcli-level-btn ${isMatch ? 'active' : ''}`,
-                title: l.title
-            });
-            btn.setAttribute('aria-pressed', isMatch ? 'true' : 'false');
-            btn.onclick = async () => {
-                this.labelRangeLevel = l.lvl;
-                this.levelButtons.forEach((b, idx) => {
-                    const active = idx === l.lvl;
-                    b.toggleClass('active', active);
-                    b.setAttribute('aria-pressed', active ? 'true' : 'false');
-                });
-                this.plugin.settings.bubbleLabelRangeLevel = l.lvl;
-                await this.plugin.saveSettings();
-            };
-            return btn;
+        this.levelSliderEl.title = levelDescriptions[this.labelRangeLevel] || `Level ${this.labelRangeLevel}`;
+
+        this.levelDisplayEl = levelGroup.createSpan({
+            text: this.labelRangeLevel.toString(),
+            cls: 'pakcli-level-display'
         });
+        this.levelDisplayEl.title = levelDescriptions[this.labelRangeLevel] || `Level ${this.labelRangeLevel}`;
+
+        this.levelSliderEl.oninput = () => {
+            const val = parseInt(this.levelSliderEl.value, 10) || 0;
+            this.labelRangeLevel = val;
+            this.levelDisplayEl.setText(val.toString());
+            const desc = levelDescriptions[val] || `Level ${val}`;
+            this.levelSliderEl.title = desc;
+            this.levelDisplayEl.title = desc;
+        };
+
+        this.levelSliderEl.onchange = async () => {
+            const val = parseInt(this.levelSliderEl.value, 10) || 0;
+            this.labelRangeLevel = val;
+            this.plugin.settings.bubbleLabelRangeLevel = val;
+            await this.plugin.saveSettings();
+        };
 
         // 3. Text Size Slider
         const sizeGroup = textGroup.createDiv({ cls: 'pakcli-size-group' });
@@ -1556,6 +1574,25 @@ export class BubbleGraphView extends ItemView {
     public setSfxThreshold(thresh: number): void {
         if (this.simulation) {
             this.simulation.setOptions({ sfxThreshold: thresh });
+        }
+    }
+
+    public setTextLevel(level: number): void {
+        this.labelRangeLevel = level;
+        if (this.levelSliderEl) {
+            this.levelSliderEl.value = level.toString();
+            const levelDescriptions = [
+                'Level 0: No labels (hover / select only)',
+                'Level 1: Hubs & active notes only',
+                'Level 2: Hubs & documents (2+ links)',
+                'Level 3: All notes including leaves'
+            ];
+            const desc = levelDescriptions[level] || `Level ${level}`;
+            this.levelSliderEl.title = desc;
+            if (this.levelDisplayEl) {
+                this.levelDisplayEl.setText(level.toString());
+                this.levelDisplayEl.title = desc;
+            }
         }
     }
 }
