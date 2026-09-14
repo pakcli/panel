@@ -7,7 +7,8 @@
 $ErrorActionPreference = "Continue"
 Set-Location -Path $PSScriptRoot
 
-$ConfigFile = ".publish-config.json"
+$ScriptBaseName = if ($MyInvocation.MyCommand.BaseName) { $MyInvocation.MyCommand.BaseName } else { "ps_publish" }
+$ConfigFile = Join-Path $PSScriptRoot "$ScriptBaseName.json"
 
 function Write-Header {
     Clear-Host
@@ -35,11 +36,17 @@ function Write-Err([string]$msg) {
 
 # 1. Load / Save Config Helper
 function Get-PublishConfig {
-    if (Test-Path $ConfigFile) {
-        try {
-            return Get-Content $ConfigFile -Raw | ConvertFrom-Json
-        } catch {
-            return $null
+    $candidates = @(
+        $ConfigFile,
+        (Join-Path $PSScriptRoot ".publish-config.json")
+    )
+    foreach ($path in $candidates) {
+        if (Test-Path $path) {
+            try {
+                return Get-Content $path -Raw | ConvertFrom-Json
+            } catch {
+                # continue
+            }
         }
     }
     return $null
@@ -57,7 +64,7 @@ function Save-PublishConfig([hashtable]$updates) {
         $existing[$k] = $updates[$k]
     }
     $existing["lastUpdated"] = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
-    $existing | ConvertTo-Json -Depth 5 | Set-Content $ConfigFile
+    $existing | ConvertTo-Json -Depth 5 | Set-Content -Path $ConfigFile -Encoding utf8
 }
 
 # 2. Extract Plugin Info Modularly from manifest.json & git remote
@@ -87,7 +94,34 @@ function Get-PluginInfo {
     }
 }
 
-# 3. Main Interactive Menu
+# 3. Resolve destination to plugin directory using plugin ID
+function Resolve-PluginDestination([string]$inputPath, [string]$pluginId) {
+    if ([string]::IsNullOrWhiteSpace($inputPath) -or $inputPath.StartsWith("<Enter")) {
+        return $inputPath
+    }
+    $clean = $inputPath.Trim().TrimEnd('\', '/')
+    # If path contains .obsidian/plugins (with or without a plugin subfolder)
+    if ($clean -match '^(?i)(.*[\\/]\.obsidian[\\/]plugins)(?:[\\/].*)?$') {
+        return [System.IO.Path]::Combine($matches[1], $pluginId).Replace('/', '\')
+    }
+    # If path ends in .obsidian
+    if ($clean -match '^(?i)(.*[\\/]\.obsidian)$') {
+        return [System.IO.Path]::Combine($matches[1], "plugins", $pluginId).Replace('/', '\')
+    }
+    # If path is an Obsidian vault folder containing .obsidian
+    $dotObsidian = Join-Path $clean ".obsidian"
+    if (Test-Path $dotObsidian) {
+        $pluginsRoot = Join-Path $dotObsidian "plugins"
+        return [System.IO.Path]::Combine($pluginsRoot, $pluginId).Replace('/', '\')
+    }
+    # If path matches any .../plugins/... or .../plugins directory
+    if ($clean -match '^(?i)(.*[\\/]plugins)(?:[\\/][^\\/]+)?$') {
+        return [System.IO.Path]::Combine($matches[1], $pluginId).Replace('/', '\')
+    }
+    return $clean
+}
+
+# 4. Main Interactive Menu
 function Show-Menu {
     $info = Get-PluginInfo
 
@@ -289,7 +323,8 @@ function Invoke-BuildOnly($info) {
     # Ask for copy to vault
     Write-Host ""
     $config = Get-PublishConfig
-    $savedDir = if ($config -and $config.latestCopyDir) { $config.latestCopyDir } else { "" }
+    $rawSaved = if ($config -and $config.latestCopyDir) { [string]$config.latestCopyDir } else { "" }
+    $savedDir = Resolve-PluginDestination $rawSaved $info.Id
     if ([string]::IsNullOrWhiteSpace($savedDir)) {
         $savedDir = "<Enter path to Vault/.obsidian/plugins/$($info.Id)>"
     }
@@ -301,6 +336,8 @@ function Invoke-BuildOnly($info) {
         
         if ([string]::IsNullOrWhiteSpace($targetPath)) {
             $targetPath = $savedDir
+        } else {
+            $targetPath = Resolve-PluginDestination $targetPath $info.Id
         }
 
         if ([string]::IsNullOrWhiteSpace($targetPath) -or $targetPath.StartsWith("<Enter")) {
@@ -320,11 +357,14 @@ function Invoke-BuildOnly($info) {
             Copy-Item "styles.css" -Destination $targetPath -Force
         }
 
+        # Sync .vaultpath for automatic esbuild deployment
+        Set-Content -Path ".vaultpath" -Value $targetPath -Encoding utf8
+
         # Save to config JSON
         Save-PublishConfig @{ latestCopyDir = $targetPath }
 
         Write-Success "Successfully copied plugin files to: $targetPath"
-        Write-Host "Saved destination and choices to .publish-config.json for instant 1-click execution." -ForegroundColor DarkGray
+        Write-Host "Saved destination and choices to $ScriptBaseName.json and .vaultpath for instant 1-click execution." -ForegroundColor DarkGray
     }
 }
 

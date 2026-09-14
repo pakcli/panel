@@ -1,6 +1,7 @@
 import { normalizePath } from 'obsidian';
 import { BubbleNode, BubbleEdge, BubbleCluster } from './types';
 import { createSmoothHullPath } from './hullGenerator';
+import { getNodeEffectiveTime } from './graphBuilder';
 
 export interface ViewportTransform {
     panX: number;
@@ -24,7 +25,9 @@ export interface RenderState {
     interLinkGlow: boolean;
     showLines: boolean;
     showLabels: boolean;
-    labelRangeLevel: number; // 0 = none, 1 = hubs, 2 = hubs+docs, 3 = all
+    labelRangeLevel?: number; // legacy single level fallback
+    labelMinLevel?: number; // 1 = Hubs/Active, 2 = Docs, 3 = Leaves, 4 = Orphans
+    labelMaxLevel?: number; // 1 to 4
     labelFontSize: number; // 8 to 24px
     hullOpacity: number;
     intraLinkOpacity: number;
@@ -42,7 +45,7 @@ export class CanvasRenderer {
             return state.timelapseVisibleNodeIds.has(node.id);
         }
         if (state.timelapseCtimeCutoff) {
-            return node.ctime <= state.timelapseCtimeCutoff;
+            return getNodeEffectiveTime(node) <= state.timelapseCtimeCutoff;
         }
         return true;
     }
@@ -389,35 +392,26 @@ export class CanvasRenderer {
                 ctx.globalAlpha = 0.12;
             }
 
-            // Draw Node Glyphs according to Spec v18
-            switch (node.glyph) {
-                case 'active':
-                    this.drawActiveNodeGlyph(node);
-                    break;
-                case 'hub':
-                    this.drawHubNodeGlyph(node, isHovered, isSelected);
-                    break;
-                case 'leaf':
-                    this.drawLeafNodeGlyph(node, isHovered);
-                    break;
-                case 'document':
-                default:
-                    this.drawStandardDocumentGlyph(node, isHovered, isSelected);
-                    break;
+            // Draw Node Glyphs
+            this.drawNodeGlyph(node, isHovered, isSelected);
+
+            // Draw Labels (Dual Handle Range Level 1-4 + Font Size Slider)
+            let isLevelAllowed = false;
+            const minLevel = state.labelMinLevel ?? 1;
+            const maxLevel = state.labelMaxLevel ?? (state.labelRangeLevel ?? 2);
+
+            let nodeLevel = 4;
+            if (node.isActive || node.glyph === 'hub' || node.glyph === 'plus' || node.totalDegree >= 4) {
+                nodeLevel = 1;
+            } else if (node.glyph === 'i' || node.glyph === 'document' || node.totalDegree >= 2) {
+                nodeLevel = 2;
+            } else if (node.glyph === 'minus' || node.glyph === 'dot' || node.totalDegree === 1) {
+                nodeLevel = 3;
+            } else {
+                nodeLevel = 4;
             }
 
-            // Draw Labels (Level 0-3 Range + Font Size Slider)
-            let isLevelAllowed = false;
-            const level = state.labelRangeLevel ?? 2;
-            if (level === 0) {
-                isLevelAllowed = false; // 0 = None
-            } else if (level === 1) {
-                isLevelAllowed = node.glyph === 'hub' || node.glyph === 'active';
-            } else if (level === 2) {
-                isLevelAllowed = node.glyph === 'hub' || node.glyph === 'active' || node.totalDegree >= 2 || (zoom > 1.2 && node.totalDegree >= 1);
-            } else {
-                isLevelAllowed = true; // 3 = All
-            }
+            isLevelAllowed = nodeLevel >= minLevel && nodeLevel <= maxLevel;
 
             const shouldShowLabel = state.showLabels && (
                 isHovered ||
@@ -433,95 +427,132 @@ export class CanvasRenderer {
         }
     }
 
-    // Spec v18: ((•)) Active Node (Fixed r=8px + animated radial pulse aura)
-    private drawActiveNodeGlyph(node: BubbleNode): void {
+    private drawNodeGlyph(node: BubbleNode, isHovered: boolean, isSelected: boolean): void {
         const ctx = this.ctx;
 
-        // Animated radial pulse aura
-        const pulse = (this.animationTime % 1500) / 1500;
-        const currentWaveR = node.radius + pulse * 14;
-        const waveAlpha = (1 - pulse) * 0.7;
+        // 1. Active Node Pulse Aura
+        if (node.isActive) {
+            const pulse = (this.animationTime % 1500) / 1500;
+            const currentWaveR = node.radius + pulse * 14;
+            const waveAlpha = (1 - pulse) * 0.7;
 
-        ctx.beginPath();
-        ctx.arc(node.x, node.y, currentWaveR, 0, Math.PI * 2);
-        ctx.strokeStyle = `rgba(0, 242, 255, ${waveAlpha})`;
-        ctx.lineWidth = 2;
-        ctx.stroke();
+            ctx.beginPath();
+            ctx.arc(node.x, node.y, currentWaveR, 0, Math.PI * 2);
+            ctx.strokeStyle = `rgba(0, 242, 255, ${waveAlpha})`;
+            ctx.lineWidth = 2;
+            ctx.stroke();
+        }
 
-        // Core Glowing Node
-        ctx.beginPath();
-        ctx.arc(node.x, node.y, node.radius, 0, Math.PI * 2);
-        ctx.fillStyle = '#00f2ff';
-        ctx.shadowColor = '#00f2ff';
-        ctx.shadowBlur = 16;
-        ctx.fill();
-
-        // Inner Dot
-        ctx.beginPath();
-        ctx.arc(node.x, node.y, 3, 0, Math.PI * 2);
-        ctx.fillStyle = '#ffffff';
-        ctx.fill();
-    }
-
-    // Spec v18: ( + ) Folder Hub / Index (r = 6 + sqrt(deg_in + deg_out))
-    private drawHubNodeGlyph(node: BubbleNode, isHovered: boolean, isSelected: boolean): void {
-        const ctx = this.ctx;
-
+        // 2. Base Node Circle Body
         ctx.beginPath();
         ctx.arc(node.x, node.y, node.radius, 0, Math.PI * 2);
-        ctx.fillStyle = node.color;
-        if (isHovered || isSelected) {
-            ctx.shadowColor = node.color;
-            ctx.shadowBlur = 14;
+        const nodeColor = node.isActive ? '#00f2ff' : (node.color || '#4a5568');
+        ctx.fillStyle = nodeColor;
+        if (node.isActive) {
+            ctx.shadowColor = '#00f2ff';
+            ctx.shadowBlur = 16;
+        } else if (isHovered || isSelected) {
+            ctx.shadowColor = nodeColor;
+            ctx.shadowBlur = 12;
         }
         ctx.fill();
 
-        ctx.strokeStyle = '#ffffff';
-        ctx.lineWidth = 1.8;
-        ctx.stroke();
-
-        // Center '+' glyph
-        const crossSize = Math.max(3, node.radius * 0.45);
-        ctx.beginPath();
-        ctx.moveTo(node.x - crossSize, node.y);
-        ctx.lineTo(node.x + crossSize, node.y);
-        ctx.moveTo(node.x, node.y - crossSize);
-        ctx.lineTo(node.x, node.y + crossSize);
-        ctx.strokeStyle = '#ffffff';
-        ctx.lineWidth = 2;
-        ctx.stroke();
-    }
-
-    // Spec v18: ( • ) Standard Document (r = 3 + sqrt(deg_total))
-    private drawStandardDocumentGlyph(node: BubbleNode, isHovered: boolean, isSelected: boolean): void {
-        const ctx = this.ctx;
-
-        ctx.beginPath();
-        ctx.arc(node.x, node.y, node.radius, 0, Math.PI * 2);
-        ctx.fillStyle = node.color;
-        if (isHovered || isSelected) {
-            ctx.shadowColor = node.color;
-            ctx.shadowBlur = 10;
+        if (isHovered || isSelected || node.totalDegree >= 2) {
+            ctx.strokeStyle = '#ffffff';
+            ctx.lineWidth = isHovered || isSelected ? 2.0 : 1.2;
+            ctx.stroke();
         }
-        ctx.fill();
 
-        // Center dot
+        // 3. Center Glyph Symbol Interior
+        const glyph = node.glyph;
+
+        if (glyph === 'no-dot') {
+            // Clean circle with no interior dot
+            return;
+        }
+
+        if (glyph === 'plus' || glyph === 'hub') {
+            // '+' Cross
+            const crossSize = Math.max(2.5, Math.min(5.5, node.radius * 0.45));
+            ctx.beginPath();
+            ctx.moveTo(node.x - crossSize, node.y);
+            ctx.lineTo(node.x + crossSize, node.y);
+            ctx.moveTo(node.x, node.y - crossSize);
+            ctx.lineTo(node.x, node.y + crossSize);
+            ctx.strokeStyle = '#ffffff';
+            ctx.lineWidth = 1.8;
+            ctx.stroke();
+            return;
+        }
+
+        if (glyph === 'minus') {
+            // '-' Horizontal Bar
+            const barSize = Math.max(2.5, Math.min(5.5, node.radius * 0.45));
+            ctx.beginPath();
+            ctx.moveTo(node.x - barSize, node.y);
+            ctx.lineTo(node.x + barSize, node.y);
+            ctx.strokeStyle = '#ffffff';
+            ctx.lineWidth = 1.8;
+            ctx.stroke();
+            return;
+        }
+
+        if (glyph === 'i') {
+            // 'i' Info Symbol (top dot + stem)
+            const h = Math.max(2.5, Math.min(5.5, node.radius * 0.45));
+            // Dot
+            ctx.beginPath();
+            ctx.arc(node.x, node.y - h * 0.65, Math.max(0.9, h * 0.22), 0, Math.PI * 2);
+            ctx.fillStyle = '#ffffff';
+            ctx.fill();
+            // Stem
+            ctx.beginPath();
+            ctx.moveTo(node.x, node.y - h * 0.15);
+            ctx.lineTo(node.x, node.y + h * 0.75);
+            ctx.strokeStyle = '#ffffff';
+            ctx.lineWidth = 1.6;
+            ctx.stroke();
+            return;
+        }
+
+        if (glyph === 'ring') {
+            // '○' Hollow Ring
+            ctx.beginPath();
+            ctx.arc(node.x, node.y, Math.max(1.5, node.radius * 0.38), 0, Math.PI * 2);
+            ctx.strokeStyle = '#ffffff';
+            ctx.lineWidth = 1.3;
+            ctx.stroke();
+            return;
+        }
+
+        if (glyph === 'star') {
+            // '*' Asterisk
+            const r = Math.max(2.5, Math.min(5.0, node.radius * 0.42));
+            ctx.beginPath();
+            for (let i = 0; i < 3; i++) {
+                const angle = (i * Math.PI) / 3;
+                ctx.moveTo(node.x - Math.cos(angle) * r, node.y - Math.sin(angle) * r);
+                ctx.lineTo(node.x + Math.cos(angle) * r, node.y + Math.sin(angle) * r);
+            }
+            ctx.strokeStyle = '#ffffff';
+            ctx.lineWidth = 1.4;
+            ctx.stroke();
+            return;
+        }
+
+        if (glyph === 'square' || glyph === 'leaf') {
+            // '▫' Center Square
+            const sqSize = Math.max(2.5, Math.min(4.5, node.radius * 0.42));
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(node.x - sqSize / 2, node.y - sqSize / 2, sqSize, sqSize);
+            return;
+        }
+
+        // Default / 'dot' / 'document': Center Solid Dot
         ctx.beginPath();
-        ctx.arc(node.x, node.y, Math.max(1.2, node.radius * 0.35), 0, Math.PI * 2);
+        ctx.arc(node.x, node.y, Math.max(1.2, node.radius * 0.32), 0, Math.PI * 2);
         ctx.fillStyle = '#ffffff';
         ctx.fill();
-    }
-
-    // Spec v18: ( ▫ ) Leaf / Term Entry (Compact r=2.5px)
-    private drawLeafNodeGlyph(node: BubbleNode, isHovered: boolean): void {
-        const ctx = this.ctx;
-        const size = node.radius * 1.8;
-
-        ctx.save();
-        ctx.translate(node.x, node.y);
-        ctx.fillStyle = isHovered ? '#ffffff' : (node.color || 'rgba(203, 213, 225, 0.7)');
-        ctx.fillRect(-size / 2, -size / 2, size, size);
-        ctx.restore();
     }
 
     private drawNodeLabel(node: BubbleNode, isProminent: boolean, baseFontSize: number = 11): void {
@@ -554,7 +585,14 @@ export class CanvasRenderer {
         const screenX = width / 2 + transform.panX + node.x * transform.zoom;
         const screenY = height / 2 + transform.panY + node.y * transform.zoom;
 
-        const glyphSymbol = node.glyph === 'hub' ? '( + )' : (node.glyph === 'active' ? '((•))' : (node.glyph === 'leaf' ? '( ▫ )' : '( • )'));
+        const glyphSymbol = node.glyph === 'plus' ? '( + )' : 
+            (node.glyph === 'minus' ? '( - )' : 
+            (node.glyph === 'i' ? '( i )' : 
+            (node.glyph === 'no-dot' ? '(   )' : 
+            (node.glyph === 'ring' ? '( ○ )' : 
+            (node.glyph === 'star' ? '( * )' : 
+            (node.glyph === 'square' || node.glyph === 'leaf' ? '( ▫ )' : 
+            (node.glyph === 'hub' ? '( + )' : '( • )')))))));
         const titleText = `${glyphSymbol} ${node.name}`;
         const folderText = `📁 ${node.folderPath || '/'}`;
         const statsText = `Links: ↗ ${node.outDegree}  |  ↖ ${node.inDegree}  |  Σ ${node.totalDegree}`;

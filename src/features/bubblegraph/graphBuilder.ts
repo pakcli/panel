@@ -2,6 +2,58 @@ import { App, TFile, normalizePath } from 'obsidian';
 import { BubbleNode, BubbleEdge, BubbleCluster, NodeGlyphType, GraphStats } from './types';
 import { computeClusterRadius } from './simulation';
 import { FolderRule } from '../tree/types';
+import { BubbleNodeGlyphOption } from '../../settings';
+
+/**
+ * Returns the effective chronological birth timestamp of a note.
+ * On Windows, ctime is often set to the copy/clone date, while mtime retains original creation.
+ * Returns Math.min(ctime, mtime) to reflect the earliest known date the note existed.
+ */
+export function getNodeEffectiveTime(node: { ctime?: number; mtime?: number }): number {
+    const c = (node.ctime && node.ctime > 946684800000) ? node.ctime : 0;
+    const m = (node.mtime && node.mtime > 946684800000) ? node.mtime : 0;
+    if (c > 0 && m > 0) return Math.min(c, m);
+    return c || m || Date.now();
+}
+
+/**
+ * Returns the latest timestamp (either creation or last write/edit date).
+ */
+export function getNodeLatestTime(node: { ctime?: number; mtime?: number }): number {
+    const c = (node.ctime && node.ctime > 946684800000) ? node.ctime : 0;
+    const m = (node.mtime && node.mtime > 946684800000) ? node.mtime : 0;
+    return Math.max(c, m) || Date.now();
+}
+
+export interface NodeGlyphSettings {
+    bubbleGlyphIsolated?: BubbleNodeGlyphOption;
+    bubbleGlyphOutgoing?: BubbleNodeGlyphOption;
+    bubbleGlyphIncoming?: BubbleNodeGlyphOption;
+    bubbleGlyphBoth?: BubbleNodeGlyphOption;
+}
+
+/**
+ * Resolves the node glyph based on 4 link conditions:
+ * 1. inDeg === 0 && outDeg === 0  => Isolated (no link, not mentioned anywhere) -> default: 'no-dot'
+ * 2. outDeg > 0 && inDeg === 0   => Has wikilink (outgoing only) -> default: 'plus'
+ * 3. inDeg > 0 && outDeg === 0   => Mentioned anywhere (incoming only) -> default: 'minus'
+ * 4. inDeg > 0 && outDeg > 0     => Both linked and mentioned -> default: 'i'
+ */
+export function resolveNodeGlyph(
+    inDeg: number,
+    outDeg: number,
+    settings?: NodeGlyphSettings
+): NodeGlyphType {
+    if (inDeg === 0 && outDeg === 0) {
+        return settings?.bubbleGlyphIsolated || 'no-dot';
+    } else if (outDeg > 0 && inDeg === 0) {
+        return settings?.bubbleGlyphOutgoing || 'plus';
+    } else if (inDeg > 0 && outDeg === 0) {
+        return settings?.bubbleGlyphIncoming || 'minus';
+    } else {
+        return settings?.bubbleGlyphBoth || 'i';
+    }
+}
 
 // Default fallback color
 export const DARK_GRAY_COLOR = '#4a5568';
@@ -169,7 +221,8 @@ export function buildVaultGraph(
     captainRules?: FolderRule[],
     useCaptainColors: boolean = false,
     maxClusterDepth: number = 3,
-    scopedFolder: string | null = null
+    scopedFolder: string | null = null,
+    glyphSettings?: NodeGlyphSettings
 ): BuiltGraph {
     let files: TFile[] = app.vault.getMarkdownFiles();
     const resolvedLinks = app.metadataCache.resolvedLinks || {};
@@ -261,22 +314,22 @@ export function buildVaultGraph(
 
         const isActive = activeFilePath === path;
 
-        // Semantic Glyph assignment & Radius formula according to Spec v18
-        let glyph: NodeGlyphType;
+        // Condition-based Glyph assignment:
+        // 1. inDeg === 0 && outDeg === 0  => Isolated (default 'no-dot')
+        // 2. outDeg > 0 && inDeg === 0   => Has wikilink (default 'plus')
+        // 3. inDeg > 0 && outDeg === 0   => Mentioned anywhere (default 'minus')
+        // 4. inDeg > 0 && outDeg > 0     => Both linked and mentioned (default 'i')
+        const glyph = resolveNodeGlyph(inDeg, outDeg, glyphSettings);
         let radius: number;
 
         if (isActive) {
-            glyph = 'active';
             radius = 8; // Fixed 8px + pulse aura
         } else if (isIndexNote && totalDeg >= 2) {
-            glyph = 'hub';
             radius = Math.round(6 + Math.sqrt(inDeg + outDeg));
-        } else if (totalDeg <= 1) {
-            glyph = 'leaf';
-            radius = 2.5; // Compact 2.5px
+        } else if (totalDeg === 0) {
+            radius = 3.5; // Compact 3.5px for isolated notes
         } else {
-            glyph = 'document';
-            radius = Math.round(3 + Math.sqrt(totalDeg));
+            radius = Math.round(3.5 + Math.sqrt(totalDeg));
         }
 
         const color = getFolderColor(folderPath || topLevelFolder, captainRules, useCaptainColors);
@@ -288,6 +341,7 @@ export function buildVaultGraph(
             topLevelFolder,
             subFolder,
             ctime: file.stat.ctime || file.stat.mtime || Date.now(),
+            mtime: file.stat.mtime || file.stat.ctime || Date.now(),
             inDegree: inDeg,
             outDegree: outDeg,
             totalDegree: totalDeg,

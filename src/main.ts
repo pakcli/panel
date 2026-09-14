@@ -203,8 +203,12 @@ export default class PakCLITablePlugin extends Plugin {
 					this.settings.bubbleShowLabels = true;
 					this.settings.bubbleUseCaptainColors = false;
 					this.settings.bubbleLabelRangeLevel = 2;
+					this.settings.bubbleLabelMinLevel = 1;
+					this.settings.bubbleLabelMaxLevel = 2;
 					this.settings.bubbleLabelFontSize = 11;
 					this.settings.bubbleInspectorOpen = true;
+					this.settings.bubbleHeaderSettingsOpen = true;
+					this.settings.bubbleFooterOpen = true;
 					await this.saveSettings();
 					new Notice('Bubble View settings reset to default');
 				}
@@ -693,8 +697,13 @@ export default class PakCLITablePlugin extends Plugin {
 								this.settings.bubbleShowLabels = DEFAULT_BUBBLE_GRAPH_SETTINGS.bubbleShowLabels;
 								this.settings.bubbleUseCaptainColors = DEFAULT_BUBBLE_GRAPH_SETTINGS.bubbleUseCaptainColors;
 								this.settings.bubbleLabelRangeLevel = DEFAULT_BUBBLE_GRAPH_SETTINGS.bubbleLabelRangeLevel;
+								this.settings.bubbleLabelMinLevel = DEFAULT_BUBBLE_GRAPH_SETTINGS.bubbleLabelMinLevel;
+								this.settings.bubbleLabelMaxLevel = DEFAULT_BUBBLE_GRAPH_SETTINGS.bubbleLabelMaxLevel;
 								this.settings.bubbleLabelFontSize = DEFAULT_BUBBLE_GRAPH_SETTINGS.bubbleLabelFontSize;
 								this.settings.bubbleInspectorOpen = DEFAULT_BUBBLE_GRAPH_SETTINGS.bubbleInspectorOpen;
+								this.settings.bubbleHeaderSettingsOpen = DEFAULT_BUBBLE_GRAPH_SETTINGS.bubbleHeaderSettingsOpen;
+								this.settings.bubbleFloatingToolsOpen = DEFAULT_BUBBLE_GRAPH_SETTINGS.bubbleFloatingToolsOpen;
+								this.settings.bubbleFooterOpen = DEFAULT_BUBBLE_GRAPH_SETTINGS.bubbleFooterOpen;
 								await this.saveSettings();
 								const leaves = this.app.workspace.getLeavesOfType(BUBBLE_GRAPH_VIEW_TYPE);
 								for (const leaf of leaves) {
@@ -950,6 +959,131 @@ export default class PakCLITablePlugin extends Plugin {
 									this.settings.bubbleTimelapseVanillaSpeed = parsed;
 									await this.saveSettings();
 								}
+							});
+					});
+
+				new Setting(containerEl)
+					.setName('Timeline Date Format')
+					.setDesc('Date format for the timelapse handle and date badges in Date mode (e.g. DD - MM - YYYY, YYYY-MM-DD, DD/MM/YYYY).')
+					.addText((t) => {
+						t.setValue(this.settings.bubbleTimelapseDateFormat || 'DD - MM - YYYY')
+							.setPlaceholder('DD - MM - YYYY')
+							.onChange(async (v) => {
+								this.settings.bubbleTimelapseDateFormat = v.trim() || 'DD - MM - YYYY';
+								await this.saveSettings();
+								const leaves = this.app.workspace.getLeavesOfType(BUBBLE_GRAPH_VIEW_TYPE);
+								leaves.forEach((leaf) => {
+									if (leaf.view instanceof BubbleGraphView) {
+										leaf.view.updateTimelineUI();
+										leaf.view.drawHeatmap();
+									}
+								});
+							});
+					});
+
+				// Node Glyph / Symbol Styles Section
+				new Setting(containerEl)
+					.setName('Node Symbol & Glyph Conditions')
+					.setDesc('Customize the visual interior icon of nodes depending on their link state and backlinks.')
+					.setHeading();
+
+				new Setting(containerEl)
+					.setName('No link & Not mentioned (Isolated)')
+					.setDesc('Symbol for orphan notes that have 0 outgoing links and 0 backlinks (Default: No dot).')
+					.addDropdown((d) => {
+						d.addOption('no-dot', 'No dot (Clean circle)')
+							.addOption('dot', 'Dot (•)')
+							.addOption('plus', 'Plus (+)')
+							.addOption('minus', 'Minus (-)')
+							.addOption('i', 'Info (i)')
+							.addOption('ring', 'Ring (○)')
+							.addOption('star', 'Star (*)')
+							.addOption('square', 'Square (▫)')
+							.setValue(this.settings.bubbleGlyphIsolated || 'no-dot')
+							.onChange(async (v: string) => {
+								this.settings.bubbleGlyphIsolated = v as any;
+								await this.saveSettings();
+								const leaves = this.app.workspace.getLeavesOfType(BUBBLE_GRAPH_VIEW_TYPE);
+								leaves.forEach((leaf) => {
+									if (leaf.view instanceof BubbleGraphView) {
+										leaf.view.reloadGraphData();
+									}
+								});
+							});
+					});
+
+				new Setting(containerEl)
+					.setName('Has Wikilink (Outgoing only)')
+					.setDesc('Symbol for notes that have outgoing links but are not mentioned anywhere (Default: Plus).')
+					.addDropdown((d) => {
+						d.addOption('plus', 'Plus (+)')
+							.addOption('no-dot', 'No dot (Clean circle)')
+							.addOption('dot', 'Dot (•)')
+							.addOption('minus', 'Minus (-)')
+							.addOption('i', 'Info (i)')
+							.addOption('ring', 'Ring (○)')
+							.addOption('star', 'Star (*)')
+							.addOption('square', 'Square (▫)')
+							.setValue(this.settings.bubbleGlyphOutgoing || 'plus')
+							.onChange(async (v: string) => {
+								this.settings.bubbleGlyphOutgoing = v as any;
+								await this.saveSettings();
+								const leaves = this.app.workspace.getLeavesOfType(BUBBLE_GRAPH_VIEW_TYPE);
+								leaves.forEach((leaf) => {
+									if (leaf.view instanceof BubbleGraphView) {
+										leaf.view.reloadGraphData();
+									}
+								});
+							});
+					});
+
+				new Setting(containerEl)
+					.setName('Mentioned Anywhere (Incoming only)')
+					.setDesc('Symbol for notes that have backlinks/mentions from other notes but no outgoing links (Default: Minus).')
+					.addDropdown((d) => {
+						d.addOption('minus', 'Minus (-)')
+							.addOption('no-dot', 'No dot (Clean circle)')
+							.addOption('dot', 'Dot (•)')
+							.addOption('plus', 'Plus (+)')
+							.addOption('i', 'Info (i)')
+							.addOption('ring', 'Ring (○)')
+							.addOption('star', 'Star (*)')
+							.addOption('square', 'Square (▫)')
+							.setValue(this.settings.bubbleGlyphIncoming || 'minus')
+							.onChange(async (v: string) => {
+								this.settings.bubbleGlyphIncoming = v as any;
+								await this.saveSettings();
+								const leaves = this.app.workspace.getLeavesOfType(BUBBLE_GRAPH_VIEW_TYPE);
+								leaves.forEach((leaf) => {
+									if (leaf.view instanceof BubbleGraphView) {
+										leaf.view.reloadGraphData();
+									}
+								});
+							});
+					});
+
+				new Setting(containerEl)
+					.setName('Both Linked & Mentioned (Two-way)')
+					.setDesc('Symbol for notes that have outgoing links AND are mentioned by other notes (Default: i).')
+					.addDropdown((d) => {
+						d.addOption('i', 'Info (i)')
+							.addOption('no-dot', 'No dot (Clean circle)')
+							.addOption('dot', 'Dot (•)')
+							.addOption('plus', 'Plus (+)')
+							.addOption('minus', 'Minus (-)')
+							.addOption('ring', 'Ring (○)')
+							.addOption('star', 'Star (*)')
+							.addOption('square', 'Square (▫)')
+							.setValue(this.settings.bubbleGlyphBoth || 'i')
+							.onChange(async (v: string) => {
+								this.settings.bubbleGlyphBoth = v as any;
+								await this.saveSettings();
+								const leaves = this.app.workspace.getLeavesOfType(BUBBLE_GRAPH_VIEW_TYPE);
+								leaves.forEach((leaf) => {
+									if (leaf.view instanceof BubbleGraphView) {
+										leaf.view.reloadGraphData();
+									}
+								});
 							});
 					});
 

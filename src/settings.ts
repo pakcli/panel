@@ -8,6 +8,7 @@ import { ExplorerSettings, DEFAULT_EXPLORER_SETTINGS, ExplorerSectionId } from '
 export type { ExplorerSectionId, ExplorerSettings };
 
 export type BubbleGraphIntegrationMode = 'deactivate' | 'replace' | 'second';
+export type BubbleNodeGlyphOption = 'no-dot' | 'dot' | 'plus' | 'minus' | 'i' | 'square' | 'ring' | 'star';
 
 export interface BubbleGraphSettings {
     bubbleGraphMode: BubbleGraphIntegrationMode;
@@ -23,16 +24,28 @@ export interface BubbleGraphSettings {
     bubbleClusterPadding: number;
     bubbleTimelapseMode: 'date' | 'vanilla';
     bubbleTimelapseVanillaSpeed: number;
+    bubbleTimelapseDateFormat: string;
     bubbleUseCaptainColors: boolean;
     bubbleMaxClusterDepth: number;
     bubbleShowBreadcrumbs: boolean;
     bubbleDenseScale: number;
     bubbleLabelRangeLevel: number;
+    bubbleLabelMinLevel: number;
+    bubbleLabelMaxLevel: number;
     bubbleLabelFontSize: number;
     bubbleInspectorOpen: boolean;
+    bubbleHeaderSettingsOpen?: boolean;
+    bubbleFloatingToolsOpen?: boolean;
+    bubbleFooterOpen?: boolean;
+    bubbleAutoFitMode?: 'off' | 'fit' | 'center';
+    bubbleAlwaysFit?: boolean;
     bubbleEnableSfx: boolean;
     bubbleSfxVolume: number;
     bubbleSfxThreshold: number;
+    bubbleGlyphIsolated: BubbleNodeGlyphOption;
+    bubbleGlyphOutgoing: BubbleNodeGlyphOption;
+    bubbleGlyphIncoming: BubbleNodeGlyphOption;
+    bubbleGlyphBoth: BubbleNodeGlyphOption;
 }
 
 export interface PakCLITableSettings extends 
@@ -95,16 +108,28 @@ export const DEFAULT_BUBBLE_GRAPH_SETTINGS: BubbleGraphSettings = {
     bubbleClusterPadding: 40,
     bubbleTimelapseMode: 'date',
     bubbleTimelapseVanillaSpeed: 0.025,
+    bubbleTimelapseDateFormat: 'DD - MM - YYYY',
     bubbleUseCaptainColors: false,
     bubbleMaxClusterDepth: 3,
     bubbleShowBreadcrumbs: true,
     bubbleDenseScale: 1.15,
     bubbleLabelRangeLevel: 2,
+    bubbleLabelMinLevel: 1,
+    bubbleLabelMaxLevel: 2,
     bubbleLabelFontSize: 11,
     bubbleInspectorOpen: true,
+    bubbleHeaderSettingsOpen: true,
+    bubbleFloatingToolsOpen: true,
+    bubbleFooterOpen: true,
+    bubbleAutoFitMode: 'off',
+    bubbleAlwaysFit: false,
     bubbleEnableSfx: true,
     bubbleSfxVolume: 0.35,
     bubbleSfxThreshold: 1.0,
+    bubbleGlyphIsolated: 'no-dot',
+    bubbleGlyphOutgoing: 'plus',
+    bubbleGlyphIncoming: 'minus',
+    bubbleGlyphBoth: 'i',
 };
 
 export const DEFAULT_TABLE_SETTINGS: PakCLITableSettings = {

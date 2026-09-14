@@ -2,7 +2,7 @@ import { ItemView, WorkspaceLeaf, setIcon, TFile, Menu, normalizePath, Notice } 
 import type PakCLITablePlugin from '../../main';
 import { DEFAULT_BUBBLE_GRAPH_SETTINGS } from '../../settings';
 import { BubbleNode, BubbleCluster } from './types';
-import { buildVaultGraph, BuiltGraph, getFolderColor, matchFolderRule } from './graphBuilder';
+import { buildVaultGraph, BuiltGraph, getFolderColor, matchFolderRule, getNodeEffectiveTime, getNodeLatestTime } from './graphBuilder';
 import { BubbleSimulation } from './simulation';
 import { CanvasRenderer, ViewportTransform, RenderState } from './canvasRenderer';
 import { SfxManager } from './sfxManager';
@@ -33,7 +33,9 @@ export class BubbleGraphView extends ItemView {
     // Label & Line Controls
     private showLabels: boolean = true;
     private showLines: boolean = true;
-    private labelRangeLevel: number = 2; // 0=None, 1=Hubs/Active, 2=Docs, 3=All
+    private labelMinLevel: number = 1; // 1 to 4
+    private labelMaxLevel: number = 2; // 1 to 4
+    private labelRangeLevel: number = 2; // legacy single level fallback
     private labelFontSize: number = 11; // 8 - 24px
 
     // Timelapse State
@@ -54,26 +56,47 @@ export class BubbleGraphView extends ItemView {
     private isDraggingNode: boolean = false;
 
     // UI Elements
-    private statsPillEl!: HTMLElement;
+    private headerEl!: HTMLElement;
+    private statsPillEl: HTMLElement | null = null;
     private scopeBarEl!: HTMLElement;
     private inspectorEl!: HTMLElement;
     private inspectorBtnEl!: HTMLElement;
     private isInspectorOpen: boolean = true;
+    private isHeaderSettingsOpen: boolean = true;
+    private isFloatingToolsOpen: boolean = true;
+    private isFooterOpen: boolean = true;
+    private autoFitMode: 'off' | 'fit' | 'center' = 'off';
+    private isFullscreen: boolean = false;
+    private topSettingsToggleBtnEl!: HTMLElement;
+    private floatingToolsToggleBtnEl!: HTMLElement;
+    private footerToggleBtnEl!: HTMLElement;
+    private fullscreenBtnEl!: HTMLElement;
+    private fitModeBtnEl: HTMLElement | null = null;
+    private centerModeBtnEl: HTMLElement | null = null;
+    private floatingToolsEl: HTMLElement | null = null;
+    private headerControlsWrapEl!: HTMLElement;
+    private row2El!: HTMLElement;
+    private timelineEl!: HTMLElement;
     private depthGroupEl: HTMLElement | null = null;
     private depthButtons: HTMLElement[] = [];
-    private wandBtnEl!: HTMLElement;
+    private wandBtnEl: HTMLElement | null = null;
     private linesToggleBtnEl!: HTMLElement;
     private textToggleBtnEl!: HTMLElement;
     private captainColorsBtnEl!: HTMLElement;
     private sfxToggleBtnEl!: HTMLElement;
     private volumeSliderEl!: HTMLInputElement;
     private volumeDisplayEl!: HTMLElement;
-    private levelSliderEl!: HTMLInputElement;
+    private levelMinSliderEl!: HTMLInputElement;
+    private levelMaxSliderEl!: HTMLInputElement;
+    private levelHighlightEl!: HTMLElement;
     private levelDisplayEl!: HTMLElement;
+    private levelResetBtnEl!: HTMLElement;
     private fontSizeSliderEl!: HTMLInputElement;
     private fontSizeDisplayEl!: HTMLElement;
     private timelinePlayBtnEl!: HTMLElement;
     private timelineSliderEl!: HTMLInputElement;
+    private timelineCanvasEl!: HTMLCanvasElement;
+    private timelineThumbTipEl!: HTMLElement;
     private timelineDateBadgeEl!: HTMLElement;
     private timelapseModeButtons: HTMLElement[] = [];
 
@@ -101,6 +124,7 @@ export class BubbleGraphView extends ItemView {
         const container = this.contentEl;
         container.empty();
         container.addClass('pakcli-bubble-graph-container');
+        container.style.overflow = 'hidden';
 
         this.layoutMode = this.plugin.settings.bubbleDefaultLayout || 'bubble';
         this.maxDragDepth = this.plugin.settings.bubbleMaxDragDepth ?? DEFAULT_BUBBLE_GRAPH_SETTINGS.bubbleMaxDragDepth;
@@ -108,9 +132,15 @@ export class BubbleGraphView extends ItemView {
         this.showLines = this.plugin.settings.bubbleShowLines !== false;
         this.timelapseMode = this.plugin.settings.bubbleTimelapseMode || 'date';
         this.useCaptainColors = this.plugin.settings.bubbleUseCaptainColors === true;
-        this.labelRangeLevel = this.plugin.settings.bubbleLabelRangeLevel ?? DEFAULT_BUBBLE_GRAPH_SETTINGS.bubbleLabelRangeLevel;
+        this.labelMinLevel = this.plugin.settings.bubbleLabelMinLevel ?? 1;
+        this.labelMaxLevel = this.plugin.settings.bubbleLabelMaxLevel ?? (this.plugin.settings.bubbleLabelRangeLevel ?? 2);
+        this.labelRangeLevel = this.labelMaxLevel;
         this.labelFontSize = this.plugin.settings.bubbleLabelFontSize ?? DEFAULT_BUBBLE_GRAPH_SETTINGS.bubbleLabelFontSize;
         this.isInspectorOpen = this.plugin.settings.bubbleInspectorOpen !== false;
+        this.isHeaderSettingsOpen = this.plugin.settings.bubbleHeaderSettingsOpen !== false;
+        this.isFloatingToolsOpen = this.plugin.settings.bubbleFloatingToolsOpen !== false;
+        this.isFooterOpen = this.plugin.settings.bubbleFooterOpen !== false;
+        this.autoFitMode = this.plugin.settings.bubbleAutoFitMode || (this.plugin.settings.bubbleAlwaysFit ? 'fit' : 'off');
 
         // Initialize Procedural SFX Engine
         this.sfxManager = new SfxManager(
@@ -128,6 +158,9 @@ export class BubbleGraphView extends ItemView {
         this.canvasEl = canvasWrap.createEl('canvas', { cls: 'pakcli-bubble-canvas' });
         this.renderer = new CanvasRenderer(this.canvasEl);
 
+        // Render Floating Canvas Tools (Search, Fit, Refresh, Reset View)
+        this.renderCanvasFloatingTools(canvasWrap);
+
         this.renderInspector(workspaceEl);
 
         // 3. Build Bottom Timeline Minimap Scrubber
@@ -139,6 +172,40 @@ export class BubbleGraphView extends ItemView {
         // 5. Setup Event Listeners
         this.setupCanvasEvents();
         this.setupResizeObserver(canvasWrap);
+
+        // Listen for HTML5 Fullscreen changes (Clean 2-mode: "this" <-> "grand full screen")
+        this.registerDomEvent(document, 'fullscreenchange', () => {
+            const isNativeFs = !!(document.fullscreenElement === this.contentEl || document.fullscreenElement === this.containerEl);
+            if (!isNativeFs) {
+                // If native fullscreen was exited via ESC / OS, cleanly return to normal ("this")
+                this.contentEl.removeClass('pakcli-view-fullscreen');
+                this.isFullscreen = false;
+            } else {
+                this.isFullscreen = true;
+                this.contentEl.addClass('pakcli-view-fullscreen');
+            }
+            this.updateFullscreenUI();
+            setTimeout(() => {
+                this.renderer?.resize();
+                this.drawHeatmap();
+            }, 60);
+        });
+
+        // Listen for ESC to exit fullscreen cleanly back to "this", and Space to toggle timelapse
+        this.registerDomEvent(window, 'keydown', (evt: KeyboardEvent) => {
+            if (evt.key === 'Escape') {
+                if (document.fullscreenElement) {
+                    try { document.exitFullscreen(); } catch {}
+                }
+                if (this.contentEl.hasClass('pakcli-view-fullscreen')) {
+                    this.toggleCssFullscreen(false);
+                }
+            } else if (evt.code === 'Space' && (evt.target === this.contentEl || this.contentEl.contains(evt.target as Node))) {
+                if ((evt.target as HTMLElement)?.tagName === 'INPUT') return;
+                evt.preventDefault();
+                this.toggleTimelapse();
+            }
+        });
 
         // Listen for active note changes in Obsidian workspace
         this.registerEvent(
@@ -175,6 +242,11 @@ export class BubbleGraphView extends ItemView {
     }
 
     async onClose(): Promise<void> {
+        if (this.isFullscreen && document.fullscreenElement) {
+            try {
+                await document.exitFullscreen();
+            } catch { /* ignore */ }
+        }
         if (this.animFrameId !== null) {
             window.cancelAnimationFrame(this.animFrameId);
             this.animFrameId = null;
@@ -213,8 +285,14 @@ export class BubbleGraphView extends ItemView {
         this.showLabels = DEFAULT_BUBBLE_GRAPH_SETTINGS.bubbleShowLabels;
         this.useCaptainColors = DEFAULT_BUBBLE_GRAPH_SETTINGS.bubbleUseCaptainColors;
         this.labelRangeLevel = DEFAULT_BUBBLE_GRAPH_SETTINGS.bubbleLabelRangeLevel;
+        this.labelMinLevel = DEFAULT_BUBBLE_GRAPH_SETTINGS.bubbleLabelMinLevel;
+        this.labelMaxLevel = DEFAULT_BUBBLE_GRAPH_SETTINGS.bubbleLabelMaxLevel;
         this.labelFontSize = DEFAULT_BUBBLE_GRAPH_SETTINGS.bubbleLabelFontSize;
         this.isInspectorOpen = DEFAULT_BUBBLE_GRAPH_SETTINGS.bubbleInspectorOpen;
+        this.isHeaderSettingsOpen = DEFAULT_BUBBLE_GRAPH_SETTINGS.bubbleHeaderSettingsOpen !== false;
+        this.isFloatingToolsOpen = DEFAULT_BUBBLE_GRAPH_SETTINGS.bubbleFloatingToolsOpen !== false;
+        this.isFooterOpen = DEFAULT_BUBBLE_GRAPH_SETTINGS.bubbleFooterOpen !== false;
+        this.autoFitMode = DEFAULT_BUBBLE_GRAPH_SETTINGS.bubbleAutoFitMode ?? 'off';
 
         // 2. Persist to plugin settings
         this.plugin.settings.bubbleMaxDragDepth = this.maxDragDepth;
@@ -222,8 +300,15 @@ export class BubbleGraphView extends ItemView {
         this.plugin.settings.bubbleShowLabels = this.showLabels;
         this.plugin.settings.bubbleUseCaptainColors = this.useCaptainColors;
         this.plugin.settings.bubbleLabelRangeLevel = this.labelRangeLevel;
+        this.plugin.settings.bubbleLabelMinLevel = this.labelMinLevel;
+        this.plugin.settings.bubbleLabelMaxLevel = this.labelMaxLevel;
         this.plugin.settings.bubbleLabelFontSize = this.labelFontSize;
         this.plugin.settings.bubbleInspectorOpen = this.isInspectorOpen;
+        this.plugin.settings.bubbleHeaderSettingsOpen = this.isHeaderSettingsOpen;
+        this.plugin.settings.bubbleFloatingToolsOpen = this.isFloatingToolsOpen;
+        this.plugin.settings.bubbleFooterOpen = this.isFooterOpen;
+        this.plugin.settings.bubbleAutoFitMode = this.autoFitMode;
+        this.plugin.settings.bubbleAlwaysFit = this.autoFitMode !== 'off';
         this.plugin.settings.bubbleEnableSfx = DEFAULT_BUBBLE_GRAPH_SETTINGS.bubbleEnableSfx;
         this.plugin.settings.bubbleSfxVolume = DEFAULT_BUBBLE_GRAPH_SETTINGS.bubbleSfxVolume;
         this.plugin.settings.bubbleSfxThreshold = DEFAULT_BUBBLE_GRAPH_SETTINGS.bubbleSfxThreshold;
@@ -271,21 +356,7 @@ export class BubbleGraphView extends ItemView {
                 btn.setAttribute('aria-pressed', isMatch ? 'true' : 'false');
             });
         }
-        if (this.levelSliderEl) {
-            this.levelSliderEl.value = this.labelRangeLevel.toString();
-            const levelDescriptions = [
-                'Level 0: No labels (hover / select only)',
-                'Level 1: Hubs & active notes only',
-                'Level 2: Hubs & documents (2+ links)',
-                'Level 3: All notes including leaves'
-            ];
-            const desc = levelDescriptions[this.labelRangeLevel] || `Level ${this.labelRangeLevel}`;
-            this.levelSliderEl.title = desc;
-            if (this.levelDisplayEl) {
-                this.levelDisplayEl.setText(this.labelRangeLevel.toString());
-                this.levelDisplayEl.title = desc;
-            }
-        }
+        this.syncLevelControls();
         if (this.fontSizeSliderEl) {
             this.fontSizeSliderEl.value = this.labelFontSize.toString();
         }
@@ -293,15 +364,43 @@ export class BubbleGraphView extends ItemView {
             this.fontSizeDisplayEl.setText(`${this.labelFontSize}px`);
         }
         if (this.inspectorEl) {
-            if (this.isInspectorOpen) {
-                this.inspectorEl.removeClass('collapsed');
-            } else {
-                this.inspectorEl.addClass('collapsed');
-            }
+            this.inspectorEl.toggleClass('collapsed', !this.isInspectorOpen);
         }
         if (this.inspectorBtnEl) {
             this.inspectorBtnEl.toggleClass('active', this.isInspectorOpen);
             this.inspectorBtnEl.setAttribute('aria-pressed', this.isInspectorOpen ? 'true' : 'false');
+            this.inspectorBtnEl.setAttribute('title', this.isInspectorOpen ? 'Hide Inspector Sidepanel' : 'Show Inspector Sidepanel');
+        }
+        if (this.headerEl) {
+            this.headerEl.toggleClass('settings-collapsed', !this.isHeaderSettingsOpen);
+        }
+        if (this.headerControlsWrapEl) {
+            this.headerControlsWrapEl.toggleClass('collapsed', !this.isHeaderSettingsOpen);
+        }
+        if (this.row2El) {
+            this.row2El.toggleClass('collapsed', !this.isHeaderSettingsOpen);
+        }
+        if (this.topSettingsToggleBtnEl) {
+            this.topSettingsToggleBtnEl.toggleClass('active', this.isHeaderSettingsOpen);
+            this.topSettingsToggleBtnEl.setAttribute('aria-pressed', this.isHeaderSettingsOpen ? 'true' : 'false');
+            this.topSettingsToggleBtnEl.setAttribute('title', this.isHeaderSettingsOpen ? 'Hide Settings' : 'Show Settings');
+        }
+        if (this.floatingToolsEl) {
+            this.floatingToolsEl.toggleClass('collapsed', !this.isFloatingToolsOpen);
+        }
+        if (this.floatingToolsToggleBtnEl) {
+            this.floatingToolsToggleBtnEl.toggleClass('active', this.isFloatingToolsOpen);
+            this.floatingToolsToggleBtnEl.setAttribute('aria-pressed', this.isFloatingToolsOpen ? 'true' : 'false');
+            this.floatingToolsToggleBtnEl.setAttribute('title', this.isFloatingToolsOpen ? 'Hide Floating Search & Tools' : 'Show Floating Search & Tools');
+        }
+        this.updateAutoFitUI();
+        if (this.timelineEl) {
+            this.timelineEl.toggleClass('collapsed', !this.isFooterOpen);
+        }
+        if (this.footerToggleBtnEl) {
+            this.footerToggleBtnEl.toggleClass('active', this.isFooterOpen);
+            this.footerToggleBtnEl.setAttribute('aria-pressed', this.isFooterOpen ? 'true' : 'false');
+            this.footerToggleBtnEl.setAttribute('title', this.isFooterOpen ? 'Hide Footer Timeline Scrubber' : 'Show Footer Timeline Scrubber');
         }
 
         // 4. Update Simulation & Colors
@@ -319,18 +418,34 @@ export class BubbleGraphView extends ItemView {
         const activeFile = this.app.workspace.getActiveFile();
         const captainRules = this.plugin.settings.rules || [];
         const maxDepth = this.plugin.settings.bubbleMaxClusterDepth ?? 3;
-        this.graphData = buildVaultGraph(this.app, activeFile ? activeFile.path : null, captainRules, this.useCaptainColors, maxDepth, this.scopedFolder);
+        const glyphSettings = {
+            bubbleGlyphIsolated: this.plugin.settings.bubbleGlyphIsolated,
+            bubbleGlyphOutgoing: this.plugin.settings.bubbleGlyphOutgoing,
+            bubbleGlyphIncoming: this.plugin.settings.bubbleGlyphIncoming,
+            bubbleGlyphBoth: this.plugin.settings.bubbleGlyphBoth,
+        };
+        this.graphData = buildVaultGraph(
+            this.app, 
+            activeFile ? activeFile.path : null, 
+            captainRules, 
+            this.useCaptainColors, 
+            maxDepth, 
+            this.scopedFolder,
+            glyphSettings
+        );
 
-        // Sort all nodes chronologically by ctime for sequential vanilla timelapse
-        this.sortedNodes = [...this.graphData.nodes].sort((a, b) => (a.ctime || 0) - (b.ctime || 0));
+        // Sort all nodes chronologically by effective birth timestamp for sequential vanilla timelapse
+        this.sortedNodes = [...this.graphData.nodes].sort((a, b) => getNodeEffectiveTime(a) - getNodeEffectiveTime(b));
 
-        // Compute min and max ctime for chronological timelapse
-        const ctimes = this.graphData.nodes.map(n => n.ctime).filter(t => t && t > 0);
-        if (ctimes.length > 0) {
-            this.timelapseMinCtime = Math.min(...ctimes);
-            this.timelapseMaxCtime = Math.max(...ctimes);
-            if (this.timelapseMinCtime === this.timelapseMaxCtime) {
-                this.timelapseMinCtime -= 86400000;
+        // Compute min and max effective time for chronological timelapse
+        const birthTimes = this.graphData.nodes.map(n => getNodeEffectiveTime(n)).filter(t => t > 946684800000);
+        const latestTimes = this.graphData.nodes.map(n => getNodeLatestTime(n)).filter(t => t > 946684800000);
+
+        if (birthTimes.length > 0) {
+            this.timelapseMinCtime = Math.min(...birthTimes);
+            this.timelapseMaxCtime = Math.max(...latestTimes, this.timelapseMinCtime + 86400000);
+            if (this.timelapseMinCtime >= this.timelapseMaxCtime) {
+                this.timelapseMinCtime = this.timelapseMaxCtime - 86400000;
             }
         } else {
             this.timelapseMinCtime = Date.now() - 30 * 86400000;
@@ -339,6 +454,7 @@ export class BubbleGraphView extends ItemView {
         this.timelapseProgress = 1.0;
         this.isTimelapseRunning = false;
         this.updateTimelineUI();
+        this.drawHeatmap();
 
         this.simulation = new BubbleSimulation(
             this.graphData.nodes,
@@ -395,14 +511,172 @@ export class BubbleGraphView extends ItemView {
     }
 
     private renderHeader(container: HTMLElement): void {
-        const headerEl = container.createDiv({ cls: 'pakcli-bubble-header' });
+        this.headerEl = container.createDiv({
+            cls: `pakcli-bubble-header ${this.isHeaderSettingsOpen ? '' : 'settings-collapsed'}`
+        });
+        const headerEl = this.headerEl;
 
-        // Left Branding & Tabs
-        const leftGroup = headerEl.createDiv({ cls: 'pakcli-header-left' });
-        const brandBadge = leftGroup.createDiv({ cls: 'pakcli-brand-badge' });
-        brandBadge.createSpan({ text: '🫧 BUBBLE VIEW', cls: 'pakcli-brand-title' });
+        // ==========================================
+        // ROW 1: [Left: 4 Toggles + Mode Tabs] [Center: Breadcrumbs] [Right: Depth Scrubber]
+        // ==========================================
+        const row1 = headerEl.createDiv({ cls: 'pakcli-header-row pakcli-header-row-1' });
 
-        const tabsWrap = leftGroup.createDiv({ cls: 'pakcli-mode-tabs' });
+        // Left: 4 Toggles + Mode Tabs
+        const row1Left = row1.createDiv({ cls: 'pakcli-header-row-left' });
+        const quickToggles = row1Left.createDiv({ cls: 'pakcli-header-quick-toggles' });
+
+        // 1. Toggle Top Settings Bar (Gear)
+        this.topSettingsToggleBtnEl = quickToggles.createEl('button', {
+            cls: `pakcli-icon-btn pakcli-top-settings-btn ${this.isHeaderSettingsOpen ? 'active' : ''}`,
+            title: this.isHeaderSettingsOpen ? 'Hide Settings' : 'Show Settings'
+        });
+        this.topSettingsToggleBtnEl.setAttribute('aria-pressed', this.isHeaderSettingsOpen ? 'true' : 'false');
+        setIcon(this.topSettingsToggleBtnEl, 'settings');
+        this.topSettingsToggleBtnEl.onclick = async () => {
+            this.isHeaderSettingsOpen = !this.isHeaderSettingsOpen;
+            this.topSettingsToggleBtnEl.toggleClass('active', this.isHeaderSettingsOpen);
+            this.topSettingsToggleBtnEl.setAttribute('aria-pressed', this.isHeaderSettingsOpen ? 'true' : 'false');
+            this.topSettingsToggleBtnEl.setAttribute('title', this.isHeaderSettingsOpen ? 'Hide Settings' : 'Show Settings');
+            this.headerEl.toggleClass('settings-collapsed', !this.isHeaderSettingsOpen);
+            if (this.row2El) {
+                this.row2El.toggleClass('collapsed', !this.isHeaderSettingsOpen);
+            }
+            if (this.headerControlsWrapEl) {
+                this.headerControlsWrapEl.toggleClass('collapsed', !this.isHeaderSettingsOpen);
+            }
+            this.plugin.settings.bubbleHeaderSettingsOpen = this.isHeaderSettingsOpen;
+            await this.plugin.saveSettings();
+            if (this.sfxManager?.isEnabled()) {
+                this.sfxManager.playLinkSwitch();
+            }
+        };
+
+        // 2. Toggle Floating Canvas Tools (Search & Actions)
+        this.floatingToolsToggleBtnEl = quickToggles.createEl('button', {
+            cls: `pakcli-icon-btn pakcli-floating-tools-btn ${this.isFloatingToolsOpen ? 'active' : ''}`,
+            title: this.isFloatingToolsOpen ? 'Hide Floating Search & Tools' : 'Show Floating Search & Tools'
+        });
+        this.floatingToolsToggleBtnEl.setAttribute('aria-pressed', this.isFloatingToolsOpen ? 'true' : 'false');
+        setIcon(this.floatingToolsToggleBtnEl, 'search');
+        this.floatingToolsToggleBtnEl.onclick = async () => {
+            this.isFloatingToolsOpen = !this.isFloatingToolsOpen;
+            this.floatingToolsToggleBtnEl.toggleClass('active', this.isFloatingToolsOpen);
+            this.floatingToolsToggleBtnEl.setAttribute('aria-pressed', this.isFloatingToolsOpen ? 'true' : 'false');
+            this.floatingToolsToggleBtnEl.setAttribute('title', this.isFloatingToolsOpen ? 'Hide Floating Search & Tools' : 'Show Floating Search & Tools');
+            if (this.floatingToolsEl) {
+                this.floatingToolsEl.toggleClass('collapsed', !this.isFloatingToolsOpen);
+            }
+            this.plugin.settings.bubbleFloatingToolsOpen = this.isFloatingToolsOpen;
+            await this.plugin.saveSettings();
+            if (this.sfxManager?.isEnabled()) {
+                this.sfxManager.playLinkSwitch();
+            }
+        };
+
+        // 3. Toggle Footer Timeline Scrubber
+        this.footerToggleBtnEl = quickToggles.createEl('button', {
+            cls: `pakcli-icon-btn pakcli-footer-toggle-btn ${this.isFooterOpen ? 'active' : ''}`,
+            title: this.isFooterOpen ? 'Hide Footer Timeline Scrubber' : 'Show Footer Timeline Scrubber'
+        });
+        this.footerToggleBtnEl.setAttribute('aria-pressed', this.isFooterOpen ? 'true' : 'false');
+        setIcon(this.footerToggleBtnEl, 'panel-bottom');
+        this.footerToggleBtnEl.onclick = async () => {
+            this.isFooterOpen = !this.isFooterOpen;
+            this.footerToggleBtnEl.toggleClass('active', this.isFooterOpen);
+            this.footerToggleBtnEl.setAttribute('aria-pressed', this.isFooterOpen ? 'true' : 'false');
+            this.footerToggleBtnEl.setAttribute('title', this.isFooterOpen ? 'Hide Footer Timeline Scrubber' : 'Show Footer Timeline Scrubber');
+            if (this.timelineEl) {
+                this.timelineEl.toggleClass('collapsed', !this.isFooterOpen);
+            }
+            this.plugin.settings.bubbleFooterOpen = this.isFooterOpen;
+            await this.plugin.saveSettings();
+            if (this.sfxManager?.isEnabled()) {
+                this.sfxManager.playLinkSwitch();
+            }
+            setTimeout(() => this.renderer?.resize(), 50);
+        };
+
+        // 4. Toggle Info (Sidepanel Inspector)
+        this.inspectorBtnEl = quickToggles.createEl('button', {
+            cls: `pakcli-icon-btn pakcli-inspector-toggle-btn ${this.isInspectorOpen ? 'active' : ''}`,
+            title: this.isInspectorOpen ? 'Hide Inspector Sidepanel' : 'Show Inspector Sidepanel'
+        });
+        this.inspectorBtnEl.setAttribute('aria-pressed', this.isInspectorOpen ? 'true' : 'false');
+        setIcon(this.inspectorBtnEl, 'info');
+        this.inspectorBtnEl.onclick = async () => {
+            this.isInspectorOpen = !this.isInspectorOpen;
+            if (this.inspectorEl) {
+                this.inspectorEl.toggleClass('collapsed', !this.isInspectorOpen);
+            }
+            this.inspectorBtnEl.toggleClass('active', this.isInspectorOpen);
+            this.inspectorBtnEl.setAttribute('aria-pressed', this.isInspectorOpen ? 'true' : 'false');
+            this.inspectorBtnEl.setAttribute('title', this.isInspectorOpen ? 'Hide Inspector Sidepanel' : 'Show Inspector Sidepanel');
+            this.plugin.settings.bubbleInspectorOpen = this.isInspectorOpen;
+            await this.plugin.saveSettings();
+            if (this.sfxManager?.isEnabled()) {
+                this.sfxManager.playLinkSwitch();
+            }
+            setTimeout(() => this.renderer?.resize(), 50);
+        };
+
+        // 5. Toggle Fullscreen (Clean 2-mode: "this" <-> "grand full screen")
+        this.fullscreenBtnEl = quickToggles.createEl('button', {
+            cls: `pakcli-icon-btn pakcli-fullscreen-btn ${this.isFullscreen ? 'active' : ''}`,
+            title: this.isFullscreen ? 'Exit Fullscreen (Kembali ke Normal View)' : 'Grand Fullscreen (Layar Penuh)'
+        });
+        this.fullscreenBtnEl.setAttribute('aria-pressed', this.isFullscreen ? 'true' : 'false');
+        setIcon(this.fullscreenBtnEl, this.isFullscreen ? 'minimize' : 'maximize');
+        this.fullscreenBtnEl.onclick = () => {
+            this.toggleFullscreen();
+            if (this.sfxManager?.isEnabled()) {
+                this.sfxManager.playLinkSwitch();
+            }
+        };
+        this.fullscreenBtnEl.oncontextmenu = (e: MouseEvent) => {
+            e.preventDefault();
+            const menu = new Menu();
+            menu.addItem(item => {
+                item.setTitle('Grand Fullscreen (Monitor)')
+                    .setIcon('maximize')
+                    .setChecked(!!document.fullscreenElement)
+                    .onClick(async () => {
+                        if (document.fullscreenElement) {
+                            await document.exitFullscreen();
+                        } else {
+                            if (this.contentEl.requestFullscreen) {
+                                await this.contentEl.requestFullscreen();
+                            } else {
+                                this.toggleCssFullscreen(true);
+                            }
+                        }
+                    });
+            });
+            menu.addItem(item => {
+                item.setTitle('Panel View Fullscreen (Inside Obsidian)')
+                    .setIcon('expand')
+                    .setChecked(this.contentEl.hasClass('pakcli-view-fullscreen') && !document.fullscreenElement)
+                    .onClick(async () => {
+                        if (document.fullscreenElement) {
+                            await document.exitFullscreen();
+                        }
+                        this.toggleCssFullscreen(!this.contentEl.hasClass('pakcli-view-fullscreen'));
+                    });
+            });
+            menu.addItem(item => {
+                item.setTitle('Exit Fullscreen (Normal Panel)')
+                    .setIcon('minimize')
+                    .onClick(async () => {
+                        if (document.fullscreenElement) {
+                            await document.exitFullscreen();
+                        }
+                        this.toggleCssFullscreen(false);
+                    });
+            });
+            menu.showAtMouseEvent(e);
+        };
+
+        // Mode Tabs: [Graph View] [★ Bubble View]
+        const tabsWrap = row1Left.createDiv({ cls: 'pakcli-mode-tabs' });
         const defaultTab = tabsWrap.createEl('button', {
             text: 'Graph View',
             cls: `pakcli-tab-btn ${this.layoutMode === 'default' ? 'active' : ''}`
@@ -440,12 +714,14 @@ export class BubbleGraphView extends ItemView {
             updateDepthVisibility();
         };
 
-        // Scope Navigation Bar & Breadcrumbs
-        this.scopeBarEl = leftGroup.createDiv({ cls: 'pakcli-scope-bar' });
+        // Center: Breadcrumbs Scope Navigation
+        const row1Center = row1.createDiv({ cls: 'pakcli-header-row-center' });
+        this.scopeBarEl = row1Center.createDiv({ cls: 'pakcli-scope-bar' });
         this.updateScopeBar();
 
-        // Middle Drag Depth Scrubber
-        const depthGroup = headerEl.createDiv({ cls: 'pakcli-depth-group' });
+        // Right: Depth Scrubber
+        const row1Right = row1.createDiv({ cls: 'pakcli-header-row-right' });
+        const depthGroup = row1Right.createDiv({ cls: 'pakcli-depth-group' });
         this.depthGroupEl = depthGroup;
         updateDepthVisibility();
         depthGroup.createSpan({ text: 'Depth:', cls: 'pakcli-depth-label' });
@@ -483,11 +759,22 @@ export class BubbleGraphView extends ItemView {
             return btn;
         });
 
-        // Text & Line Controls Group
-        const textGroup = headerEl.createDiv({ cls: 'pakcli-text-controls-group' });
+        // ==========================================
+        // ROW 2: Collapsible Settings Controls Row
+        // ==========================================
+        const row2 = headerEl.createDiv({
+            cls: `pakcli-header-row pakcli-header-row-2 ${this.isHeaderSettingsOpen ? '' : 'collapsed'}`
+        });
+        this.row2El = row2;
+        this.headerControlsWrapEl = row2;
 
-        // 1. Show Lines Toggle (Edges show or hide)
-        this.linesToggleBtnEl = textGroup.createEl('button', {
+        const textGroup = row2.createDiv({ cls: 'pakcli-text-controls-group' });
+
+        // Cluster 1: 4 Layer Toggles
+        const togglesCluster = textGroup.createDiv({ cls: 'pakcli-layer-toggles-cluster' });
+
+        // 1. Toggle Lines (Show/Hide)
+        this.linesToggleBtnEl = togglesCluster.createEl('button', {
             cls: `pakcli-icon-btn pakcli-lines-toggle-btn ${this.showLines ? 'active' : ''}`,
             title: 'Toggle Lines (Show/Hide)'
         });
@@ -504,8 +791,8 @@ export class BubbleGraphView extends ItemView {
             }
         };
 
-        // 2. Show Text Node Toggle
-        this.textToggleBtnEl = textGroup.createEl('button', {
+        // 2. Toggle Text Node Labels
+        this.textToggleBtnEl = togglesCluster.createEl('button', {
             cls: `pakcli-icon-btn pakcli-text-toggle-btn ${this.showLabels ? 'active' : ''}`,
             title: 'Toggle Text Labels'
         });
@@ -519,8 +806,8 @@ export class BubbleGraphView extends ItemView {
             await this.plugin.saveSettings();
         };
 
-        // 3. Captain Folder Colors Toggle
-        this.captainColorsBtnEl = textGroup.createEl('button', {
+        // 3. Toggle Captain Folder Colors
+        this.captainColorsBtnEl = togglesCluster.createEl('button', {
             cls: `pakcli-icon-btn pakcli-captain-colors-btn ${this.useCaptainColors ? 'active' : ''}`,
             title: 'Toggle Captain Folder Colors (show custom colors on Captain Folders)'
         });
@@ -535,8 +822,8 @@ export class BubbleGraphView extends ItemView {
             this.applyCaptainFolderColors();
         };
 
-        // 4. SFX Sound Toggle (Procedural Audio)
-        this.sfxToggleBtnEl = textGroup.createEl('button', {
+        // 4. Toggle SFX Sound (Procedural Audio)
+        this.sfxToggleBtnEl = togglesCluster.createEl('button', {
             cls: `pakcli-icon-btn pakcli-sfx-toggle-btn ${this.sfxManager.isEnabled() ? 'active' : ''}`,
             title: 'Toggle Graph Sound FX (Mute / Unmute)'
         });
@@ -554,6 +841,9 @@ export class BubbleGraphView extends ItemView {
                 this.sfxManager.playNodeSpawn(1);
             }
         };
+
+        // Divider 1: Separator after Toggles
+        textGroup.createDiv({ cls: 'pakcli-row2-divider' });
 
         // 5. SFX Volume Slider
         const volGroup = textGroup.createDiv({ cls: 'pakcli-volume-group' });
@@ -601,50 +891,118 @@ export class BubbleGraphView extends ItemView {
             }
         };
 
-        // 6. Show Text Range Level 0-3 Slider
+        // Divider 2: Separator before Text Level
+        textGroup.createDiv({ cls: 'pakcli-row2-divider' });
+
+        // 6. Text Level Dual Handle Slider (1-4) + Reset to Single Level Button
         const levelGroup = textGroup.createDiv({ cls: 'pakcli-level-group' });
         levelGroup.createSpan({ text: 'Text Level:', cls: 'pakcli-level-label' });
-        this.levelSliderEl = levelGroup.createEl('input', {
+
+        const dualSliderContainer = levelGroup.createDiv({ cls: 'pakcli-dual-slider' });
+        dualSliderContainer.createDiv({ cls: 'pakcli-dual-track' });
+        this.levelHighlightEl = dualSliderContainer.createDiv({ cls: 'pakcli-dual-highlight' });
+
+        this.levelMinSliderEl = dualSliderContainer.createEl('input', {
             type: 'range',
-            cls: 'pakcli-level-slider'
+            cls: 'pakcli-range-min'
         });
-        this.levelSliderEl.min = '0';
-        this.levelSliderEl.max = '3';
-        this.levelSliderEl.step = '1';
-        this.levelSliderEl.value = this.labelRangeLevel.toString();
+        this.levelMinSliderEl.min = '1';
+        this.levelMinSliderEl.max = '4';
+        this.levelMinSliderEl.step = '1';
+        this.levelMinSliderEl.value = this.labelMinLevel.toString();
 
-        const levelDescriptions = [
-            'Level 0: No labels (hover / select only)',
-            'Level 1: Hubs & active notes only',
-            'Level 2: Hubs & documents (2+ links)',
-            'Level 3: All notes including leaves'
-        ];
-
-        this.levelSliderEl.title = levelDescriptions[this.labelRangeLevel] || `Level ${this.labelRangeLevel}`;
+        this.levelMaxSliderEl = dualSliderContainer.createEl('input', {
+            type: 'range',
+            cls: 'pakcli-range-max'
+        });
+        this.levelMaxSliderEl.min = '1';
+        this.levelMaxSliderEl.max = '4';
+        this.levelMaxSliderEl.step = '1';
+        this.levelMaxSliderEl.value = this.labelMaxLevel.toString();
 
         this.levelDisplayEl = levelGroup.createSpan({
-            text: this.labelRangeLevel.toString(),
             cls: 'pakcli-level-display'
         });
-        this.levelDisplayEl.title = levelDescriptions[this.labelRangeLevel] || `Level ${this.labelRangeLevel}`;
 
-        this.levelSliderEl.oninput = () => {
-            const val = parseInt(this.levelSliderEl.value, 10) || 0;
-            this.labelRangeLevel = val;
-            this.levelDisplayEl.setText(val.toString());
-            const desc = levelDescriptions[val] || `Level ${val}`;
-            this.levelSliderEl.title = desc;
-            this.levelDisplayEl.title = desc;
+        this.levelResetBtnEl = levelGroup.createEl('button', {
+            cls: 'clickable-icon pakcli-level-reset-btn'
+        });
+        setIcon(this.levelResetBtnEl, 'rotate-ccw');
+
+        this.syncLevelControls();
+
+        const handleMinInput = () => {
+            let minVal = parseInt(this.levelMinSliderEl.value, 10) || 1;
+            let maxVal = parseInt(this.levelMaxSliderEl.value, 10) || 4;
+            if (minVal > maxVal) {
+                minVal = maxVal;
+                this.levelMinSliderEl.value = minVal.toString();
+            }
+            this.labelMinLevel = minVal;
+            this.labelMaxLevel = maxVal;
+            this.labelRangeLevel = maxVal;
+            this.syncLevelControls();
         };
 
-        this.levelSliderEl.onchange = async () => {
-            const val = parseInt(this.levelSliderEl.value, 10) || 0;
-            this.labelRangeLevel = val;
-            this.plugin.settings.bubbleLabelRangeLevel = val;
+        const handleMaxInput = () => {
+            let minVal = parseInt(this.levelMinSliderEl.value, 10) || 1;
+            let maxVal = parseInt(this.levelMaxSliderEl.value, 10) || 4;
+            if (maxVal < minVal) {
+                maxVal = minVal;
+                this.levelMaxSliderEl.value = maxVal.toString();
+            }
+            this.labelMinLevel = minVal;
+            this.labelMaxLevel = maxVal;
+            this.labelRangeLevel = maxVal;
+            this.syncLevelControls();
+        };
+
+        const saveLevelChange = async () => {
+            this.plugin.settings.bubbleLabelMinLevel = this.labelMinLevel;
+            this.plugin.settings.bubbleLabelMaxLevel = this.labelMaxLevel;
+            this.plugin.settings.bubbleLabelRangeLevel = this.labelMaxLevel;
             await this.plugin.saveSettings();
         };
 
-        // 3. Text Size Slider
+        this.levelMinSliderEl.oninput = handleMinInput;
+        this.levelMinSliderEl.onchange = saveLevelChange;
+
+        this.levelMaxSliderEl.oninput = handleMaxInput;
+        this.levelMaxSliderEl.onchange = saveLevelChange;
+
+        dualSliderContainer.onmousemove = (e: MouseEvent) => {
+            if (this.labelMinLevel === this.labelMaxLevel) {
+                const rect = dualSliderContainer.getBoundingClientRect();
+                const relX = (e.clientX - rect.left) / (rect.width || 1);
+                const thumbPos = (this.labelMinLevel - 1) / 3;
+                if (relX < thumbPos) {
+                    this.levelMinSliderEl.style.zIndex = '3';
+                    this.levelMaxSliderEl.style.zIndex = '2';
+                } else {
+                    this.levelMaxSliderEl.style.zIndex = '3';
+                    this.levelMinSliderEl.style.zIndex = '2';
+                }
+            } else {
+                this.levelMinSliderEl.style.zIndex = '2';
+                this.levelMaxSliderEl.style.zIndex = '2';
+            }
+        };
+
+        this.levelResetBtnEl.onclick = async () => {
+            if (this.labelMinLevel !== this.labelMaxLevel) {
+                await this.setTextLevelRange(this.labelMinLevel, this.labelMinLevel);
+            } else {
+                await this.setTextLevelRange(1, 1);
+            }
+            if (this.sfxManager && this.sfxManager.isEnabled()) {
+                this.sfxManager.playLinkSwitch();
+            }
+        };
+
+        // Divider 3: Separator before Text Size
+        textGroup.createDiv({ cls: 'pakcli-row2-divider' });
+
+        // 7. Text Size Slider
         const sizeGroup = textGroup.createDiv({ cls: 'pakcli-size-group' });
         sizeGroup.createSpan({ text: 'Size:', cls: 'pakcli-size-label' });
         this.fontSizeSliderEl = sizeGroup.createEl('input', {
@@ -671,23 +1029,25 @@ export class BubbleGraphView extends ItemView {
             this.plugin.settings.bubbleLabelFontSize = this.labelFontSize;
             await this.plugin.saveSettings();
         };
+    }
 
-        // Stats Pill
-        this.statsPillEl = headerEl.createDiv({ cls: 'pakcli-stats-pill' });
-        this.updateStatsPill();
-
-        // Right Controls: Timelapse Wand & Search & Buttons
-        const rightGroup = headerEl.createDiv({ cls: 'pakcli-header-right' });
-
-        // 4. Timelapse Magic Wand Button (Identical to Obsidian vanilla graph "Start timelapse animation")
-        this.wandBtnEl = rightGroup.createEl('button', {
-            cls: `pakcli-icon-btn pakcli-wand-btn ${this.isTimelapseRunning ? 'active' : ''}`,
-            title: 'Start timelapse animation'
+    /**
+     * Floating action tools pinned to the top-right corner of the canvas frame:
+     * Search note input, Fit to View, Refresh Graph, Reset View Graph settings.
+     */
+    private renderCanvasFloatingTools(parent: HTMLElement): void {
+        this.floatingToolsEl = parent.createDiv({
+            cls: `pakcli-canvas-floating-tools ${this.isFloatingToolsOpen ? '' : 'collapsed'}`
         });
-        setIcon(this.wandBtnEl, 'wand-2');
-        this.wandBtnEl.onclick = () => this.toggleTimelapse();
+        const floatingTools = this.floatingToolsEl;
 
-        const searchWrap = rightGroup.createDiv({ cls: 'pakcli-search-wrap' });
+        // Prevent canvas dragging or selection while clicking floating tools
+        floatingTools.addEventListener('mousedown', (e) => e.stopPropagation());
+        floatingTools.addEventListener('click', (e) => e.stopPropagation());
+        floatingTools.addEventListener('dblclick', (e) => e.stopPropagation());
+
+        // 1. Search Note Input
+        const searchWrap = floatingTools.createDiv({ cls: 'pakcli-search-wrap' });
         const searchInput = searchWrap.createEl('input', {
             type: 'text',
             placeholder: '🔍 Search notes...',
@@ -708,52 +1068,82 @@ export class BubbleGraphView extends ItemView {
             }
         };
 
-        // Fit to View Button
-        const fitBtn = rightGroup.createEl('button', { cls: 'pakcli-icon-btn', title: 'Fit to View' });
-        setIcon(fitBtn, 'maximize-2');
-        fitBtn.onclick = () => this.fitToView();
+        // 2. Zoom In & Zoom Out Buttons
+        const zoomInBtn = floatingTools.createEl('button', {
+            cls: 'pakcli-icon-btn pakcli-zoom-in-btn',
+            title: 'Zoom In (+)'
+        });
+        setIcon(zoomInBtn, 'zoom-in');
+        zoomInBtn.onclick = () => this.zoomIn();
 
-        // Refresh Button
-        const refreshBtn = rightGroup.createEl('button', { cls: 'pakcli-icon-btn', title: 'Refresh Graph' });
+        const zoomOutBtn = floatingTools.createEl('button', {
+            cls: 'pakcli-icon-btn pakcli-zoom-out-btn',
+            title: 'Zoom Out (-)'
+        });
+        setIcon(zoomOutBtn, 'zoom-out');
+        zoomOutBtn.onclick = () => this.zoomOut();
+
+        // 3. Fit to View Button (One-shot snap)
+        const fitBtn = floatingTools.createEl('button', {
+            cls: 'pakcli-icon-btn pakcli-fit-btn',
+            title: 'Fit to View (Center & Zoom once)'
+        });
+        setIcon(fitBtn, 'crosshair');
+        fitBtn.onclick = () => {
+            this.fitToView(true);
+            if (this.sfxManager?.isEnabled()) {
+                this.sfxManager.playLinkSwitch(0.6);
+            }
+        };
+
+        // 3. Always Auto-tracking Radio Group: [ Fit | Center ]
+        const radioGroup = floatingTools.createDiv({
+            cls: 'pakcli-always-fit-group',
+            title: "Always Auto-tracking: [Fit = Zoom & Center | Center = Center only, won't zoom]"
+        });
+
+        this.fitModeBtnEl = radioGroup.createEl('button', {
+            cls: `pakcli-always-fit-btn ${this.autoFitMode === 'fit' ? 'active' : ''}`,
+            text: 'Fit',
+            title: 'Always Fit: Continuously fit zoom & center'
+        });
+        this.fitModeBtnEl.setAttribute('aria-pressed', this.autoFitMode === 'fit' ? 'true' : 'false');
+        this.fitModeBtnEl.onclick = () => {
+            this.setAutoFitMode('fit');
+        };
+
+        this.centerModeBtnEl = radioGroup.createEl('button', {
+            cls: `pakcli-always-fit-btn ${this.autoFitMode === 'center' ? 'active' : ''}`,
+            text: 'Center',
+            title: "Always Center: Continuously center without changing zoom"
+        });
+        this.centerModeBtnEl.setAttribute('aria-pressed', this.autoFitMode === 'center' ? 'true' : 'false');
+        this.centerModeBtnEl.onclick = () => {
+            this.setAutoFitMode('center');
+        };
+
+        // 4. Refresh Graph Button
+        const refreshBtn = floatingTools.createEl('button', {
+            cls: 'pakcli-icon-btn pakcli-refresh-btn',
+            title: 'Refresh Graph'
+        });
         setIcon(refreshBtn, 'refresh-cw');
         refreshBtn.onclick = () => this.reloadGraphData();
 
-        // Reset View Settings Button
-        const resetSettingsBtn = rightGroup.createEl('button', {
+        // 5. Reset View Graph Settings Button
+        const resetSettingsBtn = floatingTools.createEl('button', {
             cls: 'pakcli-icon-btn pakcli-reset-settings-btn',
             title: 'Reset View Settings to Default'
         });
         setIcon(resetSettingsBtn, 'rotate-ccw');
         resetSettingsBtn.onclick = () => this.resetViewSettings();
-
-        // Inspector Toggle Button
-        this.inspectorBtnEl = rightGroup.createEl('button', {
-            cls: `pakcli-icon-btn pakcli-inspector-toggle-btn ${this.isInspectorOpen ? 'active' : ''}`,
-            title: 'Toggle Inspector'
-        });
-        this.inspectorBtnEl.setAttribute('aria-pressed', this.isInspectorOpen ? 'true' : 'false');
-        setIcon(this.inspectorBtnEl, 'info');
-        this.inspectorBtnEl.onclick = async () => {
-            this.isInspectorOpen = !this.isInspectorOpen;
-            if (this.isInspectorOpen) {
-                this.inspectorEl.removeClass('collapsed');
-                this.inspectorBtnEl.addClass('active');
-                this.inspectorBtnEl.setAttribute('aria-pressed', 'true');
-            } else {
-                this.inspectorEl.addClass('collapsed');
-                this.inspectorBtnEl.removeClass('active');
-                this.inspectorBtnEl.setAttribute('aria-pressed', 'false');
-            }
-            this.plugin.settings.bubbleInspectorOpen = this.isInspectorOpen;
-            await this.plugin.saveSettings();
-        };
     }
 
     private toggleTimelapse(): void {
         if (this.isTimelapseRunning) {
             this.pauseTimelapse();
         } else {
-            if (this.timelapseProgress >= 1.0) {
+            if (this.timelapseProgress >= 0.99) {
                 this.timelapseProgress = 0.0;
                 this.lastVisibleCount = -1;
                 this.timelapseSpawnedClusters.clear();
@@ -766,6 +1156,12 @@ export class BubbleGraphView extends ItemView {
     private startTimelapse(): void {
         this.sfxManager?.initContext();
         this.isTimelapseRunning = true;
+        if (this.timelinePlayBtnEl) {
+            setIcon(this.timelinePlayBtnEl, 'pause');
+            this.timelinePlayBtnEl.addClass('active');
+            this.timelinePlayBtnEl.setAttribute('aria-pressed', 'true');
+            this.timelinePlayBtnEl.setAttribute('title', 'Pause Timelapse');
+        }
         if (this.timelapseProgress <= 0.05) {
             this.timelapseSpawnedClusters.clear();
             this.timelapseConnectedEdges.clear();
@@ -775,13 +1171,39 @@ export class BubbleGraphView extends ItemView {
 
     private pauseTimelapse(): void {
         this.isTimelapseRunning = false;
+        if (this.timelinePlayBtnEl) {
+            setIcon(this.timelinePlayBtnEl, 'play');
+            this.timelinePlayBtnEl.removeClass('active');
+            this.timelinePlayBtnEl.setAttribute('aria-pressed', 'false');
+            this.timelinePlayBtnEl.setAttribute('title', 'Play Timelapse');
+        }
         this.updateTimelineUI();
     }
 
-    private updateTimelineUI(): void {
+    public updateTimelineUI(): void {
         if (this.timelineSliderEl) {
             this.timelineSliderEl.value = Math.round(this.timelapseProgress * 1000).toString();
         }
+
+        const pct = Math.max(0, Math.min(100, this.timelapseProgress * 100));
+        if (this.timelineThumbTipEl) {
+            this.timelineThumbTipEl.style.left = `${pct}%`;
+            this.timelineThumbTipEl.style.transform = `translateX(-${pct}%)`;
+            this.timelineThumbTipEl.style.setProperty('--tip-pct', `${pct}%`);
+
+            if (pct <= 25) {
+                this.timelineThumbTipEl.setAttribute('data-align', 'left');
+            } else if (pct >= 75) {
+                this.timelineThumbTipEl.setAttribute('data-align', 'right');
+            } else {
+                this.timelineThumbTipEl.setAttribute('data-align', 'center');
+            }
+        }
+
+        if (this.timelineCanvasEl) {
+            this.timelineCanvasEl.style.display = 'block';
+        }
+
         if (this.timelineDateBadgeEl && this.graphData) {
             const totalCount = this.graphData.nodes.length;
 
@@ -789,9 +1211,14 @@ export class BubbleGraphView extends ItemView {
                 const spawnedCount = Math.round(this.timelapseProgress * totalCount);
                 if (this.timelapseProgress < 0.999 && spawnedCount < totalCount) {
                     const latestNode = spawnedCount > 0 ? this.sortedNodes[spawnedCount - 1] : this.sortedNodes[0];
-                    const dateStr = latestNode?.ctime ? new Date(latestNode.ctime).toISOString().slice(0, 10) : '';
+                    const nodeTime = latestNode ? getNodeEffectiveTime(latestNode) : 0;
+                    const dateStr = nodeTime ? this.formatTimelineDate(nodeTime) : '';
+                    if (this.timelineThumbTipEl) this.timelineThumbTipEl.setText(`${spawnedCount}/${totalCount}`);
+                    if (this.timelineSliderEl) this.timelineSliderEl.title = `Note ${spawnedCount}/${totalCount} (${dateStr})`;
                     this.timelineDateBadgeEl.setText(`📅 ${dateStr} (${spawnedCount}/${totalCount} notes) • Vanilla 0.025s`);
                 } else {
+                    if (this.timelineThumbTipEl) this.timelineThumbTipEl.setText(`${totalCount}/${totalCount}`);
+                    if (this.timelineSliderEl) this.timelineSliderEl.title = `Present (${totalCount}/${totalCount} notes)`;
                     this.timelineDateBadgeEl.setText(`📅 Present (${totalCount}/${totalCount} notes) • Vanilla`);
                 }
             } else {
@@ -799,11 +1226,17 @@ export class BubbleGraphView extends ItemView {
                 const cutoff = this.timelapseProgress < 0.999
                     ? this.timelapseMinCtime + (this.timelapseMaxCtime - this.timelapseMinCtime) * this.timelapseProgress
                     : null;
-                const visibleCount = this.graphData.nodes.filter(n => !cutoff || n.ctime <= cutoff).length;
+                const visibleCount = this.graphData.nodes.filter(n => !cutoff || getNodeEffectiveTime(n) <= cutoff).length;
                 if (cutoff) {
-                    const dateStr = new Date(cutoff).toISOString().slice(0, 10);
+                    const dateStr = this.formatTimelineDate(cutoff);
+                    if (this.timelineThumbTipEl) this.timelineThumbTipEl.setText(dateStr);
+                    if (this.timelineSliderEl) this.timelineSliderEl.title = dateStr;
                     this.timelineDateBadgeEl.setText(`📅 ${dateStr} (${visibleCount}/${totalCount} notes) • Date-based`);
                 } else {
+                    const latestT = this.timelapseMaxCtime || Date.now();
+                    const dateStr = this.formatTimelineDate(latestT);
+                    if (this.timelineThumbTipEl) this.timelineThumbTipEl.setText(dateStr);
+                    if (this.timelineSliderEl) this.timelineSliderEl.title = `Present (${dateStr})`;
                     this.timelineDateBadgeEl.setText(`📅 Present (${totalCount}/${totalCount} notes) • Date-based`);
                 }
             }
@@ -819,9 +1252,6 @@ export class BubbleGraphView extends ItemView {
                 const modeLabel = this.timelapseMode === 'vanilla' ? 'Vanilla 0.025s/node' : 'Date-based';
                 this.wandBtnEl.setAttribute('title', `Start timelapse animation (${modeLabel})`);
             }
-        }
-        if (this.timelinePlayBtnEl) {
-            setIcon(this.timelinePlayBtnEl, this.isTimelapseRunning ? 'pause' : 'play');
         }
     }
 
@@ -1015,14 +1445,35 @@ export class BubbleGraphView extends ItemView {
     }
 
     private renderTimelineScrubber(container: HTMLElement): void {
-        const timelineEl = container.createDiv({ cls: 'pakcli-timeline-minimap' });
+        const timelineEl = container.createDiv({
+            cls: `pakcli-timeline-minimap ${this.isFooterOpen ? '' : 'collapsed'}`
+        });
+        this.timelineEl = timelineEl;
+
+        // Present / Date badge placed beside the left of the play toggle
+        this.timelineDateBadgeEl = timelineEl.createDiv({
+            cls: 'pakcli-timeline-date-badge',
+            title: 'Click to Jump to Present'
+        });
+        this.timelineDateBadgeEl.onclick = () => {
+            if (this.isTimelapseRunning) {
+                this.pauseTimelapse();
+            }
+            this.timelapseProgress = 1.0;
+            this.lastVisibleCount = -1;
+            this.updateTimelineUI();
+        };
 
         this.timelinePlayBtnEl = timelineEl.createEl('button', {
             cls: 'pakcli-timeline-nav pakcli-timeline-play-btn',
             title: 'Play / Pause Timelapse'
         });
         setIcon(this.timelinePlayBtnEl, 'play');
-        this.timelinePlayBtnEl.onclick = () => this.toggleTimelapse();
+        this.timelinePlayBtnEl.onclick = (e: MouseEvent) => {
+            e.preventDefault();
+            e.stopPropagation();
+            this.toggleTimelapse();
+        };
 
         const restartBtn = timelineEl.createEl('button', {
             cls: 'pakcli-timeline-nav',
@@ -1060,6 +1511,7 @@ export class BubbleGraphView extends ItemView {
             this.plugin.saveSettings();
             this.lastVisibleCount = -1;
             this.updateTimelineUI();
+            this.drawHeatmap();
         };
 
         vanillaModeBtn.onclick = () => {
@@ -1070,9 +1522,19 @@ export class BubbleGraphView extends ItemView {
             this.plugin.saveSettings();
             this.lastVisibleCount = -1;
             this.updateTimelineUI();
+            this.drawHeatmap();
         };
 
         const sliderWrap = timelineEl.createDiv({ cls: 'pakcli-timeline-track-wrap' });
+
+        this.timelineCanvasEl = sliderWrap.createEl('canvas', {
+            cls: 'pakcli-timeline-heatmap-canvas'
+        });
+
+        this.timelineThumbTipEl = sliderWrap.createDiv({
+            cls: 'pakcli-timeline-thumb-tip'
+        });
+
         this.timelineSliderEl = sliderWrap.createEl('input', {
             type: 'range',
             cls: 'pakcli-timeline-slider'
@@ -1082,7 +1544,16 @@ export class BubbleGraphView extends ItemView {
         this.timelineSliderEl.step = '1';
         this.timelineSliderEl.value = '1000';
 
+        this.timelineSliderEl.onpointerdown = () => {
+            if (this.isTimelapseRunning) {
+                this.pauseTimelapse();
+            }
+        };
+
         this.timelineSliderEl.oninput = () => {
+            if (this.isTimelapseRunning) {
+                this.pauseTimelapse();
+            }
             this.timelapseProgress = parseFloat(this.timelineSliderEl.value) / 1000;
             this.lastVisibleCount = -1;
             this.timelapseSpawnedClusters.clear();
@@ -1090,7 +1561,13 @@ export class BubbleGraphView extends ItemView {
             this.updateTimelineUI();
         };
 
-        this.timelineDateBadgeEl = timelineEl.createDiv({ cls: 'pakcli-timeline-date-badge' });
+        if (typeof window !== 'undefined' && 'ResizeObserver' in window) {
+            const ro = new ResizeObserver(() => {
+                this.drawHeatmap();
+            });
+            ro.observe(sliderWrap);
+        }
+
         this.updateTimelineUI();
     }
 
@@ -1110,6 +1587,9 @@ export class BubbleGraphView extends ItemView {
             this.transform.panX -= (mouseScreenX - this.transform.panX) * (zoomFactor - 1);
             this.transform.panY -= (mouseScreenY - this.transform.panY) * (zoomFactor - 1);
             this.transform.zoom = newZoom;
+            if (this.autoFitMode === 'fit') {
+                this.setAutoFitMode('center');
+            }
         });
 
         canvas.addEventListener('mousedown', (e) => {
@@ -1124,6 +1604,9 @@ export class BubbleGraphView extends ItemView {
                 this.isPanning = true;
                 this.panStartX = e.clientX - this.transform.panX;
                 this.panStartY = e.clientY - this.transform.panY;
+                if (this.autoFitMode !== 'off') {
+                    this.setAutoFitMode('off');
+                }
             }
         });
 
@@ -1306,11 +1789,11 @@ export class BubbleGraphView extends ItemView {
 
             if (this.timelapseProgress < 0.999) {
                 if (this.timelapseMode === 'vanilla') {
-                    const count = Math.round(this.timelapseProgress * this.sortedNodes.length);
+                    const count = Math.max(1, Math.round(this.timelapseProgress * this.sortedNodes.length));
                     renderVisibleNodeIds = new Set(this.sortedNodes.slice(0, count).map(n => n.id));
                 } else {
                     renderCutoff = this.timelapseMinCtime + (this.timelapseMaxCtime - this.timelapseMinCtime) * this.timelapseProgress;
-                    renderVisibleNodeIds = new Set(this.graphData.nodes.filter(n => n.ctime <= renderCutoff).map(n => n.id));
+                    renderVisibleNodeIds = new Set(this.graphData.nodes.filter(n => getNodeEffectiveTime(n) <= renderCutoff).map(n => n.id));
                 }
             }
 
@@ -1325,6 +1808,8 @@ export class BubbleGraphView extends ItemView {
                 if (this.simulation) {
                     this.simulation.reheat(0.35);
                 }
+            } else if (this.isTimelapseRunning && this.simulation) {
+                this.simulation.reheat(0.35);
             }
 
             // Detect newly visible bubble clusters during timelapse and trigger resonant chime
@@ -1359,6 +1844,10 @@ export class BubbleGraphView extends ItemView {
                 this.simulation.step(renderVisibleNodeIds);
             }
 
+            if (this.autoFitMode !== 'off' && !this.isPanning) {
+                this.autoFitStep(0.08);
+            }
+
             if (this.renderer && this.graphData) {
 
                 const renderState: RenderState = {
@@ -1378,6 +1867,8 @@ export class BubbleGraphView extends ItemView {
                     showLines: this.showLines,
                     showLabels: this.showLabels,
                     labelRangeLevel: this.labelRangeLevel,
+                    labelMinLevel: this.labelMinLevel,
+                    labelMaxLevel: this.labelMaxLevel,
                     labelFontSize: this.labelFontSize,
                     hullOpacity: this.plugin.settings.bubbleHullOpacity || 0.12,
                     intraLinkOpacity: this.plugin.settings.bubbleIntraLinkOpacity || 0.2,
@@ -1423,7 +1914,7 @@ export class BubbleGraphView extends ItemView {
         for (let i = this.graphData.nodes.length - 1; i >= 0; i--) {
             const node = this.graphData.nodes[i];
             if (visibleSet && !visibleSet.has(node.id)) continue;
-            if (cutoff && node.ctime > cutoff) continue;
+            if (cutoff && getNodeEffectiveTime(node) > cutoff) continue;
             const dist = Math.hypot(node.x - worldX, node.y - worldY);
             if (dist <= node.radius + 4) {
                 return node;
@@ -1464,7 +1955,7 @@ export class BubbleGraphView extends ItemView {
                     const n = this.graphData.nodeMap.get(id);
                     if (!n) return false;
                     if (visibleSet) return visibleSet.has(id);
-                    if (cutoff) return n.ctime <= cutoff;
+                    if (cutoff) return getNodeEffectiveTime(n) <= cutoff;
                     return true;
                 });
                 if (!hasVisible) continue;
@@ -1499,10 +1990,18 @@ export class BubbleGraphView extends ItemView {
         }
     }
 
-    private fitToView(): void {
-        if (!this.graphData || this.graphData.nodes.length === 0) {
-            this.transform = { panX: 0, panY: 0, zoom: 1 };
-            return;
+    private calculateFitTransform(): { zoom: number; panX: number; panY: number } | null {
+        if (!this.graphData || this.graphData.nodes.length === 0) return null;
+
+        let visibleNodeIds: Set<string> | null = null;
+        if (this.timelapseProgress < 0.999) {
+            if (this.timelapseMode === 'vanilla') {
+                const count = Math.max(1, Math.round(this.timelapseProgress * this.sortedNodes.length));
+                visibleNodeIds = new Set(this.sortedNodes.slice(0, count).map(n => n.id));
+            } else {
+                const cutoff = this.timelapseMinCtime + (this.timelapseMaxCtime - this.timelapseMinCtime) * this.timelapseProgress;
+                visibleNodeIds = new Set(this.graphData.nodes.filter(n => getNodeEffectiveTime(n) <= cutoff).map(n => n.id));
+            }
         }
 
         let minX = Infinity;
@@ -1511,6 +2010,7 @@ export class BubbleGraphView extends ItemView {
         let maxY = -Infinity;
 
         for (const node of this.graphData.nodes) {
+            if (visibleNodeIds && !visibleNodeIds.has(node.id)) continue;
             minX = Math.min(minX, node.x);
             minY = Math.min(minY, node.y);
             maxX = Math.max(maxX, node.x);
@@ -1520,6 +2020,7 @@ export class BubbleGraphView extends ItemView {
         if (this.layoutMode === 'bubble') {
             for (const c of this.graphData.clusters) {
                 if (c.radius > 0) {
+                    if (visibleNodeIds && !c.nodeIds.some(id => visibleNodeIds!.has(id))) continue;
                     minX = Math.min(minX, c.centroid.x - c.radius);
                     minY = Math.min(minY, c.centroid.y - c.radius);
                     maxX = Math.max(maxX, c.centroid.x + c.radius);
@@ -1529,21 +2030,142 @@ export class BubbleGraphView extends ItemView {
         }
 
         if (!isFinite(minX) || !isFinite(maxX) || !isFinite(minY) || !isFinite(maxY)) {
-            this.transform = { panX: 0, panY: 0, zoom: 1 };
-            return;
+            return null;
         }
 
-        const width = Math.max(80, maxX - minX + 60);
-        const height = Math.max(80, maxY - minY + 60);
+        const padding = 70;
+        const width = Math.max(80, maxX - minX + padding);
+        const height = Math.max(80, maxY - minY + padding);
         const canvasW = this.canvasEl.width > 0 ? this.canvasEl.width : 800;
         const canvasH = this.canvasEl.height > 0 ? this.canvasEl.height : 600;
         const scaleX = canvasW / width;
         const scaleY = canvasH / height;
-        const newZoom = Math.min(2.5, Math.max(0.3, Math.min(scaleX, scaleY)));
+        const targetZoom = Math.min(2.5, Math.max(0.15, Math.min(scaleX, scaleY) * 0.94));
+        const centerX = (minX + maxX) / 2;
+        const centerY = (minY + maxY) / 2;
+        const targetPanX = -centerX * targetZoom;
+        const targetPanY = -centerY * targetZoom;
 
+        return { zoom: targetZoom, panX: targetPanX, panY: targetPanY, centerX, centerY };
+    }
+
+    public zoomIn(): void {
+        this.zoomBy(1.25);
+    }
+
+    public zoomOut(): void {
+        this.zoomBy(0.8);
+    }
+
+    public zoomBy(factor: number): void {
+        const newZoom = Math.min(4.0, Math.max(0.15, this.transform.zoom * factor));
+        if (Math.abs(newZoom - this.transform.zoom) < 0.0001) return;
+
+        const ratio = newZoom / this.transform.zoom;
+        this.transform.panX *= ratio;
+        this.transform.panY *= ratio;
         this.transform.zoom = newZoom;
-        this.transform.panX = -((minX + maxX) / 2) * newZoom;
-        this.transform.panY = -((minY + maxY) / 2) * newZoom;
+
+        // If in 'fit' mode, manual zoom switches to 'center' mode
+        if (this.autoFitMode === 'fit') {
+            this.setAutoFitMode('center');
+        }
+
+        if (this.sfxManager?.isEnabled()) {
+            this.sfxManager.playLinkSwitch(0.5);
+        }
+    }
+
+    private fitToView(instant: boolean = true): void {
+        const fit = this.calculateFitTransform();
+        if (!fit) {
+            this.transform = { panX: 0, panY: 0, zoom: 1 };
+            return;
+        }
+
+        if (instant) {
+            this.transform.zoom = fit.zoom;
+            this.transform.panX = fit.panX;
+            this.transform.panY = fit.panY;
+        } else {
+            this.transform.zoom += (fit.zoom - this.transform.zoom) * 0.25;
+            this.transform.panX += (fit.panX - this.transform.panX) * 0.25;
+            this.transform.panY += (fit.panY - this.transform.panY) * 0.25;
+        }
+    }
+
+    private centerToView(instant: boolean = true): void {
+        const fit = this.calculateFitTransform();
+        if (!fit) return;
+
+        // Mode 2: Center only, won't zoom - respects current zoom level!
+        const targetPanX = -fit.centerX * this.transform.zoom;
+        const targetPanY = -fit.centerY * this.transform.zoom;
+
+        if (instant) {
+            this.transform.panX = targetPanX;
+            this.transform.panY = targetPanY;
+        } else {
+            this.transform.panX += (targetPanX - this.transform.panX) * 0.25;
+            this.transform.panY += (targetPanY - this.transform.panY) * 0.25;
+        }
+    }
+
+    private autoFitStep(lerpFactor: number = 0.08): void {
+        if (this.autoFitMode === 'off') return;
+        const fit = this.calculateFitTransform();
+        if (!fit) return;
+
+        if (this.autoFitMode === 'fit') {
+            // Mode 1: Always Fit - adjusts both zoom & pan
+            this.transform.zoom += (fit.zoom - this.transform.zoom) * lerpFactor;
+            this.transform.panX += (fit.panX - this.transform.panX) * lerpFactor;
+            this.transform.panY += (fit.panY - this.transform.panY) * lerpFactor;
+        } else if (this.autoFitMode === 'center') {
+            // Mode 2: Always Center - centers position but WON'T zoom!
+            const targetPanX = -fit.centerX * this.transform.zoom;
+            const targetPanY = -fit.centerY * this.transform.zoom;
+            this.transform.panX += (targetPanX - this.transform.panX) * lerpFactor;
+            this.transform.panY += (targetPanY - this.transform.panY) * lerpFactor;
+        }
+    }
+
+    public setAutoFitMode(mode: 'off' | 'fit' | 'center'): void {
+        // Toggle off if clicking the currently active mode
+        this.autoFitMode = (this.autoFitMode === mode) ? 'off' : mode;
+        this.updateAutoFitUI();
+        this.plugin.settings.bubbleAutoFitMode = this.autoFitMode;
+        this.plugin.settings.bubbleAlwaysFit = this.autoFitMode !== 'off';
+        this.plugin.saveSettings();
+
+        if (this.sfxManager?.isEnabled()) {
+            this.sfxManager.playLinkSwitch();
+        }
+
+        if (this.autoFitMode === 'fit') {
+            this.fitToView(true);
+        } else if (this.autoFitMode === 'center') {
+            this.centerToView(true);
+        }
+    }
+
+    private updateAutoFitUI(): void {
+        if (this.fitModeBtnEl) {
+            const isFit = this.autoFitMode === 'fit';
+            this.fitModeBtnEl.toggleClass('active', isFit);
+            this.fitModeBtnEl.setAttribute('aria-pressed', isFit ? 'true' : 'false');
+            this.fitModeBtnEl.setAttribute('title', isFit
+                ? 'Always Fit: ACTIVE (Continuously fits zoom & center) - Click to turn OFF'
+                : 'Always Fit: Continuously fit zoom & center');
+        }
+        if (this.centerModeBtnEl) {
+            const isCenter = this.autoFitMode === 'center';
+            this.centerModeBtnEl.toggleClass('active', isCenter);
+            this.centerModeBtnEl.setAttribute('aria-pressed', isCenter ? 'true' : 'false');
+            this.centerModeBtnEl.setAttribute('title', isCenter
+                ? "Always Center: ACTIVE (Continuously centers, won't zoom) - Click to turn OFF"
+                : "Always Center: Continuously center without changing zoom");
+        }
     }
 
     public setSfxEnabled(enabled: boolean): void {
@@ -1577,22 +2199,214 @@ export class BubbleGraphView extends ItemView {
         }
     }
 
+    private getLevelName(lvl: number): string {
+        switch (lvl) {
+            case 1: return 'Hubs & Active';
+            case 2: return 'Documents (2+ links)';
+            case 3: return 'Leaves (1 link)';
+            case 4: return 'Orphans (0 links)';
+            default: return `Level ${lvl}`;
+        }
+    }
+
+    private getLevelTooltip(min: number, max: number): string {
+        if (min === max) {
+            return `Level ${min} only: ${this.getLevelName(min)}`;
+        }
+        return `Levels ${min}-${max}: ${this.getLevelName(min)} to ${this.getLevelName(max)}`;
+    }
+
+    private syncLevelControls(): void {
+        if (!this.levelMinSliderEl || !this.levelMaxSliderEl) return;
+        this.levelMinSliderEl.value = this.labelMinLevel.toString();
+        this.levelMaxSliderEl.value = this.labelMaxLevel.toString();
+
+        const leftPercent = ((this.labelMinLevel - 1) / 3) * 100;
+        const widthPercent = ((this.labelMaxLevel - this.labelMinLevel) / 3) * 100;
+        if (this.levelHighlightEl) {
+            this.levelHighlightEl.style.left = `${leftPercent}%`;
+            this.levelHighlightEl.style.width = `${widthPercent}%`;
+        }
+
+        const isSingle = this.labelMinLevel === this.labelMaxLevel;
+        const displayText = isSingle
+            ? this.labelMinLevel.toString()
+            : `${this.labelMinLevel}-${this.labelMaxLevel}`;
+
+        const desc = this.getLevelTooltip(this.labelMinLevel, this.labelMaxLevel);
+        this.levelMinSliderEl.title = `Min Text Level: ${this.labelMinLevel} (${this.getLevelName(this.labelMinLevel)})`;
+        this.levelMaxSliderEl.title = `Max Text Level: ${this.labelMaxLevel} (${this.getLevelName(this.labelMaxLevel)})`;
+
+        if (this.levelDisplayEl) {
+            this.levelDisplayEl.setText(displayText);
+            this.levelDisplayEl.title = desc;
+        }
+
+        if (this.levelResetBtnEl) {
+            this.levelResetBtnEl.title = isSingle
+                ? (this.labelMinLevel === 1 ? `Level 1 active (click to reset)` : `Reset to Level 1 (Hubs & Active only)`)
+                : `Reset to single level (Level ${this.labelMinLevel} only)`;
+            this.levelResetBtnEl.setAttribute('aria-label', this.levelResetBtnEl.title);
+        }
+    }
+
+    public async setTextLevelRange(min: number, max: number): Promise<void> {
+        this.labelMinLevel = Math.max(1, Math.min(4, Math.min(min, max)));
+        this.labelMaxLevel = Math.max(1, Math.min(4, Math.max(min, max)));
+        this.labelRangeLevel = this.labelMaxLevel;
+        this.plugin.settings.bubbleLabelMinLevel = this.labelMinLevel;
+        this.plugin.settings.bubbleLabelMaxLevel = this.labelMaxLevel;
+        this.plugin.settings.bubbleLabelRangeLevel = this.labelRangeLevel;
+        await this.plugin.saveSettings();
+        this.syncLevelControls();
+    }
+
     public setTextLevel(level: number): void {
-        this.labelRangeLevel = level;
-        if (this.levelSliderEl) {
-            this.levelSliderEl.value = level.toString();
-            const levelDescriptions = [
-                'Level 0: No labels (hover / select only)',
-                'Level 1: Hubs & active notes only',
-                'Level 2: Hubs & documents (2+ links)',
-                'Level 3: All notes including leaves'
-            ];
-            const desc = levelDescriptions[level] || `Level ${level}`;
-            this.levelSliderEl.title = desc;
-            if (this.levelDisplayEl) {
-                this.levelDisplayEl.setText(level.toString());
-                this.levelDisplayEl.title = desc;
+        this.setTextLevelRange(level, level);
+    }
+
+    public formatTimelineDate(timestamp: number, customFormat?: string): string {
+        const format = customFormat || this.plugin.settings.bubbleTimelapseDateFormat || 'DD - MM - YYYY';
+        const d = new Date(timestamp);
+        if (isNaN(d.getTime())) return '';
+
+        try {
+            if (typeof window !== 'undefined' && (window as any).moment) {
+                return (window as any).moment(timestamp).format(format);
+            }
+        } catch {
+            // fallback
+        }
+
+        const day = String(d.getDate()).padStart(2, '0');
+        const month = String(d.getMonth() + 1).padStart(2, '0');
+        const year = String(d.getFullYear());
+
+        return format
+            .replace(/DD/gi, day)
+            .replace(/MM/gi, month)
+            .replace(/YYYY/gi, year)
+            .replace(/YY/gi, year.slice(-2));
+    }
+
+    public drawHeatmap(): void {
+        if (!this.timelineCanvasEl || !this.graphData) return;
+        const canvas = this.timelineCanvasEl;
+        const rect = canvas.getBoundingClientRect();
+        if (rect.width <= 0) return;
+
+        const dpr = window.devicePixelRatio || 1;
+        canvas.width = Math.round(rect.width * dpr);
+        canvas.height = Math.round(rect.height * dpr);
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return;
+        ctx.scale(dpr, dpr);
+        ctx.clearRect(0, 0, rect.width, rect.height);
+
+        const computed = getComputedStyle(this.containerEl);
+        const accent = computed.getPropertyValue('--interactive-accent').trim() || 
+                       computed.getPropertyValue('--color-accent').trim() || 
+                       '#7c3aed';
+
+        // Pitch for |||| tick marks: 2px bar + 1px gap = 3px pitch
+        const tickW = 2;
+        const gap = 1;
+        const pitch = tickW + gap;
+        const numBars = Math.max(1, Math.floor(rect.width / pitch));
+
+        if (this.timelapseMode === 'vanilla') {
+            // In Vanilla mode: draw uniform subtle ticks across the entire track
+            ctx.save();
+            ctx.fillStyle = accent;
+            ctx.globalAlpha = 0.22;
+            for (let i = 0; i < numBars; i++) {
+                const x = i * pitch;
+                const barH = rect.height - 4;
+                const y = 2;
+                ctx.fillRect(x, y, tickW, barH);
+            }
+            ctx.restore();
+            return;
+        }
+
+        const minT = this.timelapseMinCtime;
+        const maxT = this.timelapseMaxCtime;
+        const span = Math.max(1, maxT - minT);
+
+        const barCounts = new Uint32Array(numBars);
+
+        for (const node of this.graphData.nodes) {
+            const times = new Set<number>();
+            const birthT = getNodeEffectiveTime(node);
+            const latestT = getNodeLatestTime(node);
+            if (birthT >= minT && birthT <= maxT) times.add(birthT);
+            if (latestT >= minT && latestT <= maxT) times.add(latestT);
+
+            for (const t of times) {
+                const ratio = (t - minT) / span;
+                const idx = Math.min(numBars - 1, Math.max(0, Math.floor(ratio * numBars)));
+                barCounts[idx]++;
             }
         }
+
+        // Draw |||| tick marks with saturation based on count:
+        // 0 -> 0% (nothing), 1 -> 10% (0.1), 5 -> 50% (0.5), 10+ -> 100% (1.0)
+        for (let i = 0; i < numBars; i++) {
+            const count = barCounts[i];
+            if (count > 0) {
+                const saturation = Math.min(1.0, count * 0.10);
+                ctx.save();
+                ctx.globalAlpha = saturation;
+                ctx.fillStyle = accent;
+                const x = i * pitch;
+                const barH = rect.height - 4;
+                const y = 2;
+                ctx.fillRect(x, y, tickW, barH);
+                ctx.restore();
+            }
+        }
+    }
+
+    public async toggleFullscreen(): Promise<void> {
+        try {
+            if (document.fullscreenElement) {
+                await document.exitFullscreen();
+                this.isFullscreen = false;
+                this.contentEl.removeClass('pakcli-view-fullscreen');
+                this.updateFullscreenUI();
+            } else if (this.contentEl.hasClass('pakcli-view-fullscreen')) {
+                this.toggleCssFullscreen(false);
+            } else {
+                if (this.contentEl.requestFullscreen) {
+                    await this.contentEl.requestFullscreen();
+                } else if ((this.contentEl as any).webkitRequestFullscreen) {
+                    await (this.contentEl as any).webkitRequestFullscreen();
+                } else {
+                    this.toggleCssFullscreen(true);
+                }
+            }
+        } catch (err) {
+            console.warn('[BubbleGraphView] Fullscreen error, falling back to CSS fullscreen:', err);
+            this.toggleCssFullscreen(!this.contentEl.hasClass('pakcli-view-fullscreen'));
+        }
+    }
+
+    public toggleCssFullscreen(enable?: boolean): void {
+        const target = enable ?? !this.contentEl.hasClass('pakcli-view-fullscreen');
+        this.contentEl.toggleClass('pakcli-view-fullscreen', target);
+        this.isFullscreen = target;
+        this.updateFullscreenUI();
+        setTimeout(() => {
+            this.renderer?.resize();
+            this.drawHeatmap();
+        }, 60);
+    }
+
+    private updateFullscreenUI(): void {
+        if (!this.fullscreenBtnEl) return;
+        this.fullscreenBtnEl.toggleClass('active', this.isFullscreen);
+        this.fullscreenBtnEl.setAttribute('aria-pressed', this.isFullscreen ? 'true' : 'false');
+        this.fullscreenBtnEl.setAttribute('title', this.isFullscreen ? 'Exit Fullscreen (Kembali ke Normal View)' : 'Grand Fullscreen (Layar Penuh)');
+        setIcon(this.fullscreenBtnEl, this.isFullscreen ? 'minimize' : 'maximize');
     }
 }

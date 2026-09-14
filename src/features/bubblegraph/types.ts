@@ -1,4 +1,4 @@
-export type NodeGlyphType = 'hub' | 'active' | 'document' | 'leaf';
+export type NodeGlyphType = 'hub' | 'active' | 'document' | 'leaf' | 'no-dot' | 'dot' | 'plus' | 'minus' | 'i' | 'square' | 'ring' | 'star';
 
 export type LinkTier = 'tier1_intra' | 'tier2_inter' | 'tier3_flow';
 
@@ -9,6 +9,7 @@ export interface BubbleNode {
     topLevelFolder: string; // Top-level folder, e.g. "01-projects" or "/"
     subFolder: string; // Subfolder part, e.g. "alpha-app"
     ctime: number; // File creation timestamp for timelapse animation
+    mtime?: number; // File modification timestamp
     inDegree: number;
     outDegree: number;
     totalDegree: number;

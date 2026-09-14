@@ -5,4 +5,7 @@ main.js
 dist/
 # Local publisher configuration
 .publish-config.json
+ps_publish.json
+.vaultpath
+important-links
 important-links
