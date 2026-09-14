@@ -55,6 +55,7 @@ export class BubbleGraphView extends ItemView {
     private inspectorEl!: HTMLElement;
     private inspectorBtnEl!: HTMLElement;
     private isInspectorOpen: boolean = true;
+    private depthGroupEl: HTMLElement | null = null;
     private depthButtons: HTMLElement[] = [];
     private wandBtnEl!: HTMLElement;
     private linesToggleBtnEl!: HTMLElement;
@@ -349,6 +350,12 @@ export class BubbleGraphView extends ItemView {
         });
         bubbleTab.setAttribute('aria-pressed', this.layoutMode === 'bubble' ? 'true' : 'false');
 
+        const updateDepthVisibility = () => {
+            if (this.depthGroupEl) {
+                this.depthGroupEl.style.display = this.layoutMode === 'bubble' ? 'flex' : 'none';
+            }
+        };
+
         defaultTab.onclick = () => {
             this.layoutMode = 'default';
             defaultTab.addClass('active');
@@ -356,6 +363,7 @@ export class BubbleGraphView extends ItemView {
             bubbleTab.removeClass('active');
             bubbleTab.setAttribute('aria-pressed', 'false');
             this.simulation.setOptions({ layoutMode: 'default' });
+            updateDepthVisibility();
         };
 
         bubbleTab.onclick = () => {
@@ -365,6 +373,7 @@ export class BubbleGraphView extends ItemView {
             defaultTab.removeClass('active');
             defaultTab.setAttribute('aria-pressed', 'false');
             this.simulation.setOptions({ layoutMode: 'bubble' });
+            updateDepthVisibility();
         };
 
         // Scope Navigation Bar & Breadcrumbs
@@ -373,6 +382,8 @@ export class BubbleGraphView extends ItemView {
 
         // Middle Drag Depth Scrubber
         const depthGroup = headerEl.createDiv({ cls: 'pakcli-depth-group' });
+        this.depthGroupEl = depthGroup;
+        updateDepthVisibility();
         depthGroup.createSpan({ text: 'Depth:', cls: 'pakcli-depth-label' });
         const depthWrap = depthGroup.createDiv({ cls: 'pakcli-depth-buttons' });
 

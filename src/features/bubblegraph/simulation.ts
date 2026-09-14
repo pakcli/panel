@@ -241,7 +241,7 @@ export class BubbleSimulation {
 
     private alpha: number = 1.0;
     private alphaMin: number = 0.001;
-    private alphaDecay: number = 0.02;
+    private alphaDecay: number = 0.012;
 
     private draggedNodes: Array<{ node: BubbleNode; offsetX: number; offsetY: number }> = [];
     private isDragging: boolean = false;
@@ -255,19 +255,36 @@ export class BubbleSimulation {
         this.nodes = nodes;
         this.edges = edges;
         this.clusters = clusters;
-        this.options = {
-            repulsionStrength: 500,
-            linkStrength: 0.03,
-            vennAttraction: 0.0,
-            clusterCentroidStrength: 0.08,
-            damping: 0.76,
-            ...options
-        };
-        this.nodes.forEach(n => this.nodeMap.set(n.id, n));
+        this.options = options;
+        for (const node of this.nodes) {
+            this.nodeMap.set(node.id, node);
+        }
+        for (const edge of this.edges) {
+            edge.sourceNode = this.nodeMap.get(edge.source);
+            edge.targetNode = this.nodeMap.get(edge.target);
+        }
         this.initializePositions();
     }
 
     private initializePositions(): void {
+        if (this.options.layoutMode === 'default') {
+            const count = this.nodes.length;
+            if (count === 0) return;
+            const radius = Math.max(50, Math.sqrt(count) * 7.5);
+            this.nodes.forEach((node, idx) => {
+                const angle = idx * 2.3999632;
+                const dist = Math.sqrt((idx + 0.5) / count) * radius;
+                node.x = Math.cos(angle) * dist + (Math.random() - 0.5) * 4;
+                node.y = Math.sin(angle) * dist + (Math.random() - 0.5) * 4;
+                node.vx = (Math.random() - 0.5) * 1.0;
+                node.vy = (Math.random() - 0.5) * 1.0;
+                node.fx = null;
+                node.fy = null;
+            });
+            this.alpha = 1.0;
+            return;
+        }
+
         const topClusters = this.clusters.filter(c => c.depth === 1);
         if (topClusters.length === 0) return;
 
@@ -485,8 +502,14 @@ export class BubbleSimulation {
     }
 
     public setOptions(opts: Partial<SimulationOptions>): void {
+        const prevMode = this.options.layoutMode;
         this.options = { ...this.options, ...opts };
-        this.reheat();
+        if (opts.layoutMode && opts.layoutMode !== prevMode) {
+            this.initializePositions();
+            this.reheat(1.0);
+        } else {
+            this.reheat();
+        }
     }
 
     public reheat(amount: number = 0.4): void {
@@ -1012,43 +1035,130 @@ export class BubbleSimulation {
 
         } else {
             // =========================================================================
-            // STANDARD DEFAULT FORCE-DIRECTED GRAPH MODE
+            // STANDARD OBSIDIAN FORCE-DIRECTED GRAPH PHYSICS
+            // Literally simulates Obsidian Graph View:
+            // 1. Center force (gravity pulling toward (0,0))
+            // 2. Many-body repulsion (smooth 2D Coulomb charge with degree-mass weighting)
+            // 3. Link spring force (elastic Hooke's law with resting distance & degree bias)
+            // 4. Collision avoidance (prevents node overlap)
             // =========================================================================
             const nodeCount = this.nodes.length;
+            const currentAlpha = alpha;
+
+            // 1. Center Force (Gravity) — Keeps graph compact, pulls orphans inward toward the cluster
+            const centerStrength = 0.032;
+            for (let i = 0; i < nodeCount; i++) {
+                const node = this.nodes[i];
+                if (visibleNodeIds && !visibleNodeIds.has(node.id)) continue;
+                if (node.fx !== null) continue;
+                // Orphan nodes (0 links) get slightly stronger pull to stay nestled near the graph perimeter
+                const cK = (!node.totalDegree || node.totalDegree === 0) ? centerStrength * 1.4 : centerStrength;
+                node.vx -= node.x * cK * currentAlpha;
+                node.vy -= node.y * cK * currentAlpha;
+            }
+
+            // 2. Many-body Repulsion (Obsidian Charge) — Bounded local repulsion, NO infinite outward blast!
+            const repelStrength = 36;
+            const maxRepelDist = 180;
+            const maxRepelDistSq = maxRepelDist * maxRepelDist; // 32,400
+
+            for (let i = 0; i < nodeCount; i++) {
+                const na = this.nodes[i];
+                if (visibleNodeIds && !visibleNodeIds.has(na.id)) continue;
+                const massA = 1 + Math.min(1.5, Math.sqrt(na.totalDegree || 0) * 0.25);
+
+                for (let j = i + 1; j < nodeCount; j++) {
+                    const nb = this.nodes[j];
+                    if (visibleNodeIds && !visibleNodeIds.has(nb.id)) continue;
+
+                    const dx = nb.x - na.x;
+                    const dy = nb.y - na.y;
+                    const distSq = dx * dx + dy * dy;
+                    if (distSq > maxRepelDistSq) continue; // Do not blast distant nodes!
+
+                    const dist = Math.sqrt(distSq) || 0.1;
+                    const massB = 1 + Math.min(1.5, Math.sqrt(nb.totalDegree || 0) * 0.25);
+
+                    // Smooth falloff factor to zero between 100px and 180px
+                    const fade = dist > 100 ? (1 - (dist - 100) / 80) : 1.0;
+                    const charge = repelStrength * massA * massB;
+                    const force = ((charge * currentAlpha) / Math.max(16, dist)) * fade;
+
+                    const fx = (dx / dist) * force;
+                    const fy = (dy / dist) * force;
+
+                    if (na.fx === null) {
+                        na.vx -= fx;
+                        na.vy -= fy;
+                    }
+                    if (nb.fx === null) {
+                        nb.vx += fx;
+                        nb.vy += fy;
+                    }
+                }
+            }
+
+            // 3. Link Springs (Hooke's Law) — Connected notes attract each other
+            const restingLinkDist = 38; // Classic Obsidian resting link distance
+            const springStiffness = 0.42;
+            for (const edge of this.edges) {
+                const src = edge.sourceNode;
+                const tgt = edge.targetNode;
+                if (!src || !tgt) continue;
+                if (visibleNodeIds && (!visibleNodeIds.has(src.id) || !visibleNodeIds.has(tgt.id))) continue;
+
+                const dx = tgt.x - src.x;
+                const dy = tgt.y - src.y;
+                const dist = Math.hypot(dx, dy) || 0.001;
+                const displacement = dist - restingLinkDist;
+                const springForce = displacement * springStiffness * currentAlpha;
+
+                // Degree weighting: Leaves are drawn strongly towards hubs, hubs stay rooted
+                const degSrc = Math.max(1, src.totalDegree || 1);
+                const degTgt = Math.max(1, tgt.totalDegree || 1);
+                const bias = degTgt / (degSrc + degTgt);
+
+                const fx = (dx / dist) * springForce;
+                const fy = (dy / dist) * springForce;
+
+                if (src.fx === null) {
+                    src.vx += fx * bias;
+                    src.vy += fy * bias;
+                }
+                if (tgt.fx === null) {
+                    tgt.vx -= fx * (1 - bias);
+                    tgt.vy -= fy * (1 - bias);
+                }
+            }
+
+            // 4. Hard Collision Avoidance — Soft bounce to eliminate overlap
             for (let i = 0; i < nodeCount; i++) {
                 const na = this.nodes[i];
                 if (visibleNodeIds && !visibleNodeIds.has(na.id)) continue;
                 for (let j = i + 1; j < nodeCount; j++) {
                     const nb = this.nodes[j];
                     if (visibleNodeIds && !visibleNodeIds.has(nb.id)) continue;
-                    const dx = nb.x - na.x; const dy = nb.y - na.y;
-                    const distSq = dx * dx + dy * dy;
-                    if (distSq < 200 * 200) {
-                        const dist = Math.sqrt(distSq) || 1;
-                        const force = (400 / distSq) * alpha;
-                        na.vx -= (dx / dist) * force; na.vy -= (dy / dist) * force;
-                        nb.vx += (dx / dist) * force; nb.vy += (dy / dist) * force;
+
+                    const minD = na.radius + nb.radius + 3.0;
+                    const dx = nb.x - na.x;
+                    const dy = nb.y - na.y;
+                    const d2 = dx * dx + dy * dy;
+                    if (d2 < minD * minD && d2 > 0.0001) {
+                        const d = Math.sqrt(d2);
+                        const overlap = minD - d;
+                        const push = (overlap * 0.5) / d;
+                        if (na.fx === null) { na.vx -= dx * push; na.vy -= dy * push; }
+                        if (nb.fx === null) { nb.vx += dx * push; nb.vy += dy * push; }
                     }
                 }
-            }
-
-            for (const edge of this.edges) {
-                const src = edge.sourceNode; const tgt = edge.targetNode;
-                if (!src || !tgt) continue;
-                if (visibleNodeIds && (!visibleNodeIds.has(src.id) || !visibleNodeIds.has(tgt.id))) continue;
-                const dx = tgt.x - src.x; const dy = tgt.y - src.y;
-                const dist = Math.hypot(dx, dy) || 1;
-                const targetDist = edge.tier === 'tier2_inter' ? 120 : 50;
-                const force = (dist - targetDist) * 0.03 * alpha;
-                src.vx += (dx / dist) * force; src.vy += (dy / dist) * force;
-                tgt.vx -= (dx / dist) * force; tgt.vy -= (dy / dist) * force;
             }
         }
 
         // =========================================================================
         // FINAL VELOCITY INTEGRATION (default mode nodes + unspawned node parking)
         // =========================================================================
-        const maxSpeed = 3.5;
+        const maxSpeed = isBubbleMode ? 3.5 : 6.0;
+        const defaultDamping = 0.62;
         for (const node of this.nodes) {
             if (visibleNodeIds && !visibleNodeIds.has(node.id)) {
                 // Park unspawned node at cluster centroid
@@ -1062,7 +1172,6 @@ export class BubbleSimulation {
 
             if (node.fx !== null && node.fy !== null) {
                 node.x = node.fx; node.y = node.fy;
-                node.vx = 0; node.vy = 0;
                 continue;
             }
 
@@ -1070,9 +1179,18 @@ export class BubbleSimulation {
             if (isBubbleMode) continue;
 
             const speed = Math.hypot(node.vx, node.vy);
-            if (speed > maxSpeed) { node.vx = (node.vx / speed) * maxSpeed; node.vy = (node.vy / speed) * maxSpeed; }
-            node.x += node.vx; node.y += node.vy;
-            node.vx *= damping; node.vy *= damping;
+            if (speed > maxSpeed) {
+                node.vx = (node.vx / speed) * maxSpeed;
+                node.vy = (node.vy / speed) * maxSpeed;
+            }
+            node.x += node.vx;
+            node.y += node.vy;
+            node.vx *= defaultDamping;
+            node.vy *= defaultDamping;
+            if (speed < 0.01) {
+                node.vx = 0;
+                node.vy = 0;
+            }
         }
 
         updateClusterHulls(this.clusters, this.nodeMap, 18, visibleNodeIds, isBubbleMode);
@@ -1082,6 +1200,22 @@ export class BubbleSimulation {
     }
 
     public startDrag(targetNode: BubbleNode, worldX: number, worldY: number): void {
+        const isDefaultMode = this.options.layoutMode === 'default';
+        if (isDefaultMode) {
+            // In Graph View mode: literally simulate Obsidian Graph View
+            // Drag only the single clicked node, connected links pull other nodes via springs
+            this.isDragging = true;
+            this.draggedNodes = [{
+                node: targetNode,
+                offsetX: targetNode.x - worldX,
+                offsetY: targetNode.y - worldY
+            }];
+            targetNode.fx = targetNode.x;
+            targetNode.fy = targetNode.y;
+            this.reheat(0.4);
+            return;
+        }
+
         const depth = this.options.maxDragDepth;
         if (depth === 0) return;
         this.isDragging = true;
@@ -1109,13 +1243,21 @@ export class BubbleSimulation {
     public updateDrag(worldX: number, worldY: number): void {
         if (!this.isDragging || this.draggedNodes.length === 0) return;
         for (const item of this.draggedNodes) {
-            item.node.fx = worldX + item.offsetX;
-            item.node.fy = worldY + item.offsetY;
-            item.node.x = item.node.fx;
-            item.node.y = item.node.fy;
+            const prevX = item.node.x;
+            const prevY = item.node.y;
+            const newX = worldX + item.offsetX;
+            const newY = worldY + item.offsetY;
+
+            // Impart momentum velocity so node can be thrown naturally on release
+            item.node.vx = (newX - prevX) * 0.5;
+            item.node.vy = (newY - prevY) * 0.5;
+            item.node.fx = newX;
+            item.node.fy = newY;
+            item.node.x = newX;
+            item.node.y = newY;
         }
         const depth = this.options.maxDragDepth;
-        if (depth >= 1 && depth <= 5 && this.draggedNodes.length > 0) {
+        if (this.options.layoutMode !== 'default' && depth >= 1 && depth <= 5 && this.draggedNodes.length > 0) {
             const firstNodeId = this.draggedNodes[0].node.id;
             const cluster = this.clusters.find(c => c.depth === depth && c.nodeIds.includes(firstNodeId));
             if (cluster) {
@@ -1125,13 +1267,16 @@ export class BubbleSimulation {
                 cluster.centroid.y = sy / this.draggedNodes.length;
             }
         }
-        this.reheat(0.2);
+        this.reheat(0.35);
     }
 
     public endDrag(): void {
         this.isDragging = false;
-        for (const item of this.draggedNodes) { item.node.fx = null; item.node.fy = null; }
+        for (const item of this.draggedNodes) {
+            item.node.fx = null;
+            item.node.fy = null;
+        }
         this.draggedNodes = [];
-        this.reheat(0.1);
+        this.reheat(0.25);
     }
 }
