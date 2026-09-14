@@ -5,6 +5,7 @@ export type LinkTier = 'tier1_intra' | 'tier2_inter' | 'tier3_flow';
 export interface BubbleNode {
     id: string; // File path, e.g. "01-projects/alpha-app/router.md"
     name: string; // Base name, e.g. "router"
+    title?: string; // Frontmatter title if available
     extension: string; // File extension without leading dot, e.g. "md", "canvas", "json", "csv"
     folderPath: string; // Full relative folder, e.g. "01-projects/alpha-app"
     topLevelFolder: string; // Top-level folder, e.g. "01-projects" or "/"

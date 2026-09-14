@@ -24,7 +24,7 @@ export interface BubbleGraphSettings {
     bubbleIntraLinkOpacity: number;
     bubbleInterLinkGlow: boolean;
     bubbleClusterPadding: number;
-    bubbleTimelapseMode: 'date' | 'vanilla';
+    bubbleTimelapseMode: 'vanilla' | 'time' | 'filename' | 'title' | 'date';
     bubbleTimelapseVanillaSpeed: number;
     bubbleTimelapseDateFormat: string;
     bubbleUseCaptainColors: boolean;
@@ -110,7 +110,7 @@ export const DEFAULT_BUBBLE_GRAPH_SETTINGS: BubbleGraphSettings = {
     bubbleIntraLinkOpacity: 0.2,
     bubbleInterLinkGlow: true,
     bubbleClusterPadding: 40,
-    bubbleTimelapseMode: 'date',
+    bubbleTimelapseMode: 'vanilla',
     bubbleTimelapseVanillaSpeed: 0.025,
     bubbleTimelapseDateFormat: 'DD - MM - YYYY',
     bubbleUseCaptainColors: false,

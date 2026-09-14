@@ -281,6 +281,11 @@ export function buildVaultGraph(
         const path = file.path;
         const name = file.basename;
         const ext = file.extension ? file.extension.toLowerCase() : 'md';
+        const fileCache = app.metadataCache.getFileCache(file);
+        const rawTitle = fileCache?.frontmatter?.title ?? fileCache?.frontmatter?.Title;
+        const title = (rawTitle !== undefined && rawTitle !== null && String(rawTitle).trim().length > 0)
+            ? String(rawTitle).trim()
+            : undefined;
         const folderPath = file.parent && file.parent.path !== '/' ? normalizePath(file.parent.path) : '';
 
         let topLevelFolder = '/';
@@ -349,6 +354,7 @@ export function buildVaultGraph(
         const node: BubbleNode = {
             id: path,
             name,
+            title,
             extension: ext,
             folderPath,
             topLevelFolder,

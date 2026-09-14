@@ -42,7 +42,7 @@ export class BubbleGraphView extends ItemView {
     private labelFontSize: number = 11; // 8 - 24px
 
     // Timelapse State
-    private timelapseMode: 'date' | 'vanilla' = 'date';
+    private timelapseMode: 'vanilla' | 'time' | 'filename' | 'title' = 'vanilla';
     private sortedNodes: BubbleNode[] = [];
     private isTimelapseRunning: boolean = false;
     private timelapseProgress: number = 1.0; // 0.0 (oldest) to 1.0 (present)
@@ -104,7 +104,7 @@ export class BubbleGraphView extends ItemView {
     private timelineCanvasEl!: HTMLCanvasElement;
     private timelineThumbTipEl!: HTMLElement;
     private timelineDateBadgeEl!: HTMLElement;
-    private timelapseModeButtons: HTMLElement[] = [];
+    private timelapseModeSelectEl: HTMLSelectElement | null = null;
 
     // Captain Folder Colors toggle
     private useCaptainColors: boolean = false;
@@ -138,9 +138,14 @@ export class BubbleGraphView extends ItemView {
         this.labelMode = this.plugin.settings.bubbleLabelMode || 'all';
         this.customLabelFormats = this.plugin.settings.bubbleLabelCustomFormats || 'md, canvas, json, base, csv, folder';
         this.updateCustomLabelFormatsSet(this.customLabelFormats);
-        this.showLines = this.plugin.settings.bubbleShowLines !== false;
-        this.timelapseMode = this.plugin.settings.bubbleTimelapseMode || 'date';
-        this.useCaptainColors = this.plugin.settings.bubbleUseCaptainColors === true;
+        const savedTimelapse = this.plugin.settings.bubbleTimelapseMode as string;
+        if (savedTimelapse === 'date') {
+            this.timelapseMode = 'time';
+        } else if (savedTimelapse === 'time' || savedTimelapse === 'filename' || savedTimelapse === 'title' || savedTimelapse === 'vanilla') {
+            this.timelapseMode = savedTimelapse;
+        } else {
+            this.timelapseMode = 'vanilla';
+        }
         this.labelMinLevel = this.plugin.settings.bubbleLabelMinLevel ?? 1;
         this.labelMaxLevel = this.plugin.settings.bubbleLabelMaxLevel ?? (this.plugin.settings.bubbleLabelRangeLevel ?? 2);
         this.labelRangeLevel = this.labelMaxLevel;
@@ -306,6 +311,7 @@ export class BubbleGraphView extends ItemView {
         this.isFloatingToolsOpen = DEFAULT_BUBBLE_GRAPH_SETTINGS.bubbleFloatingToolsOpen !== false;
         this.isFooterOpen = DEFAULT_BUBBLE_GRAPH_SETTINGS.bubbleFooterOpen !== false;
         this.autoFitMode = DEFAULT_BUBBLE_GRAPH_SETTINGS.bubbleAutoFitMode ?? 'off';
+        this.timelapseMode = (DEFAULT_BUBBLE_GRAPH_SETTINGS.bubbleTimelapseMode || 'vanilla') as 'vanilla' | 'time' | 'filename' | 'title';
 
         // 2. Persist to plugin settings
         this.plugin.settings.bubbleMaxDragDepth = this.maxDragDepth;
@@ -324,6 +330,7 @@ export class BubbleGraphView extends ItemView {
         this.plugin.settings.bubbleFooterOpen = this.isFooterOpen;
         this.plugin.settings.bubbleAutoFitMode = this.autoFitMode;
         this.plugin.settings.bubbleAlwaysFit = this.autoFitMode !== 'off';
+        this.plugin.settings.bubbleTimelapseMode = this.timelapseMode;
         this.plugin.settings.bubbleEnableSfx = DEFAULT_BUBBLE_GRAPH_SETTINGS.bubbleEnableSfx;
         this.plugin.settings.bubbleSfxVolume = DEFAULT_BUBBLE_GRAPH_SETTINGS.bubbleSfxVolume;
         this.plugin.settings.bubbleSfxThreshold = DEFAULT_BUBBLE_GRAPH_SETTINGS.bubbleSfxThreshold;
@@ -421,6 +428,12 @@ export class BubbleGraphView extends ItemView {
             this.footerToggleBtnEl.setAttribute('aria-pressed', this.isFooterOpen ? 'true' : 'false');
             this.footerToggleBtnEl.setAttribute('title', this.isFooterOpen ? 'Hide Footer Timeline Scrubber' : 'Show Footer Timeline Scrubber');
         }
+        if (this.timelapseModeSelectEl) {
+            this.timelapseModeSelectEl.value = this.timelapseMode;
+        }
+        this.sortNodesForCurrentTimelapseMode();
+        this.updateTimelineUI();
+        this.drawHeatmap();
 
         // 4. Update Simulation & Colors
         if (this.simulation) {
@@ -453,8 +466,8 @@ export class BubbleGraphView extends ItemView {
             glyphSettings
         );
 
-        // Sort all nodes chronologically by effective birth timestamp for sequential vanilla timelapse
-        this.sortedNodes = [...this.graphData.nodes].sort((a, b) => getNodeEffectiveTime(a) - getNodeEffectiveTime(b));
+        // Sort all nodes according to active timelapse mode (Vanilla, Time, Filename A-Z, File Title A-Z)
+        this.sortNodesForCurrentTimelapseMode();
 
         // Compute min and max effective time for chronological timelapse
         const birthTimes = this.graphData.nodes.map(n => getNodeEffectiveTime(n)).filter(t => t > 946684800000);
@@ -547,6 +560,41 @@ export class BubbleGraphView extends ItemView {
             this.customFormatInputEl.toggleClass('visible', isCustom);
             this.customFormatInputEl.style.display = isCustom ? 'inline-block' : 'none';
         }
+    }
+
+    private sortNodesForCurrentTimelapseMode(): void {
+        if (!this.graphData) return;
+        if (this.timelapseMode === 'filename') {
+            this.sortedNodes = [...this.graphData.nodes].sort((a, b) => {
+                const folderCmp = (a.folderPath || '').localeCompare(b.folderPath || '', undefined, { numeric: true, sensitivity: 'base' });
+                if (folderCmp !== 0) return folderCmp;
+                return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' });
+            });
+        } else if (this.timelapseMode === 'title') {
+            this.sortedNodes = [...this.graphData.nodes].sort((a, b) => {
+                const folderCmp = (a.folderPath || '').localeCompare(b.folderPath || '', undefined, { numeric: true, sensitivity: 'base' });
+                if (folderCmp !== 0) return folderCmp;
+                const titleA = (a.title && a.title.trim()) ? a.title.trim() : a.name;
+                const titleB = (b.title && b.title.trim()) ? b.title.trim() : b.name;
+                return titleA.localeCompare(titleB, undefined, { numeric: true, sensitivity: 'base' });
+            });
+        } else {
+            // 'vanilla' or 'time': chronological birth order
+            this.sortedNodes = [...this.graphData.nodes].sort((a, b) => getNodeEffectiveTime(a) - getNodeEffectiveTime(b));
+        }
+    }
+
+    public async setTimelapseMode(mode: 'vanilla' | 'time' | 'filename' | 'title'): Promise<void> {
+        this.timelapseMode = mode;
+        this.plugin.settings.bubbleTimelapseMode = mode;
+        await this.plugin.saveSettings();
+        this.sortNodesForCurrentTimelapseMode();
+        if (this.timelapseModeSelectEl) {
+            this.timelapseModeSelectEl.value = mode;
+        }
+        this.lastVisibleCount = -1;
+        this.updateTimelineUI();
+        this.drawHeatmap();
     }
 
     private renderHeader(container: HTMLElement): void {
@@ -1296,22 +1344,38 @@ export class BubbleGraphView extends ItemView {
         if (this.timelineDateBadgeEl && this.graphData) {
             const totalCount = this.graphData.nodes.length;
 
-            if (this.timelapseMode === 'vanilla') {
+            if (this.timelapseMode !== 'time') {
                 const spawnedCount = Math.round(this.timelapseProgress * totalCount);
                 if (this.timelapseProgress < 0.999 && spawnedCount < totalCount) {
                     const latestNode = spawnedCount > 0 ? this.sortedNodes[spawnedCount - 1] : this.sortedNodes[0];
-                    const nodeTime = latestNode ? getNodeEffectiveTime(latestNode) : 0;
-                    const dateStr = nodeTime ? this.formatTimelineDate(nodeTime) : '';
-                    if (this.timelineThumbTipEl) this.timelineThumbTipEl.setText(`${spawnedCount}/${totalCount}`);
-                    if (this.timelineSliderEl) this.timelineSliderEl.title = `Note ${spawnedCount}/${totalCount} (${dateStr})`;
-                    this.timelineDateBadgeEl.setText(`📅 ${dateStr} (${spawnedCount}/${totalCount} notes) • Vanilla 0.025s`);
+                    if (this.timelapseMode === 'title') {
+                        const displayTitle = (latestNode?.title && latestNode.title.trim()) ? latestNode.title.trim() : (latestNode?.name || '');
+                        if (this.timelineThumbTipEl) this.timelineThumbTipEl.setText(`${spawnedCount}/${totalCount}: ${displayTitle}`);
+                        if (this.timelineSliderEl) this.timelineSliderEl.title = `Note ${spawnedCount}/${totalCount} (${displayTitle})`;
+                        this.timelineDateBadgeEl.setText(`🏷️ ${displayTitle} (${spawnedCount}/${totalCount}) • Title A-Z`);
+                    } else if (this.timelapseMode === 'filename') {
+                        const displayName = latestNode ? latestNode.name : '';
+                        if (this.timelineThumbTipEl) this.timelineThumbTipEl.setText(`${spawnedCount}/${totalCount}: ${displayName}`);
+                        if (this.timelineSliderEl) this.timelineSliderEl.title = `Note ${spawnedCount}/${totalCount} (${displayName})`;
+                        this.timelineDateBadgeEl.setText(`🔤 ${displayName} (${spawnedCount}/${totalCount}) • Filename A-Z`);
+                    } else {
+                        // Vanilla (chronological birth)
+                        const nodeTime = latestNode ? getNodeEffectiveTime(latestNode) : 0;
+                        const dateStr = nodeTime ? this.formatTimelineDate(nodeTime) : '';
+                        if (this.timelineThumbTipEl) this.timelineThumbTipEl.setText(`${spawnedCount}/${totalCount}`);
+                        if (this.timelineSliderEl) this.timelineSliderEl.title = `Note ${spawnedCount}/${totalCount} (${dateStr})`;
+                        this.timelineDateBadgeEl.setText(`📅 ${dateStr} (${spawnedCount}/${totalCount} notes) • Vanilla`);
+                    }
                 } else {
                     if (this.timelineThumbTipEl) this.timelineThumbTipEl.setText(`${totalCount}/${totalCount}`);
-                    if (this.timelineSliderEl) this.timelineSliderEl.title = `Present (${totalCount}/${totalCount} notes)`;
-                    this.timelineDateBadgeEl.setText(`📅 Present (${totalCount}/${totalCount} notes) • Vanilla`);
+                    if (this.timelineSliderEl) this.timelineSliderEl.title = `All Notes (${totalCount}/${totalCount})`;
+                    let modeSuffix = 'Vanilla';
+                    if (this.timelapseMode === 'filename') modeSuffix = 'Filename A-Z';
+                    else if (this.timelapseMode === 'title') modeSuffix = 'File Title A-Z';
+                    this.timelineDateBadgeEl.setText(`Present (${totalCount}/${totalCount} notes) • ${modeSuffix}`);
                 }
             } else {
-                // Default: Date-based continuous timeline interpolation
+                // Time-based continuous timeline interpolation
                 const cutoff = this.timelapseProgress < 0.999
                     ? this.timelapseMinCtime + (this.timelapseMaxCtime - this.timelapseMinCtime) * this.timelapseProgress
                     : null;
@@ -1320,13 +1384,13 @@ export class BubbleGraphView extends ItemView {
                     const dateStr = this.formatTimelineDate(cutoff);
                     if (this.timelineThumbTipEl) this.timelineThumbTipEl.setText(dateStr);
                     if (this.timelineSliderEl) this.timelineSliderEl.title = dateStr;
-                    this.timelineDateBadgeEl.setText(`📅 ${dateStr} (${visibleCount}/${totalCount} notes) • Date-based`);
+                    this.timelineDateBadgeEl.setText(`📅 ${dateStr} (${visibleCount}/${totalCount} notes) • Time`);
                 } else {
                     const latestT = this.timelapseMaxCtime || Date.now();
                     const dateStr = this.formatTimelineDate(latestT);
                     if (this.timelineThumbTipEl) this.timelineThumbTipEl.setText(dateStr);
                     if (this.timelineSliderEl) this.timelineSliderEl.title = `Present (${dateStr})`;
-                    this.timelineDateBadgeEl.setText(`📅 Present (${totalCount}/${totalCount} notes) • Date-based`);
+                    this.timelineDateBadgeEl.setText(`📅 Present (${totalCount}/${totalCount} notes) • Time`);
                 }
             }
         }
@@ -1338,7 +1402,10 @@ export class BubbleGraphView extends ItemView {
             } else {
                 this.wandBtnEl.removeClass('active');
                 this.wandBtnEl.setAttribute('aria-pressed', 'false');
-                const modeLabel = this.timelapseMode === 'vanilla' ? 'Vanilla 0.025s/node' : 'Date-based';
+                let modeLabel = 'Vanilla (0.025s/node)';
+                if (this.timelapseMode === 'time') modeLabel = 'Time';
+                else if (this.timelapseMode === 'filename') modeLabel = 'Filename A-Z';
+                else if (this.timelapseMode === 'title') modeLabel = 'File Title A-Z';
                 this.wandBtnEl.setAttribute('title', `Start timelapse animation (${modeLabel})`);
             }
         }
@@ -1577,41 +1644,31 @@ export class BubbleGraphView extends ItemView {
 
         timelineEl.createSpan({ text: '⏱ TIMELAPSE:', cls: 'pakcli-timeline-label' });
 
-        // Mode Segmented Buttons: [ Date | Vanilla (0.025s) ]
-        const modeGroup = timelineEl.createDiv({ cls: 'pakcli-timelapse-mode-group' });
-        const dateModeBtn = modeGroup.createEl('button', {
-            text: 'Date',
-            cls: `pakcli-timelapse-mode-btn ${this.timelapseMode === 'date' ? 'active' : ''}`,
-            title: 'Default: Date-based continuous timeline interpolation'
-        });
-        const vanillaModeBtn = modeGroup.createEl('button', {
-            text: 'Vanilla (0.025s)',
-            cls: `pakcli-timelapse-mode-btn ${this.timelapseMode === 'vanilla' ? 'active' : ''}`,
-            title: 'Vanilla: Sequential spawn (0.025s per node/folder in chronological order)'
+        // Timelapse Mode Dropdown: [ Vanilla | Time | Filename A-Z | File Title A-Z ]
+        this.timelapseModeSelectEl = timelineEl.createEl('select', {
+            cls: 'dropdown pakcli-timelapse-mode-select'
         });
 
-        this.timelapseModeButtons = [dateModeBtn, vanillaModeBtn];
+        const timelapseModes = [
+            { value: 'vanilla', text: 'Vanilla' },
+            { value: 'time', text: 'Time' },
+            { value: 'filename', text: 'Filename A-Z' },
+            { value: 'title', text: 'File Title A-Z' }
+        ];
 
-        dateModeBtn.onclick = () => {
-            this.timelapseMode = 'date';
-            dateModeBtn.addClass('active');
-            vanillaModeBtn.removeClass('active');
-            this.plugin.settings.bubbleTimelapseMode = 'date';
-            this.plugin.saveSettings();
-            this.lastVisibleCount = -1;
-            this.updateTimelineUI();
-            this.drawHeatmap();
-        };
+        for (const tm of timelapseModes) {
+            const opt = this.timelapseModeSelectEl.createEl('option', {
+                value: tm.value,
+                text: tm.text
+            });
+            if (this.timelapseMode === tm.value) {
+                opt.selected = true;
+            }
+        }
 
-        vanillaModeBtn.onclick = () => {
-            this.timelapseMode = 'vanilla';
-            vanillaModeBtn.addClass('active');
-            dateModeBtn.removeClass('active');
-            this.plugin.settings.bubbleTimelapseMode = 'vanilla';
-            this.plugin.saveSettings();
-            this.lastVisibleCount = -1;
-            this.updateTimelineUI();
-            this.drawHeatmap();
+        this.timelapseModeSelectEl.onchange = async () => {
+            const newMode = (this.timelapseModeSelectEl?.value || 'vanilla') as 'vanilla' | 'time' | 'filename' | 'title';
+            await this.setTimelapseMode(newMode);
         };
 
         const sliderWrap = timelineEl.createDiv({ cls: 'pakcli-timeline-track-wrap' });
@@ -1856,13 +1913,13 @@ export class BubbleGraphView extends ItemView {
             lastTime = time;
 
             if (this.isTimelapseRunning) {
-                if (this.timelapseMode === 'vanilla') {
-                    // Vanilla mode: 0.025s (25ms) per node / folder in chronological order
+                if (this.timelapseMode !== 'time') {
+                    // Sequential modes: Vanilla, Filename A-Z, File Title A-Z (0.025s per node)
                     const delayPerNodeMs = (this.plugin.settings.bubbleTimelapseVanillaSpeed ?? 0.025) * 1000;
                     const totalDurationMs = Math.max(500, this.sortedNodes.length * delayPerNodeMs);
                     this.timelapseProgress += dt / totalDurationMs;
                 } else {
-                    // Default Date-based mode: ~12s continuous time range interpolation
+                    // Time mode: ~12s continuous time range interpolation
                     this.timelapseProgress += dt / 12000;
                 }
 
@@ -1877,7 +1934,7 @@ export class BubbleGraphView extends ItemView {
             let renderCutoff: number | null = null;
 
             if (this.timelapseProgress < 0.999) {
-                if (this.timelapseMode === 'vanilla') {
+                if (this.timelapseMode !== 'time') {
                     const count = Math.max(1, Math.round(this.timelapseProgress * this.sortedNodes.length));
                     renderVisibleNodeIds = new Set(this.sortedNodes.slice(0, count).map(n => n.id));
                 } else {
@@ -1994,7 +2051,7 @@ export class BubbleGraphView extends ItemView {
         let cutoff: number | null = null;
 
         if (this.timelapseProgress < 0.999) {
-            if (this.timelapseMode === 'vanilla') {
+            if (this.timelapseMode !== 'time') {
                 const count = Math.round(this.timelapseProgress * this.sortedNodes.length);
                 visibleSet = new Set(this.sortedNodes.slice(0, count).map(n => n.id));
             } else {
@@ -2021,7 +2078,7 @@ export class BubbleGraphView extends ItemView {
         let cutoff: number | null = null;
 
         if (this.timelapseProgress < 0.999) {
-            if (this.timelapseMode === 'vanilla') {
+            if (this.timelapseMode !== 'time') {
                 const count = Math.round(this.timelapseProgress * this.sortedNodes.length);
                 visibleSet = new Set(this.sortedNodes.slice(0, count).map(n => n.id));
             } else {
@@ -2086,7 +2143,7 @@ export class BubbleGraphView extends ItemView {
 
         let visibleNodeIds: Set<string> | null = null;
         if (this.timelapseProgress < 0.999) {
-            if (this.timelapseMode === 'vanilla') {
+            if (this.timelapseMode !== 'time') {
                 const count = Math.max(1, Math.round(this.timelapseProgress * this.sortedNodes.length));
                 visibleNodeIds = new Set(this.sortedNodes.slice(0, count).map(n => n.id));
             } else {
@@ -2431,8 +2488,8 @@ export class BubbleGraphView extends ItemView {
         const pitch = tickW + gap;
         const numBars = Math.max(1, Math.floor(rect.width / pitch));
 
-        if (this.timelapseMode === 'vanilla') {
-            // In Vanilla mode: draw uniform subtle ticks across the entire track
+        if (this.timelapseMode !== 'time') {
+            // In Vanilla, Filename A-Z, File Title A-Z modes: draw uniform subtle ticks across the entire track
             ctx.save();
             ctx.fillStyle = accent;
             ctx.globalAlpha = 0.22;
