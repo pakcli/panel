@@ -85,6 +85,9 @@ export const ECOSYSTEM_MODULES: BlueprintSection[] = [
       { key: "bubbleRibbonIcon", type: "dropdown", name: "Ribbon Icon", desc: "Select icon to display in the left ribbon bar.", defaultVal: "circle-dot", options: ["circle-dot", "bubbles", "dot-network", "git-fork", "network", "sparkles", "share-2", "boxes", "compass", "orbit"] },
       { key: "bubbleMaxDragDepth", type: "dropdown", name: "Max Drag Depth", desc: "Depth constraint for dragging nodes and clusters.", defaultVal: "2", options: ["0", "1", "2", "3"] },
       { key: "bubbleDefaultLayout", type: "dropdown", name: "Default Layout", desc: "Initial view mode.", defaultVal: "bubble", options: ["bubble", "default"] },
+      { key: "bubbleEnableSfx", type: "toggle", name: "Enable Procedural Sound Effects (SFX)", desc: "Play tactile audio synthesized via Web Audio API for node spawns, collisions, and folder boundary interactions.", defaultVal: true },
+      { key: "bubbleSfxVolume", type: "dropdown", name: "Sound FX Master Volume", desc: "Adjust the volume of procedural audio effects.", defaultVal: "0.35", options: ["0", "0.1", "0.2", "0.35", "0.5", "0.75", "1.0"] },
+      { key: "bubbleSfxThreshold", type: "dropdown", name: "Sound FX Movement Threshold", desc: "Minimum velocity (px/frame) to trigger collision sounds. Increase to keep dense or resting vaults completely silent.", defaultVal: "1.0", options: ["0.2", "0.5", "0.8", "1.0", "1.2", "1.5", "2.0", "2.5", "3.0"] },
     ],
   },
   {

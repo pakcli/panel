@@ -13,6 +13,7 @@ export interface SimulationOptions {
     clusterCentroidStrength?: number;
     damping?: number;
     sfx?: SfxManager | null;
+    sfxThreshold?: number;
 }
 
 /**
@@ -509,6 +510,8 @@ export class BubbleSimulation {
         if (opts.layoutMode && opts.layoutMode !== prevMode) {
             this.initializePositions();
             this.reheat(1.0);
+        } else if (opts.sfxThreshold !== undefined && Object.keys(opts).length === 1) {
+            // Adjusting sound threshold does not reheat settled physics
         } else {
             this.reheat();
         }
@@ -620,13 +623,15 @@ export class BubbleSimulation {
                         if (d2 < minD * minD) {
                             const d = Math.sqrt(d2) || 0.001;
                             const overlap = minD - d;
-                            if (iter === 0 && overlap > 2.0 && this.options.sfx && (this.alpha > 0.08 || this.isDragging)) {
+                            const isGraphMoving = this.isDragging || this.alpha > 0.15;
+                            if (iter === 0 && overlap > 2.0 && this.options.sfx && isGraphMoving) {
                                 const prevA = prevPos.get(ca.id);
                                 const prevB = prevPos.get(cb.id);
                                 const spdA = prevA ? Math.hypot(ca.centroid.x - prevA.x, ca.centroid.y - prevA.y) : 0;
                                 const spdB = prevB ? Math.hypot(cb.centroid.x - prevB.x, cb.centroid.y - prevB.y) : 0;
                                 const relSpeed = spdA + spdB;
-                                if (relSpeed > 0.45) {
+                                const bubbleSpeedThresh = (this.options.sfxThreshold ?? 1.0) * 1.2;
+                                if (relSpeed > bubbleSpeedThresh) {
                                     const intensity = Math.min(1.0, (overlap * relSpeed) / 8.0);
                                     this.options.sfx.playBubbleBubbleCollision(intensity);
                                 }
@@ -713,13 +718,15 @@ export class BubbleSimulation {
                             if (d2 < minD * minD) {
                                 const dist = Math.sqrt(d2) || 0.001;
                                 const overlap = minD - dist;
-                                if (iter === 0 && overlap > 2.0 && this.options.sfx && (this.alpha > 0.08 || this.isDragging)) {
+                                const isGraphMoving = this.isDragging || this.alpha > 0.15;
+                                if (iter === 0 && overlap > 2.0 && this.options.sfx && isGraphMoving) {
                                     const prevA = prevPos.get(sa.id);
                                     const prevB = prevPos.get(sb.id);
                                     const spdA = prevA ? Math.hypot(sa.centroid.x - prevA.x, sa.centroid.y - prevA.y) : 0;
                                     const spdB = prevB ? Math.hypot(sb.centroid.x - prevB.x, sb.centroid.y - prevB.y) : 0;
                                     const relSpeed = spdA + spdB;
-                                    if (relSpeed > 0.45) {
+                                    const bubbleSpeedThresh = (this.options.sfxThreshold ?? 1.0) * 1.2;
+                                    if (relSpeed > bubbleSpeedThresh) {
                                         const intensity = Math.min(1.0, (overlap * relSpeed) / 8.0);
                                         this.options.sfx.playBubbleBubbleCollision(intensity);
                                     }
@@ -743,10 +750,12 @@ export class BubbleSimulation {
                         const dist = Math.hypot(dx, dy) || 0.001;
                         if (dist > maxSubD) {
                             const pen = dist - maxSubD;
-                            if (iter === 0 && pen > 2.5 && this.options.sfx && (this.alpha > 0.08 || this.isDragging)) {
+                            const isGraphMoving = this.isDragging || this.alpha > 0.15;
+                            if (iter === 0 && pen > 2.5 && this.options.sfx && isGraphMoving) {
                                 const prevSub = prevPos.get(sub.id);
                                 const subSpeed = prevSub ? Math.hypot(sub.centroid.x - prevSub.x, sub.centroid.y - prevSub.y) : 0;
-                                if (subSpeed > 0.50) {
+                                const bubbleSpeedThresh = (this.options.sfxThreshold ?? 1.0) * 1.2;
+                                if (subSpeed > bubbleSpeedThresh) {
                                     this.options.sfx.playBubbleBubbleCollision(Math.min(1.0, (pen * subSpeed) / 8.0));
                                 }
                             }
@@ -981,7 +990,9 @@ export class BubbleSimulation {
                                 const dist = Math.sqrt(d2) || 0.001;
                                 const overlap = minD - dist;
                                 const relSpeed = Math.hypot(na.vx - nb.vx, na.vy - nb.vy);
-                                if (iter === 0 && overlap > 1.2 && relSpeed > 0.35 && this.options.sfx && (this.alpha > 0.06 || this.isDragging)) {
+                                const isGraphMoving = this.isDragging || this.alpha > 0.15;
+                                const sfxThresh = this.options.sfxThreshold ?? 1.0;
+                                if (iter === 0 && overlap > 1.2 && relSpeed > sfxThresh && this.options.sfx && isGraphMoving) {
                                     const intensity = Math.min(1.0, (overlap * relSpeed) / 3.0);
                                     this.options.sfx.playNodeCollision(intensity, na.radius, nb.radius);
                                 }
@@ -1010,7 +1021,9 @@ export class BubbleSimulation {
                             if (sd < minSd) {
                                 const pen = minSd - sd;
                                 const nodeSpeed = Math.hypot(node.vx, node.vy);
-                                if (iter === 0 && pen > 1.8 && nodeSpeed > 0.35 && this.options.sfx && (this.alpha > 0.06 || this.isDragging)) {
+                                const isGraphMoving = this.isDragging || this.alpha > 0.15;
+                                const sfxThresh = this.options.sfxThreshold ?? 1.0;
+                                if (iter === 0 && pen > 1.8 && nodeSpeed > sfxThresh && this.options.sfx && isGraphMoving) {
                                     this.options.sfx.playNodeBubbleCollision(Math.min(1.0, (pen * nodeSpeed) / 4.0));
                                 }
                                 const push = ((minSd - sd) * 0.6) / sd;
@@ -1032,7 +1045,9 @@ export class BubbleSimulation {
                         if (cd > maxR) {
                             const pen = cd - maxR;
                             const nodeSpeed = Math.hypot(node.vx, node.vy);
-                            if (iter === 0 && pen > 2.0 && nodeSpeed > 0.40 && this.options.sfx && (this.alpha > 0.06 || this.isDragging)) {
+                            const isGraphMoving = this.isDragging || this.alpha > 0.15;
+                            const sfxThresh = (this.options.sfxThreshold ?? 1.0) * 1.1;
+                            if (iter === 0 && pen > 2.0 && nodeSpeed > sfxThresh && this.options.sfx && isGraphMoving) {
                                 this.options.sfx.playNodeBubbleCollision(Math.min(1.0, (pen * nodeSpeed) / 4.0));
                             }
                             const scale = maxR / cd;
@@ -1077,7 +1092,9 @@ export class BubbleSimulation {
                             const dist = Math.sqrt(d2) || 0.001;
                             const overlap = minD - dist;
                             const relSpeed = Math.hypot(na.vx - nb.vx, na.vy - nb.vy);
-                            if (iter === 0 && overlap > 1.2 && relSpeed > 0.35 && this.options.sfx && (this.alpha > 0.06 || this.isDragging)) {
+                            const isGraphMoving = this.isDragging || this.alpha > 0.15;
+                            const sfxThresh = this.options.sfxThreshold ?? 1.0;
+                            if (iter === 0 && overlap > 1.2 && relSpeed > sfxThresh && this.options.sfx && isGraphMoving) {
                                 const intensity = Math.min(1.0, (overlap * relSpeed) / 3.0);
                                 this.options.sfx.playNodeCollision(intensity, na.radius, nb.radius);
                             }
@@ -1203,7 +1220,9 @@ export class BubbleSimulation {
                         const d = Math.sqrt(d2);
                         const overlap = minD - d;
                         const relSpeed = Math.hypot(na.vx - nb.vx, na.vy - nb.vy);
-                        if (overlap > 1.2 && relSpeed > 0.35 && this.options.sfx && (this.alpha > 0.06 || this.isDragging)) {
+                        const isGraphMoving = this.isDragging || this.alpha > 0.15;
+                        const sfxThresh = this.options.sfxThreshold ?? 1.0;
+                        if (overlap > 1.2 && relSpeed > sfxThresh && this.options.sfx && isGraphMoving) {
                             const intensity = Math.min(1.0, (overlap * relSpeed) / 3.0);
                             this.options.sfx.playNodeCollision(intensity, na.radius, nb.radius);
                         }

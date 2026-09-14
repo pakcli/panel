@@ -68,7 +68,8 @@ export class BubbleGraphView extends ItemView {
     private sfxToggleBtnEl!: HTMLElement;
     private volumeSliderEl!: HTMLInputElement;
     private volumeDisplayEl!: HTMLElement;
-    private levelButtons: HTMLElement[] = [];
+    private levelSliderEl!: HTMLInputElement;
+    private levelDisplayEl!: HTMLElement;
     private fontSizeSliderEl!: HTMLInputElement;
     private fontSizeDisplayEl!: HTMLElement;
     private timelinePlayBtnEl!: HTMLElement;
@@ -225,9 +226,13 @@ export class BubbleGraphView extends ItemView {
         this.plugin.settings.bubbleInspectorOpen = this.isInspectorOpen;
         this.plugin.settings.bubbleEnableSfx = DEFAULT_BUBBLE_GRAPH_SETTINGS.bubbleEnableSfx;
         this.plugin.settings.bubbleSfxVolume = DEFAULT_BUBBLE_GRAPH_SETTINGS.bubbleSfxVolume;
+        this.plugin.settings.bubbleSfxThreshold = DEFAULT_BUBBLE_GRAPH_SETTINGS.bubbleSfxThreshold;
         if (this.sfxManager) {
             this.sfxManager.setEnabled(DEFAULT_BUBBLE_GRAPH_SETTINGS.bubbleEnableSfx);
             this.sfxManager.setVolume(DEFAULT_BUBBLE_GRAPH_SETTINGS.bubbleSfxVolume);
+        }
+        if (this.simulation) {
+            this.simulation.setOptions({ sfxThreshold: DEFAULT_BUBBLE_GRAPH_SETTINGS.bubbleSfxThreshold });
         }
         await this.plugin.saveSettings();
 
@@ -336,7 +341,8 @@ export class BubbleGraphView extends ItemView {
                 layoutMode: this.layoutMode,
                 scopedFolder: this.scopedFolder,
                 denseScale: this.plugin.settings.bubbleDenseScale ?? 1.15,
-                sfx: this.sfxManager
+                sfx: this.sfxManager,
+                sfxThreshold: this.plugin.settings.bubbleSfxThreshold ?? DEFAULT_BUBBLE_GRAPH_SETTINGS.bubbleSfxThreshold
             }
         );
 
@@ -1520,5 +1526,36 @@ export class BubbleGraphView extends ItemView {
         this.transform.zoom = newZoom;
         this.transform.panX = -((minX + maxX) / 2) * newZoom;
         this.transform.panY = -((minY + maxY) / 2) * newZoom;
+    }
+
+    public setSfxEnabled(enabled: boolean): void {
+        if (this.sfxManager) {
+            this.sfxManager.setEnabled(enabled);
+        }
+        if (this.sfxToggleBtnEl) {
+            this.sfxToggleBtnEl.toggleClass('active', enabled);
+            this.sfxToggleBtnEl.setAttribute('aria-pressed', enabled ? 'true' : 'false');
+            setIcon(this.sfxToggleBtnEl, enabled ? 'volume-2' : 'volume-x');
+        }
+    }
+
+    public setSfxVolume(vol: number): void {
+        if (this.sfxManager) {
+            this.sfxManager.setVolume(vol);
+        }
+        if (this.volumeSliderEl) {
+            const percent = Math.round(vol * 100);
+            this.volumeSliderEl.value = percent.toString();
+            this.volumeSliderEl.title = `Sound FX Volume: ${percent}%`;
+            if (this.volumeDisplayEl) {
+                this.volumeDisplayEl.setText(`${percent}%`);
+            }
+        }
+    }
+
+    public setSfxThreshold(thresh: number): void {
+        if (this.simulation) {
+            this.simulation.setOptions({ sfxThreshold: thresh });
+        }
     }
 }

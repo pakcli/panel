@@ -952,6 +952,67 @@ export default class PakCLITablePlugin extends Plugin {
 								}
 							});
 					});
+
+				// Sound Effects (SFX) Section
+				new Setting(containerEl)
+					.setName('Procedural Sound Effects (SFX)')
+					.setDesc('Tactile audio synthesized via Web Audio API for node spawns, collisions, and folder boundary interactions.')
+					.setHeading();
+
+				new Setting(containerEl)
+					.setName('Enable Procedural Sound Effects (SFX)')
+					.setDesc('Play tactile audio for node spawns, collisions, link connections, and folder interactions.')
+					.addToggle((t) => {
+						t.setValue(this.settings.bubbleEnableSfx !== false)
+							.onChange(async (v) => {
+								this.settings.bubbleEnableSfx = v;
+								await this.saveSettings();
+								const leaves = this.app.workspace.getLeavesOfType(BUBBLE_GRAPH_VIEW_TYPE);
+								leaves.forEach((leaf) => {
+									if (leaf.view instanceof BubbleGraphView) {
+										leaf.view.setSfxEnabled(v);
+									}
+								});
+							});
+					});
+
+				new Setting(containerEl)
+					.setName('Sound FX Master Volume')
+					.setDesc('Adjust the master volume of procedural audio effects (0% = mute, 100% = full volume).')
+					.addSlider((s) => {
+						s.setLimits(0, 100, 5)
+							.setValue(Math.round((this.settings.bubbleSfxVolume ?? 0.35) * 100))
+							.setDynamicTooltip()
+							.onChange(async (v) => {
+								this.settings.bubbleSfxVolume = v / 100;
+								await this.saveSettings();
+								const leaves = this.app.workspace.getLeavesOfType(BUBBLE_GRAPH_VIEW_TYPE);
+								leaves.forEach((leaf) => {
+									if (leaf.view instanceof BubbleGraphView) {
+										leaf.view.setSfxVolume(v / 100);
+									}
+								});
+							});
+					});
+
+				new Setting(containerEl)
+					.setName('Sound FX Movement Threshold')
+					.setDesc('Minimum relative velocity required to trigger collision sounds (in px/frame). Increase to keep dense vaults or resting nodes completely silent until deliberate movement occurs.')
+					.addSlider((s) => {
+						s.setLimits(0.2, 3.0, 0.1)
+							.setValue(this.settings.bubbleSfxThreshold ?? 1.0)
+							.setDynamicTooltip()
+							.onChange(async (v) => {
+								this.settings.bubbleSfxThreshold = Number(v.toFixed(1));
+								await this.saveSettings();
+								const leaves = this.app.workspace.getLeavesOfType(BUBBLE_GRAPH_VIEW_TYPE);
+								leaves.forEach((leaf) => {
+									if (leaf.view instanceof BubbleGraphView) {
+										leaf.view.setSfxThreshold(Number(v.toFixed(1)));
+									}
+								});
+							});
+					});
 			}
 		});
 
@@ -2336,58 +2397,6 @@ export default class PakCLITablePlugin extends Plugin {
 				}
 			});
 		}
-
-		// 7. Bubble Graph & Venn Topology Handler (table-bubblegraph)
-		settingsTab.registerLocalSection({
-			id: 'table-bubblegraph',
-			category: 'table',
-			title: 'Bubble Graph & Venn View',
-			icon: 'circle-dot',
-			isInstalled: true,
-			render: (containerEl) => {
-				new Setting(containerEl)
-					.setName('Bubble Graph View & Venn Topology')
-					.setDesc('Configure hierarchical folder bubble clustering, physics, and procedural audio effects.')
-					.setHeading();
-
-				new Setting(containerEl)
-					.setName('Enable Procedural Sound Effects (SFX)')
-					.setDesc('Play tactile audio synthesized via Web Audio API for node spawns, collisions, and folder boundary interactions.')
-					.addToggle((t) => {
-						t.setValue(this.settings.bubbleEnableSfx !== false)
-							.onChange(async (v) => {
-								this.settings.bubbleEnableSfx = v;
-								await this.saveSettings();
-							});
-					});
-
-				new Setting(containerEl)
-					.setName('Sound FX Master Volume')
-					.setDesc('Adjust the volume of procedural audio effects (0% = mute, 100% = full volume).')
-					.addSlider((s) => {
-						s.setLimits(0, 100, 5)
-							.setValue(Math.round((this.settings.bubbleSfxVolume ?? 0.35) * 100))
-							.setDynamicTooltip()
-							.onChange(async (v) => {
-								this.settings.bubbleSfxVolume = v / 100;
-								await this.saveSettings();
-							});
-					});
-
-				new Setting(containerEl)
-					.setName('Default Layout Mode')
-					.setDesc('Choose default layout when opening the view.')
-					.addDropdown((d) => {
-						d.addOption('bubble', 'Bubble View (Hierarchical Cluster Packing)')
-							.addOption('default', 'Graph View (Obsidian Classic Force-Directed)')
-							.setValue(this.settings.bubbleDefaultLayout || 'bubble')
-							.onChange(async (v) => {
-								this.settings.bubbleDefaultLayout = v as 'bubble' | 'default';
-								await this.saveSettings();
-							});
-					});
-			}
-		});
 
 		this.addSettingTab(settingsTab);
 	}

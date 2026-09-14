@@ -32,6 +32,7 @@ export interface BubbleGraphSettings {
     bubbleInspectorOpen: boolean;
     bubbleEnableSfx: boolean;
     bubbleSfxVolume: number;
+    bubbleSfxThreshold: number;
 }
 
 export interface PakCLITableSettings extends 
@@ -103,6 +104,7 @@ export const DEFAULT_BUBBLE_GRAPH_SETTINGS: BubbleGraphSettings = {
     bubbleInspectorOpen: true,
     bubbleEnableSfx: true,
     bubbleSfxVolume: 0.35,
+    bubbleSfxThreshold: 1.0,
 };
 
 export const DEFAULT_TABLE_SETTINGS: PakCLITableSettings = {
