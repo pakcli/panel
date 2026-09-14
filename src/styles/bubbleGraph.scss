@@ -297,6 +297,31 @@
     min-width: 26px;
 }
 
+.pakcli-volume-group {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.pakcli-volume-label {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-muted);
+}
+
+.pakcli-volume-slider {
+    width: 60px;
+    cursor: pointer;
+}
+
+.pakcli-volume-display {
+    font-size: 10px;
+    font-weight: 600;
+    font-family: var(--font-monospace);
+    color: var(--text-accent);
+    min-width: 28px;
+}
+
 /* Stats Pill */
 .pakcli-stats-pill {
     font-size: 11px;
@@ -406,6 +431,7 @@
     button.pakcli-lines-toggle-btn,
     button.pakcli-text-toggle-btn,
     button.pakcli-captain-colors-btn,
+    button.pakcli-sfx-toggle-btn,
     button.pakcli-inspector-toggle-btn,
     button.pakcli-wand-btn {
         border-radius: 6px !important;

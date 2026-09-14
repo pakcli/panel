@@ -5,6 +5,7 @@ import { BubbleNode, BubbleCluster } from './types';
 import { buildVaultGraph, BuiltGraph, getFolderColor, matchFolderRule } from './graphBuilder';
 import { BubbleSimulation } from './simulation';
 import { CanvasRenderer, ViewportTransform, RenderState } from './canvasRenderer';
+import { SfxManager } from './sfxManager';
 
 export const BUBBLE_GRAPH_VIEW_TYPE = 'pakcli-bubble-graph';
 
@@ -13,6 +14,7 @@ export class BubbleGraphView extends ItemView {
     private canvasEl!: HTMLCanvasElement;
     private renderer!: CanvasRenderer;
     private simulation!: BubbleSimulation;
+    private sfxManager!: SfxManager;
 
     private graphData!: BuiltGraph;
     private transform: ViewportTransform = { panX: 0, panY: 0, zoom: 1.0 };
@@ -42,6 +44,8 @@ export class BubbleGraphView extends ItemView {
     private timelapseMinCtime: number = 0;
     private timelapseMaxCtime: number = 0;
     private lastVisibleCount: number = -1;
+    private timelapseSpawnedClusters: Set<string> = new Set();
+    private timelapseConnectedEdges: Set<string> = new Set();
 
     // Drag / Pan state
     private isPanning: boolean = false;
@@ -61,6 +65,9 @@ export class BubbleGraphView extends ItemView {
     private linesToggleBtnEl!: HTMLElement;
     private textToggleBtnEl!: HTMLElement;
     private captainColorsBtnEl!: HTMLElement;
+    private sfxToggleBtnEl!: HTMLElement;
+    private volumeSliderEl!: HTMLInputElement;
+    private volumeDisplayEl!: HTMLElement;
     private levelButtons: HTMLElement[] = [];
     private fontSizeSliderEl!: HTMLInputElement;
     private fontSizeDisplayEl!: HTMLElement;
@@ -103,6 +110,12 @@ export class BubbleGraphView extends ItemView {
         this.labelRangeLevel = this.plugin.settings.bubbleLabelRangeLevel ?? DEFAULT_BUBBLE_GRAPH_SETTINGS.bubbleLabelRangeLevel;
         this.labelFontSize = this.plugin.settings.bubbleLabelFontSize ?? DEFAULT_BUBBLE_GRAPH_SETTINGS.bubbleLabelFontSize;
         this.isInspectorOpen = this.plugin.settings.bubbleInspectorOpen !== false;
+
+        // Initialize Procedural SFX Engine
+        this.sfxManager = new SfxManager(
+            this.plugin.settings.bubbleEnableSfx !== false,
+            this.plugin.settings.bubbleSfxVolume ?? DEFAULT_BUBBLE_GRAPH_SETTINGS.bubbleSfxVolume
+        );
 
         // 1. Build Header Bar
         this.renderHeader(container);
@@ -165,6 +178,9 @@ export class BubbleGraphView extends ItemView {
             window.cancelAnimationFrame(this.animFrameId);
             this.animFrameId = null;
         }
+        if (this.sfxManager) {
+            this.sfxManager.dispose();
+        }
     }
 
     public scopeToFolder(folderPath: string | null): void {
@@ -207,6 +223,12 @@ export class BubbleGraphView extends ItemView {
         this.plugin.settings.bubbleLabelRangeLevel = this.labelRangeLevel;
         this.plugin.settings.bubbleLabelFontSize = this.labelFontSize;
         this.plugin.settings.bubbleInspectorOpen = this.isInspectorOpen;
+        this.plugin.settings.bubbleEnableSfx = DEFAULT_BUBBLE_GRAPH_SETTINGS.bubbleEnableSfx;
+        this.plugin.settings.bubbleSfxVolume = DEFAULT_BUBBLE_GRAPH_SETTINGS.bubbleSfxVolume;
+        if (this.sfxManager) {
+            this.sfxManager.setEnabled(DEFAULT_BUBBLE_GRAPH_SETTINGS.bubbleEnableSfx);
+            this.sfxManager.setVolume(DEFAULT_BUBBLE_GRAPH_SETTINGS.bubbleSfxVolume);
+        }
         await this.plugin.saveSettings();
 
         // 3. Update UI states
@@ -221,6 +243,19 @@ export class BubbleGraphView extends ItemView {
         if (this.captainColorsBtnEl) {
             this.captainColorsBtnEl.toggleClass('active', this.useCaptainColors);
             this.captainColorsBtnEl.setAttribute('aria-pressed', this.useCaptainColors ? 'true' : 'false');
+        }
+        if (this.sfxToggleBtnEl) {
+            this.sfxToggleBtnEl.toggleClass('active', DEFAULT_BUBBLE_GRAPH_SETTINGS.bubbleEnableSfx);
+            this.sfxToggleBtnEl.setAttribute('aria-pressed', DEFAULT_BUBBLE_GRAPH_SETTINGS.bubbleEnableSfx ? 'true' : 'false');
+            setIcon(this.sfxToggleBtnEl, DEFAULT_BUBBLE_GRAPH_SETTINGS.bubbleEnableSfx ? 'volume-2' : 'volume-x');
+        }
+        if (this.volumeSliderEl) {
+            const defVol = Math.round(DEFAULT_BUBBLE_GRAPH_SETTINGS.bubbleSfxVolume * 100);
+            this.volumeSliderEl.value = defVol.toString();
+            this.volumeSliderEl.title = `Sound FX Volume: ${defVol}%`;
+            if (this.volumeDisplayEl) {
+                this.volumeDisplayEl.setText(`${defVol}%`);
+            }
         }
         if (this.depthButtons) {
             this.depthButtons.forEach(btn => {
@@ -300,9 +335,24 @@ export class BubbleGraphView extends ItemView {
                 maxDragDepth: this.maxDragDepth,
                 layoutMode: this.layoutMode,
                 scopedFolder: this.scopedFolder,
-                denseScale: this.plugin.settings.bubbleDenseScale ?? 1.15
+                denseScale: this.plugin.settings.bubbleDenseScale ?? 1.15,
+                sfx: this.sfxManager
             }
         );
+
+        // Gentle spawn sound cascade on graph initialization / reload
+        if (this.sfxManager && this.sfxManager.isEnabled() && this.graphData) {
+            const topClusters = this.graphData.clusters.filter(c => c.depth === 1);
+            topClusters.forEach((c, idx) => {
+                setTimeout(() => {
+                    this.sfxManager.playBubbleSpawn(c.depth);
+                }, idx * 70);
+            });
+            const previewNodes = this.graphData.nodes.slice(0, 10);
+            previewNodes.forEach((n, idx) => {
+                this.sfxManager.playNodeSpawn(n.id, 80 + idx * 30);
+            });
+        }
 
         this.updateStatsPill();
         this.updateScopeBar();
@@ -435,6 +485,9 @@ export class BubbleGraphView extends ItemView {
             this.linesToggleBtnEl.setAttribute('aria-pressed', this.showLines ? 'true' : 'false');
             this.plugin.settings.bubbleShowLines = this.showLines;
             await this.plugin.saveSettings();
+            if (this.sfxManager?.isEnabled()) {
+                this.sfxManager.playLinkSwitch(this.showLines ? 1.0 : 0.6);
+            }
         };
 
         // 2. Show Text Node Toggle
@@ -468,7 +521,73 @@ export class BubbleGraphView extends ItemView {
             this.applyCaptainFolderColors();
         };
 
-        // 2. Show Text Range Level 0-3
+        // 4. SFX Sound Toggle (Procedural Audio)
+        this.sfxToggleBtnEl = textGroup.createEl('button', {
+            cls: `pakcli-icon-btn pakcli-sfx-toggle-btn ${this.sfxManager.isEnabled() ? 'active' : ''}`,
+            title: 'Toggle Graph Sound FX (Mute / Unmute)'
+        });
+        this.sfxToggleBtnEl.setAttribute('aria-pressed', this.sfxManager.isEnabled() ? 'true' : 'false');
+        setIcon(this.sfxToggleBtnEl, this.sfxManager.isEnabled() ? 'volume-2' : 'volume-x');
+        this.sfxToggleBtnEl.onclick = async () => {
+            const newState = !this.sfxManager.isEnabled();
+            this.sfxManager.setEnabled(newState);
+            this.sfxToggleBtnEl.toggleClass('active', newState);
+            this.sfxToggleBtnEl.setAttribute('aria-pressed', newState ? 'true' : 'false');
+            setIcon(this.sfxToggleBtnEl, newState ? 'volume-2' : 'volume-x');
+            this.plugin.settings.bubbleEnableSfx = newState;
+            await this.plugin.saveSettings();
+            if (newState) {
+                this.sfxManager.playNodeSpawn(1);
+            }
+        };
+
+        // 5. SFX Volume Slider
+        const volGroup = textGroup.createDiv({ cls: 'pakcli-volume-group' });
+        volGroup.createSpan({ text: 'Vol:', cls: 'pakcli-volume-label' });
+        this.volumeSliderEl = volGroup.createEl('input', {
+            type: 'range',
+            cls: 'pakcli-volume-slider'
+        });
+        this.volumeSliderEl.min = '0';
+        this.volumeSliderEl.max = '100';
+        this.volumeSliderEl.step = '5';
+        const currentVol = Math.round((this.plugin.settings.bubbleSfxVolume ?? DEFAULT_BUBBLE_GRAPH_SETTINGS.bubbleSfxVolume) * 100);
+        this.volumeSliderEl.value = currentVol.toString();
+        this.volumeSliderEl.title = `Sound FX Volume: ${currentVol}%`;
+
+        this.volumeDisplayEl = volGroup.createSpan({
+            text: `${currentVol}%`,
+            cls: 'pakcli-volume-display'
+        });
+
+        this.volumeSliderEl.oninput = () => {
+            const val = parseInt(this.volumeSliderEl.value, 10) || 0;
+            this.volumeDisplayEl.setText(`${val}%`);
+            this.volumeSliderEl.title = `Sound FX Volume: ${val}%`;
+            const normalized = val / 100;
+            this.sfxManager.setVolume(normalized);
+            if (val > 0 && !this.sfxManager.isEnabled()) {
+                this.sfxManager.setEnabled(true);
+                this.sfxToggleBtnEl.addClass('active');
+                this.sfxToggleBtnEl.setAttribute('aria-pressed', 'true');
+                setIcon(this.sfxToggleBtnEl, 'volume-2');
+                this.plugin.settings.bubbleEnableSfx = true;
+            } else if (val === 0) {
+                setIcon(this.sfxToggleBtnEl, 'volume-x');
+            }
+        };
+
+        this.volumeSliderEl.onchange = async () => {
+            const val = parseInt(this.volumeSliderEl.value, 10) || 0;
+            const normalized = val / 100;
+            this.plugin.settings.bubbleSfxVolume = normalized;
+            await this.plugin.saveSettings();
+            if (normalized > 0 && this.sfxManager.isEnabled()) {
+                this.sfxManager.playNodeSpawn(1);
+            }
+        };
+
+        // 6. Show Text Range Level 0-3
         const levelGroup = textGroup.createDiv({ cls: 'pakcli-level-group' });
         levelGroup.createSpan({ text: 'Text Level:', cls: 'pakcli-level-label' });
         const levelWrap = levelGroup.createDiv({ cls: 'pakcli-level-buttons' });
@@ -613,13 +732,20 @@ export class BubbleGraphView extends ItemView {
             if (this.timelapseProgress >= 1.0) {
                 this.timelapseProgress = 0.0;
                 this.lastVisibleCount = -1;
+                this.timelapseSpawnedClusters.clear();
+                this.timelapseConnectedEdges.clear();
             }
             this.startTimelapse();
         }
     }
 
     private startTimelapse(): void {
+        this.sfxManager?.initContext();
         this.isTimelapseRunning = true;
+        if (this.timelapseProgress <= 0.05) {
+            this.timelapseSpawnedClusters.clear();
+            this.timelapseConnectedEdges.clear();
+        }
         this.updateTimelineUI();
     }
 
@@ -834,7 +960,7 @@ export class BubbleGraphView extends ItemView {
         } else {
             backlinks.forEach(b => {
                 const item = backList.createDiv({ text: `• ${b.name}`, cls: 'pakcli-link-item' });
-                item.onclick = () => this.selectNode(b, true);
+                item.onclick = () => this.selectNode(b, true, true);
             });
         }
 
@@ -850,7 +976,7 @@ export class BubbleGraphView extends ItemView {
         } else {
             outgoing.forEach(o => {
                 const item = outList.createDiv({ text: `• ${o.name}`, cls: 'pakcli-link-item' });
-                item.onclick = () => this.selectNode(o, true);
+                item.onclick = () => this.selectNode(o, true, true);
             });
         }
 
@@ -935,6 +1061,8 @@ export class BubbleGraphView extends ItemView {
         this.timelineSliderEl.oninput = () => {
             this.timelapseProgress = parseFloat(this.timelineSliderEl.value) / 1000;
             this.lastVisibleCount = -1;
+            this.timelapseSpawnedClusters.clear();
+            this.timelapseConnectedEdges.clear();
             this.updateTimelineUI();
         };
 
@@ -961,6 +1089,7 @@ export class BubbleGraphView extends ItemView {
         });
 
         canvas.addEventListener('mousedown', (e) => {
+            this.sfxManager?.initContext();
             const worldPos = this.screenToWorld(e.clientX, e.clientY);
             const clickedNode = this.findNodeAt(worldPos.x, worldPos.y);
 
@@ -1014,7 +1143,7 @@ export class BubbleGraphView extends ItemView {
             const worldPos = this.screenToWorld(e.clientX, e.clientY);
             const clickedNode = this.findNodeAt(worldPos.x, worldPos.y);
             if (clickedNode) {
-                this.selectNode(clickedNode, false);
+                this.selectNode(clickedNode, false, true);
             }
         });
 
@@ -1163,9 +1292,42 @@ export class BubbleGraphView extends ItemView {
 
             const currentVisibleCount = renderVisibleNodeIds ? renderVisibleNodeIds.size : (this.graphData ? this.graphData.nodes.length : 0);
             if (currentVisibleCount !== this.lastVisibleCount) {
+                if (this.lastVisibleCount !== -1 && currentVisibleCount > this.lastVisibleCount) {
+                    if (this.sfxManager && this.sfxManager.isEnabled()) {
+                        this.sfxManager.playNodeSpawn(currentVisibleCount);
+                    }
+                }
                 this.lastVisibleCount = currentVisibleCount;
                 if (this.simulation) {
                     this.simulation.reheat(0.35);
+                }
+            }
+
+            // Detect newly visible bubble clusters during timelapse and trigger resonant chime
+            if (this.isTimelapseRunning && renderVisibleNodeIds && this.graphData && this.sfxManager?.isEnabled()) {
+                for (const cluster of this.graphData.clusters) {
+                    if (cluster.radius > 0 && !this.timelapseSpawnedClusters.has(cluster.id)) {
+                        const hasVisible = cluster.nodeIds.some(id => renderVisibleNodeIds!.has(id));
+                        if (hasVisible) {
+                            this.timelapseSpawnedClusters.add(cluster.id);
+                            this.sfxManager.playBubbleSpawn(cluster.depth);
+                        }
+                    }
+                }
+
+                // Detect newly linked lines (edges) during timelapse and trigger tactile switch SFX
+                let newlyLinkedCount = 0;
+                for (const edge of this.graphData.edges) {
+                    const edgeKey = `${edge.source}->${edge.target}`;
+                    if (!this.timelapseConnectedEdges.has(edgeKey)) {
+                        if (renderVisibleNodeIds.has(edge.source) && renderVisibleNodeIds.has(edge.target)) {
+                            this.timelapseConnectedEdges.add(edgeKey);
+                            newlyLinkedCount++;
+                        }
+                    }
+                }
+                if (newlyLinkedCount > 0) {
+                    this.sfxManager.playLinkSwitch(Math.min(1.0, 0.4 + newlyLinkedCount * 0.15));
                 }
             }
 
@@ -1292,9 +1454,13 @@ export class BubbleGraphView extends ItemView {
         return null;
     }
 
-    public selectNode(node: BubbleNode, centerCamera: boolean = true): void {
+    public selectNode(node: BubbleNode, centerCamera: boolean = true, playSound: boolean = false): void {
         this.selectedNode = node;
         this.updateInspectorContent();
+
+        if (playSound && this.sfxManager?.isEnabled() && node.totalDegree && node.totalDegree > 0) {
+            this.sfxManager.playLinkSwitch(1.0);
+        }
 
         if (centerCamera) {
             this.transform.panX = -node.x * this.transform.zoom;

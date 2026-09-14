@@ -4,3 +4,4 @@ export * from './hullGenerator';
 export * from './simulation';
 export * from './canvasRenderer';
 export * from './bubbleGraphView';
+export * from './sfxManager';
