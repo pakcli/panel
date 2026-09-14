@@ -17,6 +17,7 @@ export class SplitViewManager {
   private mutationObserver: MutationObserver | null = null;
   private baseExplorerObserver: MutationObserver | null = null;
   private baseExplorerDebounce: number | null = null;
+  private badgeDebounce: number | null = null;
   private saveCsvTimeout: ReturnType<typeof setTimeout> | null = null;
   private onFolderClickBound: ((e: MouseEvent) => void) | null = null;
 
@@ -57,6 +58,10 @@ export class SplitViewManager {
       cancelAnimationFrame(this.baseExplorerDebounce);
       this.baseExplorerDebounce = null;
     }
+    if (this.badgeDebounce !== null) {
+      cancelAnimationFrame(this.badgeDebounce);
+      this.badgeDebounce = null;
+    }
     this.detach();
   }
 
@@ -76,6 +81,7 @@ export class SplitViewManager {
       this.app.workspace.on('layout-change', () => {
         this.attachToFileExplorer();
         this.applyBaseExplorerFilter();
+        this.refreshFolderBadges();
       })
     );
 
@@ -84,6 +90,7 @@ export class SplitViewManager {
       this.app.vault.on('rename', () => {
         this.refreshRecentFiles();
         this.applyBaseExplorerFilter();
+        this.refreshFolderBadges();
       })
     );
 
@@ -91,6 +98,7 @@ export class SplitViewManager {
       this.app.vault.on('delete', () => {
         this.refreshRecentFiles();
         this.applyBaseExplorerFilter();
+        this.refreshFolderBadges();
       })
     );
 
@@ -99,6 +107,7 @@ export class SplitViewManager {
         if (this.plugin.settings.baseExplorerActive) {
           this.applyBaseExplorerFilter();
         }
+        this.refreshFolderBadges();
       })
     );
   }
@@ -198,6 +207,7 @@ export class SplitViewManager {
     this.applyLayout(containerEl);
     this.attachFolderClickListener(containerEl);
     this.applyBaseExplorerFilter();
+    this.refreshFolderBadges(containerEl);
   }
 
   private injectHeaderButton(containerEl: HTMLElement) {
@@ -252,6 +262,7 @@ export class SplitViewManager {
       await this.plugin.saveSettings();
       this.updateButtonState();
       this.applyBaseExplorerFilter();
+      this.renderRecentList();
       new Notice(`Base Explorer Mode: ${next ? 'ON (Base files & affected folders only)' : 'OFF (All files visible)'}`);
     });
 
@@ -796,12 +807,15 @@ export class SplitViewManager {
     );
   }
 
-  private updateBaseExplorerObserver(containerEl: HTMLElement, active: boolean) {
+  private updateExplorerObserver(containerEl: HTMLElement) {
     if (this.baseExplorerObserver) {
       this.baseExplorerObserver.disconnect();
       this.baseExplorerObserver = null;
     }
-    if (!active) return;
+
+    const isActive = !!this.plugin.settings.baseExplorerActive;
+    const isMergeEnabled = this.plugin.settings.enableMergeFolderIndex !== false;
+    if (!isActive && !isMergeEnabled) return;
 
     const targetEl = containerEl.querySelector('.nav-files-container:not(.pakcli-recent-list)') || containerEl;
     if (!targetEl) return;
@@ -820,7 +834,12 @@ export class SplitViewManager {
         }
         this.baseExplorerDebounce = requestAnimationFrame(() => {
           this.baseExplorerDebounce = null;
-          this.applyBaseExplorerFilter();
+          if (this.plugin.settings.baseExplorerActive) {
+            this.applyBaseExplorerFilter();
+          }
+          if (this.plugin.settings.enableMergeFolderIndex !== false) {
+            this.refreshFolderBadges();
+          }
         });
       }
     });
@@ -846,7 +865,7 @@ export class SplitViewManager {
       } else {
         containerEl.removeClass('pakcli-base-explorer-active');
       }
-      this.updateBaseExplorerObserver(containerEl, isActive);
+      this.updateExplorerObserver(containerEl);
     }
 
     const normalize = (p: string) => (p || '').replace(/\\/g, '/').replace(/^\/+|\/+$/g, '').trim();
@@ -885,11 +904,23 @@ export class SplitViewManager {
           item.el.removeClass('pakcli-base-file');
           item.el.removeClass('pakcli-base-hidden');
           item.el.removeClass('pakcli-folder-hidden');
+          // Check if merged folder file should still be hidden
+          if (this.plugin.settings.enableMergeFolderIndex !== false && item.file instanceof TFile && this.isMergedFolderFile(item.file)) {
+            item.el.style.display = 'none';
+            item.el.addClass('pakcli-merged-child-hidden');
+          } else {
+            item.el.removeClass('pakcli-merged-child-hidden');
+          }
           continue;
         }
 
         // When isActive is true:
         if (item.file instanceof TFile) {
+          if (this.plugin.settings.enableMergeFolderIndex !== false && this.isMergedFolderFile(item.file)) {
+            item.el.style.display = 'none';
+            item.el.addClass('pakcli-merged-child-hidden');
+            continue;
+          }
           const isBase = this.isBaseFile(item.file.path || path);
           if (isBase) {
             item.el.style.removeProperty('display');
@@ -924,6 +955,10 @@ export class SplitViewManager {
           }
         }
       }
+
+      if (this.plugin.settings.enableMergeFolderIndex !== false) {
+        this.refreshFolderBadges(containerEl);
+      }
       return;
     }
 
@@ -936,6 +971,15 @@ export class SplitViewManager {
       if (fileEl.closest('.pakcli-explorer-recent-pane')) return;
       const titleEl = fileEl.querySelector('.nav-file-title') as HTMLElement;
       const path = normalize(titleEl?.getAttribute('data-path') || fileEl.getAttribute('data-path') || titleEl?.textContent || '');
+
+      if (this.plugin.settings.enableMergeFolderIndex !== false) {
+        const abstract = this.app.vault.getAbstractFileByPath(path);
+        if (abstract instanceof TFile && this.isMergedFolderFile(abstract)) {
+          (fileEl as HTMLElement).style.display = 'none';
+          fileEl.addClass('pakcli-merged-child-hidden');
+          return;
+        }
+      }
 
       if (!isActive) {
         (fileEl as HTMLElement).style.removeProperty('display');
@@ -981,6 +1025,333 @@ export class SplitViewManager {
         }
       }
     });
+
+    if (this.plugin.settings.enableMergeFolderIndex !== false) {
+      this.refreshFolderBadges(containerEl);
+    }
+  }
+
+  public getFolderIndexFiles(folder: TFolder): { indexMd: TFile | null; baseFile: TFile | null } {
+    let indexMd: TFile | null = null;
+    let baseFile: TFile | null = null;
+
+    if (!folder || !Array.isArray(folder.children)) {
+      return { indexMd: null, baseFile: null };
+    }
+
+    for (const child of folder.children) {
+      if (child instanceof TFile) {
+        const lower = child.name.toLowerCase();
+        if (lower === 'index.md') {
+          indexMd = child;
+        } else if (
+          lower === 'index.base' ||
+          lower === 'thebase.base' ||
+          lower === `${folder.name.toLowerCase()}.base` ||
+          this.isBaseFile(child.path)
+        ) {
+          if (!baseFile) {
+            baseFile = child;
+          } else if (lower === 'index.base') {
+            baseFile = child;
+          } else if (lower === 'thebase.base' && baseFile.name.toLowerCase() !== 'index.base') {
+            baseFile = child;
+          }
+        }
+      }
+    }
+    return { indexMd, baseFile };
+  }
+
+  public isMergedFolderFile(file: TFile): boolean {
+    if (!file || !(file instanceof TFile)) return false;
+    if (!file.parent || !file.parent.path || file.parent.path === '/') return false;
+
+    const lower = file.name.toLowerCase();
+    if (lower === 'index.md') return true;
+    if (lower === 'index.base' || lower === 'thebase.base') return true;
+    if (lower === `${file.parent.name.toLowerCase()}.base`) return true;
+    return false;
+  }
+
+  public async handleIndexBadgeClick(folder: TFolder, e: MouseEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+
+    const isMod = Keymap.isModEvent(e);
+    const { indexMd } = this.getFolderIndexFiles(folder);
+
+    if (indexMd) {
+      const leaf = this.app.workspace.getLeaf(isMod);
+      await leaf.openFile(indexMd);
+      return;
+    }
+
+    // index.md doesn't exist yet: create with template and open
+    const folderPath = folder.path === '/' ? '' : folder.path;
+    const indexPath = `${folderPath}/index.md`.replace(/^\/+/, '');
+    const prefix = this.plugin.settings.folderIndexPrefix || '';
+    const suffix = this.plugin.settings.folderIndexSuffix || '';
+    const useTs = this.plugin.settings.folderIndexUseTimestamp === true;
+    const tsPrefix = useTs ? this.getTimestampPrefix() : '';
+
+    const title = `${tsPrefix}${prefix}${folder.name}${suffix}`;
+    const content = `---\ntitle: "${title}"\n---\n\n# ${title}\n\n`;
+
+    try {
+      const created = await this.app.vault.create(indexPath, content);
+      const leaf = this.app.workspace.getLeaf(isMod);
+      await leaf.openFile(created);
+      new Notice(`Created & opened index: ${created.name}`);
+      this.refreshFolderBadges();
+      this.applyBaseExplorerFilter();
+    } catch (err) {
+      console.error('[PakCLI] Failed to create index.md:', err);
+      new Notice(`Failed to create index.md: ${String(err)}`);
+    }
+  }
+
+  public async handleBaseBadgeClick(folder: TFolder, e: MouseEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+
+    const isMod = Keymap.isModEvent(e);
+    const { baseFile } = this.getFolderIndexFiles(folder);
+
+    if (baseFile) {
+      const leaf = this.app.workspace.getLeaf(isMod);
+      await leaf.openFile(baseFile);
+      return;
+    }
+
+    // Base file doesn't exist yet: create index.base and open
+    const folderPath = folder.path === '/' ? '' : folder.path;
+    const basePath = `${folderPath}/index.base`.replace(/^\/+/, '');
+
+    const initialContent = JSON.stringify(
+      {
+        version: 1,
+        title: `${folder.name} Base`,
+        folder: folder.path,
+        createdAt: new Date().toISOString(),
+        views: [],
+      },
+      null,
+      2
+    ) + '\n';
+
+    try {
+      const created = await this.app.vault.create(basePath, initialContent);
+      const leaf = this.app.workspace.getLeaf(isMod);
+      await leaf.openFile(created);
+      new Notice(`Created & opened base file: ${created.name}`);
+      this.refreshFolderBadges();
+      this.applyBaseExplorerFilter();
+    } catch (err) {
+      console.error('[PakCLI] Failed to create index.base:', err);
+      new Notice(`Failed to create index.base: ${String(err)}`);
+    }
+  }
+
+  public removeFolderBadges(customContainer?: HTMLElement) {
+    const leaves = this.app.workspace.getLeavesOfType('file-explorer');
+    if (!leaves || leaves.length === 0) return;
+    const container = customContainer || ((leaves[0].view as any)?.containerEl as HTMLElement);
+    if (!container) return;
+
+    container.removeClass('pakcli-merge-index-active');
+    const badges = container.querySelectorAll('.pakcli-folder-index-badges');
+    badges.forEach((b) => b.remove());
+
+    const hiddenChildren = container.querySelectorAll('.pakcli-merged-child-hidden');
+    hiddenChildren.forEach((el) => {
+      el.removeClass('pakcli-merged-child-hidden');
+      if (!this.plugin.settings.baseExplorerActive) {
+        (el as HTMLElement).style.removeProperty('display');
+      }
+    });
+  }
+
+  public refreshFolderBadges(customContainer?: HTMLElement) {
+    const leaves = this.app.workspace.getLeavesOfType('file-explorer');
+    if (!leaves || leaves.length === 0) return;
+    const view = leaves[0].view as any;
+    if (!view || !view.containerEl) return;
+    const containerEl = customContainer || (view.containerEl as HTMLElement);
+
+    const isEnabled = this.plugin.settings.enableMergeFolderIndex !== false;
+
+    if (!isEnabled) {
+      this.removeFolderBadges(containerEl);
+      return;
+    }
+
+    containerEl.addClass('pakcli-merge-index-active');
+
+    // 1. Inject or update badges on all folder title rows
+    const folderTitleElements = containerEl.querySelectorAll('.nav-folder-title, .tree-item-self.nav-folder-title');
+    folderTitleElements.forEach((titleEl) => {
+      if (titleEl.closest('.pakcli-explorer-recent-pane')) return;
+      if (titleEl.closest('.mod-root:not(.nav-folder)')) return;
+
+      const path = titleEl.getAttribute('data-path') || titleEl.closest('.nav-folder')?.getAttribute('data-path') || '';
+      if (!path || path === '/') return;
+
+      const abstract = this.app.vault.getAbstractFileByPath(path);
+      if (!(abstract instanceof TFolder)) return;
+
+      const folder = abstract;
+      const { indexMd, baseFile } = this.getFolderIndexFiles(folder);
+
+      const contentEl = (titleEl.querySelector('.nav-folder-title-content, .tree-item-inner') as HTMLElement) || titleEl;
+
+      // Clean up old badges if attached directly to titleEl
+      const oldWrap = titleEl.querySelector(':scope > .pakcli-folder-index-badges');
+      if (oldWrap && oldWrap.parentElement !== contentEl) {
+        oldWrap.remove();
+      }
+
+      let badgesWrap = contentEl.querySelector('.pakcli-folder-index-badges') as HTMLElement;
+      if (!badgesWrap) {
+        badgesWrap = document.createElement('span');
+        badgesWrap.className = 'pakcli-folder-index-badges';
+        badgesWrap.addEventListener('click', (e) => e.stopPropagation());
+        contentEl.appendChild(badgesWrap);
+      }
+
+      // 1. [i] badge box (i first!)
+      let badgeI = badgesWrap.querySelector('.pakcli-badge-i') as HTMLElement;
+      if (!badgeI) {
+        badgeI = document.createElement('span');
+        badgeI.className = 'pakcli-folder-badge pakcli-badge-i';
+        badgeI.textContent = 'i';
+        badgeI.addEventListener('click', (e) => this.handleIndexBadgeClick(folder, e));
+        badgeI.addEventListener('contextmenu', (e) => {
+          e.stopPropagation();
+          e.preventDefault();
+          const { indexMd: currentMd } = this.getFolderIndexFiles(folder);
+          const menu = new Menu();
+          if (currentMd) {
+            menu.addItem((item) => {
+              item.setTitle(`Open ${currentMd.name}`)
+                .setIcon('file-text')
+                .onClick(async () => {
+                  const leaf = this.app.workspace.getLeaf(false);
+                  await leaf.openFile(currentMd);
+                });
+            });
+            menu.addItem((item) => {
+              item.setTitle('Open in new tab')
+                .setIcon('file-plus')
+                .onClick(async () => {
+                  const leaf = this.app.workspace.getLeaf(true);
+                  await leaf.openFile(currentMd);
+                });
+            });
+          } else {
+            menu.addItem((item) => {
+              item.setTitle('Create index.md')
+                .setIcon('plus')
+                .onClick(() => this.handleIndexBadgeClick(folder, e));
+            });
+          }
+          menu.showAtMouseEvent(e);
+        });
+        badgesWrap.appendChild(badgeI);
+      }
+
+      // 2. [base] badge box (base second!)
+      let badgeBase = badgesWrap.querySelector('.pakcli-badge-base') as HTMLElement;
+      if (!badgeBase) {
+        badgeBase = document.createElement('span');
+        badgeBase.className = 'pakcli-folder-badge pakcli-badge-base';
+        badgeBase.textContent = 'base';
+        badgeBase.addEventListener('click', (e) => this.handleBaseBadgeClick(folder, e));
+        badgeBase.addEventListener('contextmenu', (e) => {
+          e.stopPropagation();
+          e.preventDefault();
+          const { baseFile: currentBase } = this.getFolderIndexFiles(folder);
+          const menu = new Menu();
+          if (currentBase) {
+            menu.addItem((item) => {
+              item.setTitle(`Open ${currentBase.name}`)
+                .setIcon('database')
+                .onClick(async () => {
+                  const leaf = this.app.workspace.getLeaf(false);
+                  await leaf.openFile(currentBase);
+                });
+            });
+            menu.addItem((item) => {
+              item.setTitle('Open in new tab')
+                .setIcon('file-plus')
+                .onClick(async () => {
+                  const leaf = this.app.workspace.getLeaf(true);
+                  await leaf.openFile(currentBase);
+                });
+            });
+          } else {
+            menu.addItem((item) => {
+              item.setTitle('Create index.base')
+                .setIcon('plus')
+                .onClick(() => this.handleBaseBadgeClick(folder, e));
+            });
+          }
+          menu.showAtMouseEvent(e);
+        });
+        badgesWrap.appendChild(badgeBase);
+      }
+
+      // Ensure i is positioned before base
+      if (badgeI && badgeBase && badgeI.nextSibling !== badgeBase) {
+        badgesWrap.insertBefore(badgeI, badgeBase);
+      }
+
+      if (baseFile) {
+        badgeBase.removeClass('is-missing');
+        badgeBase.addClass('has-file');
+        badgeBase.setAttribute('aria-label', `Open ${baseFile.name} (Ctrl+click for new tab)`);
+      } else {
+        badgeBase.removeClass('has-file');
+        badgeBase.addClass('is-missing');
+        badgeBase.setAttribute('aria-label', 'Create & open index.base');
+      }
+
+      if (indexMd) {
+        badgeI.removeClass('is-missing');
+        badgeI.addClass('has-file');
+        badgeI.setAttribute('aria-label', `Open ${indexMd.name} (Ctrl+click for new tab)`);
+      } else {
+        badgeI.removeClass('has-file');
+        badgeI.addClass('is-missing');
+        badgeI.setAttribute('aria-label', 'Create & open index.md');
+      }
+    });
+
+    // 2. Hide merged child files from the children list
+    if (view.fileItems && typeof view.fileItems === 'object') {
+      const fileItemsMap = view.fileItems as Record<string, { el?: HTMLElement; file?: TAbstractFile }>;
+      for (const [_, item] of Object.entries(fileItemsMap)) {
+        if (!item || !item.el || !(item.file instanceof TFile)) continue;
+        if (item.el.closest('.pakcli-explorer-recent-pane')) continue;
+
+        if (this.isMergedFolderFile(item.file)) {
+          item.el.style.display = 'none';
+          item.el.addClass('pakcli-merged-child-hidden');
+        }
+      }
+    } else {
+      const fileElements = containerEl.querySelectorAll('.nav-file');
+      fileElements.forEach((fileEl) => {
+        if (fileEl.closest('.pakcli-explorer-recent-pane')) return;
+        const titleEl = fileEl.querySelector('.nav-file-title') as HTMLElement;
+        const path = titleEl?.getAttribute('data-path') || fileEl.getAttribute('data-path') || '';
+        const abstract = this.app.vault.getAbstractFileByPath(path);
+        if (abstract instanceof TFile && this.isMergedFolderFile(abstract)) {
+          (fileEl as HTMLElement).style.display = 'none';
+          fileEl.addClass('pakcli-merged-child-hidden');
+        }
+      });
+    }
   }
 
   public getTimestampPrefix(): string {
@@ -1021,6 +1392,15 @@ export class SplitViewManager {
       this.baseExplorerDebounce = requestAnimationFrame(() => {
         this.baseExplorerDebounce = null;
         this.applyBaseExplorerFilter();
+      });
+    }
+    if (this.plugin.settings.enableMergeFolderIndex !== false) {
+      if (this.badgeDebounce !== null) {
+        cancelAnimationFrame(this.badgeDebounce);
+      }
+      this.badgeDebounce = requestAnimationFrame(() => {
+        this.badgeDebounce = null;
+        this.refreshFolderBadges();
       });
     }
     if (!this.plugin.settings.enableAutoFolderIndex) return;
@@ -1074,6 +1454,11 @@ export class SplitViewManager {
       cancelAnimationFrame(this.baseExplorerDebounce);
       this.baseExplorerDebounce = null;
     }
+    if (this.badgeDebounce !== null) {
+      cancelAnimationFrame(this.badgeDebounce);
+      this.badgeDebounce = null;
+    }
+    this.removeFolderBadges();
     if (this.splitBtnEl) {
       this.splitBtnEl.remove();
       this.splitBtnEl = null;

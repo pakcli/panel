@@ -13,24 +13,119 @@
 
 /* Base Explorer Mode Filter Styles */
 .pakcli-base-explorer-active {
-  /* Ensure non-base files remain hidden */
-  .nav-file:not(.pakcli-base-file),
-  .tree-item.nav-file:not(.pakcli-base-file),
-  .nav-file.pakcli-base-hidden,
-  .tree-item.nav-file.pakcli-base-hidden {
-    display: none !important;
+  /* Ensure non-base files remain hidden strictly in the vault tree, NEVER in recent pane */
+  .nav-files-container:not(.pakcli-recent-list) {
+    .nav-file:not(.pakcli-base-file),
+    .tree-item.nav-file:not(.pakcli-base-file),
+    .nav-file.pakcli-base-hidden,
+    .tree-item.nav-file.pakcli-base-hidden {
+      display: none !important;
+    }
+
+    /* Ensure unaffected folders remain hidden */
+    .nav-folder.pakcli-folder-hidden,
+    .tree-item.nav-folder.pakcli-folder-hidden {
+      display: none !important;
+    }
+
+    /* Subtle highlight for base files */
+    .nav-file.pakcli-base-file .nav-file-title,
+    .tree-item.nav-file.pakcli-base-file .nav-file-title {
+      font-weight: 600;
+    }
   }
 
-  /* Ensure unaffected folders remain hidden */
-  .nav-folder.pakcli-folder-hidden,
-  .tree-item.nav-folder.pakcli-folder-hidden {
-    display: none !important;
+  /* Explicitly protect the recent pane so recent items are ALWAYS visible */
+  .pakcli-explorer-recent-pane {
+    .nav-file,
+    .tree-item.nav-file,
+    .pakcli-recent-item {
+      display: block !important;
+    }
+  }
+}
+
+/* ── Folder Index & Base File Row Merging Badges ────────────────────────── */
+
+.pakcli-folder-index-badges {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: 6px;
+  margin-right: 4px;
+  flex-shrink: 0;
+  user-select: none;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+.pakcli-folder-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  font-size: 0.65rem;
+  line-height: 1;
+  font-weight: 700;
+  padding: 1px 4px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-modifier-form-field);
+  color: var(--text-muted);
+
+  &.pakcli-badge-i {
+    min-width: 16px;
+    text-transform: lowercase;
   }
 
-  /* Subtle highlight for base files */
-  .nav-file.pakcli-base-file .nav-file-title,
-  .tree-item.nav-file.pakcli-base-file .nav-file-title {
-    font-weight: 600;
+  &.pakcli-badge-base {
+    min-width: 30px;
+    text-transform: lowercase;
+  }
+
+  &.has-file {
+    background: rgba(var(--interactive-accent-rgb, 120, 80, 200), 0.14);
+    background: color-mix(in srgb, var(--interactive-accent, var(--color-accent, #7852ff)) 14%, transparent);
+    border-color: var(--interactive-accent, var(--color-accent, #7852ff));
+    color: var(--text-accent, var(--interactive-accent, var(--color-accent, #7852ff)));
+    font-weight: 800;
+  }
+
+  &.is-missing {
+    opacity: 0.45;
+    border-style: dashed;
+    color: var(--text-faint);
+
+    &:hover {
+      opacity: 1;
+      border-style: solid;
+      border-color: var(--interactive-accent, var(--color-accent, #7852ff));
+      color: var(--text-accent, var(--interactive-accent, var(--color-accent, #7852ff)));
+      background: color-mix(in srgb, var(--interactive-accent, var(--color-accent, #7852ff)) 10%, transparent);
+    }
+  }
+
+  &:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+    border-color: var(--interactive-accent, var(--color-accent, #7852ff));
+    color: var(--text-accent, var(--interactive-accent, var(--color-accent, #7852ff)));
+  }
+
+  &:active {
+    transform: translateY(0);
+  }
+}
+
+/* When merge row is active, hide the duplicate child files from folder contents */
+.pakcli-merge-index-active {
+  .nav-files-container:not(.pakcli-recent-list) {
+    .nav-file.pakcli-merged-child-hidden,
+    .tree-item.nav-file.pakcli-merged-child-hidden {
+      display: none !important;
+    }
   }
 }
 

@@ -1441,6 +1441,21 @@ export default class PakCLITablePlugin extends Plugin {
 					});
 
 				new Setting(containerEl)
+					.setName('Merge Folder Index & Base Files in Explorer Row')
+					.setDesc('Merges index.md and index.base / thebase.base into the folder row as interactive [i] and [base] boxes, hiding the duplicate files from the folder children list.')
+					.addToggle((t) => {
+						t.setValue(this.settings.enableMergeFolderIndex !== false)
+							.onChange(async (val) => {
+								this.settings.enableMergeFolderIndex = val;
+								await this.saveSettings();
+								if (this.splitViewManager) {
+									this.splitViewManager.refreshFolderBadges();
+									this.splitViewManager.applyBaseExplorerFilter();
+								}
+							});
+					});
+
+				new Setting(containerEl)
 					.setName('Folder Index Title Prefix')
 					.setDesc('Custom prefix to add before the folder name in index.md title frontmatter.')
 					.addText((text) => {

@@ -456,15 +456,20 @@ export function buildVaultGraph(
         const allIds = [...new Set(clusterAllNodeIds.get(folderPath) || [])];
         if (allIds.length === 0) continue;
 
+        const directIds = [...new Set(clusterDirectNodeIds.get(folderPath) || [])];
+        const initialRadius = directIds.length > 0
+            ? computeClusterRadius(directIds.length, depth)
+            : computeClusterRadius(allIds.length, depth);
+
         const cluster: BubbleCluster = {
             id: folderPath,
             name,
             parentClusterId: parentPath,
             depth,
             nodeIds: allIds,
-            directNodeIds: [...new Set(clusterDirectNodeIds.get(folderPath) || [])],
+            directNodeIds: directIds,
             centroid: { x: 0, y: 0 },
-            radius: computeClusterRadius(allIds.length, depth),
+            radius: initialRadius,
             color: getFolderColor(folderPath, captainRules, useCaptainColors),
             hullPolygon: [],
             smoothedHull: [],
