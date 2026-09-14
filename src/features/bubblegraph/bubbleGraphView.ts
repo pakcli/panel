@@ -89,6 +89,7 @@ export class BubbleGraphView extends ItemView {
     private levelMinSliderEl!: HTMLInputElement;
     private levelMaxSliderEl!: HTMLInputElement;
     private levelHighlightEl!: HTMLElement;
+    private levelGrayoutEl: HTMLElement | null = null;
     private levelDisplayEl!: HTMLElement;
     private levelResetBtnEl!: HTMLElement;
     private fontSizeSliderEl!: HTMLInputElement;
@@ -259,6 +260,7 @@ export class BubbleGraphView extends ItemView {
     public scopeToFolder(folderPath: string | null): void {
         this.scopedFolder = (folderPath && folderPath !== '/' && folderPath !== '.') ? normalizePath(folderPath) : null;
         this.reloadGraphData();
+        this.syncLevelControls();
         this.updateScopeBar();
         this.updateInspectorContent();
         this.fitToView();
@@ -901,6 +903,7 @@ export class BubbleGraphView extends ItemView {
         const dualSliderContainer = levelGroup.createDiv({ cls: 'pakcli-dual-slider' });
         dualSliderContainer.createDiv({ cls: 'pakcli-dual-track' });
         this.levelHighlightEl = dualSliderContainer.createDiv({ cls: 'pakcli-dual-highlight' });
+        this.levelGrayoutEl = dualSliderContainer.createDiv({ cls: 'pakcli-dual-grayout' });
 
         this.levelMinSliderEl = dualSliderContainer.createEl('input', {
             type: 'range',
@@ -976,15 +979,15 @@ export class BubbleGraphView extends ItemView {
                 const relX = (e.clientX - rect.left) / (rect.width || 1);
                 const thumbPos = (this.labelMinLevel - 1) / 3;
                 if (relX < thumbPos) {
-                    this.levelMinSliderEl.style.zIndex = '3';
-                    this.levelMaxSliderEl.style.zIndex = '2';
+                    this.levelMinSliderEl.style.zIndex = '5';
+                    this.levelMaxSliderEl.style.zIndex = '4';
                 } else {
-                    this.levelMaxSliderEl.style.zIndex = '3';
-                    this.levelMinSliderEl.style.zIndex = '2';
+                    this.levelMaxSliderEl.style.zIndex = '5';
+                    this.levelMinSliderEl.style.zIndex = '4';
                 }
             } else {
-                this.levelMinSliderEl.style.zIndex = '2';
-                this.levelMaxSliderEl.style.zIndex = '2';
+                this.levelMinSliderEl.style.zIndex = '4';
+                this.levelMaxSliderEl.style.zIndex = '4';
             }
         };
 
@@ -2201,19 +2204,19 @@ export class BubbleGraphView extends ItemView {
 
     private getLevelName(lvl: number): string {
         switch (lvl) {
-            case 1: return 'Hubs & Active';
-            case 2: return 'Documents (2+ links)';
-            case 3: return 'Leaves (1 link)';
-            case 4: return 'Orphans (0 links)';
+            case 1: return 'Top Folders & Root Files';
+            case 2: return 'Level 1 Files & Subfolders';
+            case 3: return 'Level 2 Files & Deep Folders';
+            case 4: return 'Deepest Hierarchy (L4+)';
             default: return `Level ${lvl}`;
         }
     }
 
     private getLevelTooltip(min: number, max: number): string {
         if (min === max) {
-            return `Level ${min} only: ${this.getLevelName(min)}`;
+            return `Text Level ${min} only: ${this.getLevelName(min)}`;
         }
-        return `Levels ${min}-${max}: ${this.getLevelName(min)} to ${this.getLevelName(max)}`;
+        return `Text Levels ${min}-${max}: ${this.getLevelName(min)} to ${this.getLevelName(max)}`;
     }
 
     private syncLevelControls(): void {
@@ -2228,12 +2231,38 @@ export class BubbleGraphView extends ItemView {
             this.levelHighlightEl.style.width = `${widthPercent}%`;
         }
 
+        // Compute scope depth (items inside scoped folder start at 1 + scope depth)
+        const scopeLevel = (this.scopedFolder && this.scopedFolder !== '/' && this.scopedFolder !== '.')
+            ? Math.min(4, 1 + this.scopedFolder.split('/').filter(Boolean).length)
+            : 1;
+
+        // Visual grayout of unavailable levels < scopeLevel without altering stored user setting
+        if (this.levelGrayoutEl) {
+            if (scopeLevel > 1) {
+                const grayoutWidth = ((scopeLevel - 1) / 3) * 100;
+                this.levelGrayoutEl.style.width = `${grayoutWidth}%`;
+                this.levelGrayoutEl.style.display = 'block';
+                this.levelGrayoutEl.title = `Levels 1${scopeLevel > 2 ? `-${scopeLevel - 1}` : ''} inactive: view scoped to Level ${scopeLevel} (${this.scopedFolder})`;
+            } else {
+                this.levelGrayoutEl.style.width = '0%';
+                this.levelGrayoutEl.style.display = 'none';
+                this.levelGrayoutEl.title = '';
+            }
+        }
+
+        const effMin = Math.max(this.labelMinLevel, scopeLevel);
+        const effMax = Math.max(this.labelMaxLevel, effMin);
+
         const isSingle = this.labelMinLevel === this.labelMaxLevel;
         const displayText = isSingle
             ? this.labelMinLevel.toString()
             : `${this.labelMinLevel}-${this.labelMaxLevel}`;
 
-        const desc = this.getLevelTooltip(this.labelMinLevel, this.labelMaxLevel);
+        let desc = this.getLevelTooltip(this.labelMinLevel, this.labelMaxLevel);
+        if (scopeLevel > 1 && (effMin !== this.labelMinLevel || effMax !== this.labelMaxLevel)) {
+            desc += ` [Effective: Level ${effMin === effMax ? effMin : `${effMin}-${effMax}`}, scoped to Level ${scopeLevel}]`;
+        }
+
         this.levelMinSliderEl.title = `Min Text Level: ${this.labelMinLevel} (${this.getLevelName(this.labelMinLevel)})`;
         this.levelMaxSliderEl.title = `Max Text Level: ${this.labelMaxLevel} (${this.getLevelName(this.labelMaxLevel)})`;
 
@@ -2244,7 +2273,7 @@ export class BubbleGraphView extends ItemView {
 
         if (this.levelResetBtnEl) {
             this.levelResetBtnEl.title = isSingle
-                ? (this.labelMinLevel === 1 ? `Level 1 active (click to reset)` : `Reset to Level 1 (Hubs & Active only)`)
+                ? (this.labelMinLevel === 1 ? `Level 1 active (click to reset to 1-2)` : `Reset to Level 1 (Top Folders & Root Files)`)
                 : `Reset to single level (Level ${this.labelMinLevel} only)`;
             this.levelResetBtnEl.setAttribute('aria-label', this.levelResetBtnEl.title);
         }

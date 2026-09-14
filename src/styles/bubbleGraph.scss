@@ -376,7 +376,26 @@
         border-radius: 2px;
         pointer-events: none;
         transition: left 0.05s ease, width 0.05s ease;
-        z-index: 1;
+        z-index: 2;
+    }
+
+    .pakcli-dual-grayout {
+        position: absolute;
+        left: 0;
+        height: 4px;
+        background: repeating-linear-gradient(
+            -45deg,
+            var(--text-faint, rgba(148, 163, 184, 0.4)),
+            var(--text-faint, rgba(148, 163, 184, 0.4)) 3px,
+            var(--background-modifier-border-focus, rgba(71, 85, 105, 0.65)) 3px,
+            var(--background-modifier-border-focus, rgba(71, 85, 105, 0.65)) 6px
+        );
+        border-radius: 2px 0 0 2px;
+        pointer-events: none;
+        transition: width 0.15s ease;
+        z-index: 3;
+        box-shadow: inset 0 0.5px 1.5px rgba(0, 0, 0, 0.35);
+        display: none;
     }
 
     input[type="range"] {
@@ -391,7 +410,7 @@
         pointer-events: none;
         -webkit-appearance: none;
         appearance: none;
-        z-index: 2;
+        z-index: 4;
 
         &::-webkit-slider-runnable-track {
             background: transparent;

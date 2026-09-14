@@ -26,7 +26,7 @@ export interface RenderState {
     showLines: boolean;
     showLabels: boolean;
     labelRangeLevel?: number; // legacy single level fallback
-    labelMinLevel?: number; // 1 = Hubs/Active, 2 = Docs, 3 = Leaves, 4 = Orphans
+    labelMinLevel?: number; // 1 to 4 (hierarchy depth: 1 = root/top, 2 = subfolder, 3 = L3, 4 = L4+)
     labelMaxLevel?: number; // 1 to 4
     labelFontSize: number; // 8 to 24px
     hullOpacity: number;
@@ -126,6 +126,15 @@ export class CanvasRenderer {
     private drawClusterHulls(state: RenderState, zoom: number): void {
         const ctx = this.ctx;
 
+        // Resolve scope level and effective text levels (items inside scoped folder start at 1 + scope depth)
+        const scopeLevel = (state.scopedFolder && state.scopedFolder !== '/' && state.scopedFolder !== '.')
+            ? Math.min(4, 1 + state.scopedFolder.split('/').filter(Boolean).length)
+            : 1;
+        const userMin = state.labelMinLevel ?? 1;
+        const userMax = state.labelMaxLevel ?? (state.labelRangeLevel ?? 2);
+        const effectiveMinLevel = Math.max(userMin, scopeLevel);
+        const effectiveMaxLevel = Math.max(userMax, effectiveMinLevel);
+
         // Draw top-level clusters first, then nested subfolders
         const sortedClusters = [...state.clusters].sort((a, b) => a.depth - b.depth);
 
@@ -196,12 +205,18 @@ export class CanvasRenderer {
                 }
             }
 
-            // Folder Label Tab Badge
+            // Folder Label Tab Badge (Hierarchy Depth based)
             if (state.showLabels) {
-                if (cluster.depth === 1) {
-                    this.drawClusterFolderTab(cluster, baseColor, isHovered, state);
-                } else if (isHovered || (zoom >= 0.65 && cluster.radius >= 22)) {
-                    this.drawSubClusterFolderTab(cluster, baseColor, isHovered, state);
+                const clusterParts = cluster.id ? cluster.id.split('/').filter(Boolean) : [];
+                const clusterLevel = Math.min(4, Math.max(1, clusterParts.length));
+                const isFolderLevelAllowed = clusterLevel >= effectiveMinLevel && clusterLevel <= effectiveMaxLevel;
+
+                if (isHovered || isFolderLevelAllowed) {
+                    if (cluster.depth === 1) {
+                        this.drawClusterFolderTab(cluster, baseColor, isHovered, state);
+                    } else if (isHovered || (cluster.radius >= 14 && (zoom >= 0.35 || isFolderLevelAllowed))) {
+                        this.drawSubClusterFolderTab(cluster, baseColor, isHovered, state);
+                    }
                 }
             }
 
@@ -379,6 +394,15 @@ export class CanvasRenderer {
     private drawNodes(state: RenderState, hoveredNeighbors: Set<string>, zoom: number): void {
         const ctx = this.ctx;
 
+        // Resolve scope level and effective text levels (items inside scoped folder start at 1 + scope depth)
+        const scopeLevel = (state.scopedFolder && state.scopedFolder !== '/' && state.scopedFolder !== '.')
+            ? Math.min(4, 1 + state.scopedFolder.split('/').filter(Boolean).length)
+            : 1;
+        const userMin = state.labelMinLevel ?? 1;
+        const userMax = state.labelMaxLevel ?? (state.labelRangeLevel ?? 2);
+        const effectiveMinLevel = Math.max(userMin, scopeLevel);
+        const effectiveMaxLevel = Math.max(userMax, effectiveMinLevel);
+
         for (const node of state.nodes) {
             if (!this.isNodeVisible(node, state)) continue;
 
@@ -395,23 +419,14 @@ export class CanvasRenderer {
             // Draw Node Glyphs
             this.drawNodeGlyph(node, isHovered, isSelected);
 
-            // Draw Labels (Dual Handle Range Level 1-4 + Font Size Slider)
-            let isLevelAllowed = false;
-            const minLevel = state.labelMinLevel ?? 1;
-            const maxLevel = state.labelMaxLevel ?? (state.labelRangeLevel ?? 2);
-
-            let nodeLevel = 4;
-            if (node.isActive || node.glyph === 'hub' || node.glyph === 'plus' || node.totalDegree >= 4) {
-                nodeLevel = 1;
-            } else if (node.glyph === 'i' || node.glyph === 'document' || node.totalDegree >= 2) {
-                nodeLevel = 2;
-            } else if (node.glyph === 'minus' || node.glyph === 'dot' || node.totalDegree === 1) {
-                nodeLevel = 3;
-            } else {
-                nodeLevel = 4;
-            }
-
-            isLevelAllowed = nodeLevel >= minLevel && nodeLevel <= maxLevel;
+            // Draw Labels (Dual Handle Range Level 1-4: File/Folder Hierarchy Depth based)
+            // Level 1 = Vault root files (nodeParts.length === 0)
+            // Level 2 = Files inside top-level folders (nodeParts.length === 1, e.g. "Digital Library/Sacrifice Self Ending.md")
+            // Level 3 = Files inside subfolders (nodeParts.length === 2)
+            // Level 4 = Files inside Level 3+ deep subfolders (nodeParts.length >= 3)
+            const nodeParts = node.folderPath ? node.folderPath.split('/').filter(Boolean) : [];
+            const nodeLevel = Math.min(4, 1 + nodeParts.length);
+            const isLevelAllowed = nodeLevel >= effectiveMinLevel && nodeLevel <= effectiveMaxLevel;
 
             const shouldShowLabel = state.showLabels && (
                 isHovered ||
