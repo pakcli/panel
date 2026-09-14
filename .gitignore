@@ -5,3 +5,4 @@ main.js
 dist/
 # Local publisher configuration
 .publish-config.json
+important-links
