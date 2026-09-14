@@ -25,6 +25,8 @@ export interface RenderState {
     interLinkGlow: boolean;
     showLines: boolean;
     showLabels: boolean;
+    labelMode?: 'all' | 'folder' | 'text' | 'custom' | 'off';
+    customLabelFormats?: Set<string>;
     labelRangeLevel?: number; // legacy single level fallback
     labelMinLevel?: number; // 1 to 4 (hierarchy depth: 1 = root/top, 2 = subfolder, 3 = L3, 4 = L4+)
     labelMaxLevel?: number; // 1 to 4
@@ -206,7 +208,14 @@ export class CanvasRenderer {
             }
 
             // Folder Label Tab Badge (Hierarchy Depth based)
-            if (state.showLabels) {
+            const isFolderModeAllowed = !state.labelMode || state.labelMode === 'all' || state.labelMode === 'folder' ||
+                (state.labelMode === 'custom' && (
+                    state.customLabelFormats?.has('folder') ||
+                    state.customLabelFormats?.has('folders') ||
+                    state.customLabelFormats?.has('*')
+                ));
+
+            if (state.showLabels && isFolderModeAllowed) {
                 const clusterParts = cluster.id ? cluster.id.split('/').filter(Boolean) : [];
                 const clusterLevel = Math.min(4, Math.max(1, clusterParts.length));
                 const isFolderLevelAllowed = clusterLevel >= effectiveMinLevel && clusterLevel <= effectiveMaxLevel;
@@ -428,10 +437,18 @@ export class CanvasRenderer {
             const nodeLevel = Math.min(4, 1 + nodeParts.length);
             const isLevelAllowed = nodeLevel >= effectiveMinLevel && nodeLevel <= effectiveMaxLevel;
 
+            const ext = (node.extension || 'md').toLowerCase();
+            const isNodeFormatAllowed = !state.labelMode || state.labelMode === 'all' || state.labelMode === 'text' ||
+                (state.labelMode === 'custom' && (
+                    state.customLabelFormats?.has(ext) ||
+                    state.customLabelFormats?.has('*') ||
+                    state.customLabelFormats?.has('.' + ext)
+                ));
+
             const shouldShowLabel = state.showLabels && (
                 isHovered ||
                 isSelected ||
-                isLevelAllowed
+                (isLevelAllowed && isNodeFormatAllowed)
             );
 
             if (shouldShowLabel) {

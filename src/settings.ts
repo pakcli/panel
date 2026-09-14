@@ -16,8 +16,10 @@ export interface BubbleGraphSettings {
     bubbleMaxDragDepth: number;
     bubbleDefaultLayout: 'bubble' | 'default';
     bubbleHullOpacity: number;
-    bubbleShowLabels: boolean;
     bubbleShowLines: boolean;
+    bubbleShowLabels: boolean;
+    bubbleLabelMode: 'all' | 'folder' | 'text' | 'custom' | 'off';
+    bubbleLabelCustomFormats: string;
     bubbleShowVennBridges: boolean;
     bubbleIntraLinkOpacity: number;
     bubbleInterLinkGlow: boolean;
@@ -101,6 +103,8 @@ export const DEFAULT_BUBBLE_GRAPH_SETTINGS: BubbleGraphSettings = {
     bubbleDefaultLayout: 'bubble',
     bubbleHullOpacity: 0.12,
     bubbleShowLabels: true,
+    bubbleLabelMode: 'all',
+    bubbleLabelCustomFormats: 'md, canvas, json, base, csv, folder',
     bubbleShowLines: true,
     bubbleShowVennBridges: true,
     bubbleIntraLinkOpacity: 0.2,

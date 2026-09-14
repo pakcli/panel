@@ -224,7 +224,18 @@ export function buildVaultGraph(
     scopedFolder: string | null = null,
     glyphSettings?: NodeGlyphSettings
 ): BuiltGraph {
-    let files: TFile[] = app.vault.getMarkdownFiles();
+    const BINARY_EXTENSIONS = new Set([
+        'png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg', 'ico',
+        'mp3', 'wav', 'ogg', 'm4a', 'flac',
+        'mp4', 'webm', 'mov', 'mkv', 'avi',
+        'pdf', 'zip', 'tar', 'gz', '7z', 'rar'
+    ]);
+
+    let files: TFile[] = app.vault.getFiles().filter(file => {
+        if (file.path.startsWith('.') || file.path.includes('/.')) return false;
+        const ext = file.extension ? file.extension.toLowerCase() : '';
+        return !BINARY_EXTENSIONS.has(ext);
+    });
     const resolvedLinks = app.metadataCache.resolvedLinks || {};
 
     const normalizedScoped = scopedFolder && scopedFolder !== '/' ? normalizePath(scopedFolder) : null;
@@ -269,6 +280,7 @@ export function buildVaultGraph(
     for (const file of files) {
         const path = file.path;
         const name = file.basename;
+        const ext = file.extension ? file.extension.toLowerCase() : 'md';
         const folderPath = file.parent && file.parent.path !== '/' ? normalizePath(file.parent.path) : '';
 
         let topLevelFolder = '/';
@@ -337,6 +349,7 @@ export function buildVaultGraph(
         const node: BubbleNode = {
             id: path,
             name,
+            extension: ext,
             folderPath,
             topLevelFolder,
             subFolder,

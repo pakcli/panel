@@ -32,6 +32,9 @@ export class BubbleGraphView extends ItemView {
 
     // Label & Line Controls
     private showLabels: boolean = true;
+    private labelMode: 'all' | 'folder' | 'text' | 'custom' = 'all';
+    private customLabelFormats: string = 'md, canvas, json, base, csv, folder';
+    private customLabelFormatsSet: Set<string> = new Set(['md', 'canvas', 'json', 'base', 'csv', 'folder']);
     private showLines: boolean = true;
     private labelMinLevel: number = 1; // 1 to 4
     private labelMaxLevel: number = 2; // 1 to 4
@@ -81,7 +84,9 @@ export class BubbleGraphView extends ItemView {
     private depthButtons: HTMLElement[] = [];
     private wandBtnEl: HTMLElement | null = null;
     private linesToggleBtnEl!: HTMLElement;
-    private textToggleBtnEl!: HTMLElement;
+    private textToggleBtnEl: HTMLElement | null = null;
+    private labelModeSelectEl: HTMLSelectElement | null = null;
+    private customFormatInputEl: HTMLInputElement | null = null;
     private captainColorsBtnEl!: HTMLElement;
     private sfxToggleBtnEl!: HTMLElement;
     private volumeSliderEl!: HTMLInputElement;
@@ -130,6 +135,9 @@ export class BubbleGraphView extends ItemView {
         this.layoutMode = this.plugin.settings.bubbleDefaultLayout || 'bubble';
         this.maxDragDepth = this.plugin.settings.bubbleMaxDragDepth ?? DEFAULT_BUBBLE_GRAPH_SETTINGS.bubbleMaxDragDepth;
         this.showLabels = this.plugin.settings.bubbleShowLabels !== false;
+        this.labelMode = this.plugin.settings.bubbleLabelMode || 'all';
+        this.customLabelFormats = this.plugin.settings.bubbleLabelCustomFormats || 'md, canvas, json, base, csv, folder';
+        this.updateCustomLabelFormatsSet(this.customLabelFormats);
         this.showLines = this.plugin.settings.bubbleShowLines !== false;
         this.timelapseMode = this.plugin.settings.bubbleTimelapseMode || 'date';
         this.useCaptainColors = this.plugin.settings.bubbleUseCaptainColors === true;
@@ -285,6 +293,9 @@ export class BubbleGraphView extends ItemView {
         this.maxDragDepth = DEFAULT_BUBBLE_GRAPH_SETTINGS.bubbleMaxDragDepth;
         this.showLines = DEFAULT_BUBBLE_GRAPH_SETTINGS.bubbleShowLines;
         this.showLabels = DEFAULT_BUBBLE_GRAPH_SETTINGS.bubbleShowLabels;
+        this.labelMode = DEFAULT_BUBBLE_GRAPH_SETTINGS.bubbleLabelMode || 'all';
+        this.customLabelFormats = DEFAULT_BUBBLE_GRAPH_SETTINGS.bubbleLabelCustomFormats || 'md, canvas, json, base, csv, folder';
+        this.updateCustomLabelFormatsSet(this.customLabelFormats);
         this.useCaptainColors = DEFAULT_BUBBLE_GRAPH_SETTINGS.bubbleUseCaptainColors;
         this.labelRangeLevel = DEFAULT_BUBBLE_GRAPH_SETTINGS.bubbleLabelRangeLevel;
         this.labelMinLevel = DEFAULT_BUBBLE_GRAPH_SETTINGS.bubbleLabelMinLevel;
@@ -300,6 +311,8 @@ export class BubbleGraphView extends ItemView {
         this.plugin.settings.bubbleMaxDragDepth = this.maxDragDepth;
         this.plugin.settings.bubbleShowLines = this.showLines;
         this.plugin.settings.bubbleShowLabels = this.showLabels;
+        this.plugin.settings.bubbleLabelMode = this.labelMode;
+        this.plugin.settings.bubbleLabelCustomFormats = this.customLabelFormats;
         this.plugin.settings.bubbleUseCaptainColors = this.useCaptainColors;
         this.plugin.settings.bubbleLabelRangeLevel = this.labelRangeLevel;
         this.plugin.settings.bubbleLabelMinLevel = this.labelMinLevel;
@@ -332,6 +345,10 @@ export class BubbleGraphView extends ItemView {
             this.textToggleBtnEl.toggleClass('active', this.showLabels);
             this.textToggleBtnEl.setAttribute('aria-pressed', this.showLabels ? 'true' : 'false');
         }
+        if (this.customFormatInputEl) {
+            this.customFormatInputEl.value = this.customLabelFormats;
+        }
+        this.updateLabelModeUI();
         if (this.captainColorsBtnEl) {
             this.captainColorsBtnEl.toggleClass('active', this.useCaptainColors);
             this.captainColorsBtnEl.setAttribute('aria-pressed', this.useCaptainColors ? 'true' : 'false');
@@ -509,6 +526,26 @@ export class BubbleGraphView extends ItemView {
         }
         for (const cluster of this.graphData.clusters) {
             cluster.color = getFolderColor(cluster.id, captainRules, this.useCaptainColors);
+        }
+    }
+
+    private updateCustomLabelFormatsSet(formatsStr: string): void {
+        this.customLabelFormats = formatsStr;
+        const tokens = formatsStr
+            .split(/[,|\s]+/)
+            .map(s => s.trim().toLowerCase().replace(/^\./, ''))
+            .filter(Boolean);
+        this.customLabelFormatsSet = new Set(tokens);
+    }
+
+    private updateLabelModeUI(): void {
+        if (this.labelModeSelectEl) {
+            this.labelModeSelectEl.value = this.labelMode;
+        }
+        if (this.customFormatInputEl) {
+            const isCustom = this.showLabels && this.labelMode === 'custom';
+            this.customFormatInputEl.toggleClass('visible', isCustom);
+            this.customFormatInputEl.style.display = isCustom ? 'inline-block' : 'none';
         }
     }
 
@@ -772,10 +809,10 @@ export class BubbleGraphView extends ItemView {
 
         const textGroup = row2.createDiv({ cls: 'pakcli-text-controls-group' });
 
-        // Cluster 1: 4 Layer Toggles
+        // 1 & 2: Quick Toggles (Link line column, The folder colour)
         const togglesCluster = textGroup.createDiv({ cls: 'pakcli-layer-toggles-cluster' });
 
-        // 1. Toggle Lines (Show/Hide)
+        // 1. Link line column (Show/Hide Lines)
         this.linesToggleBtnEl = togglesCluster.createEl('button', {
             cls: `pakcli-icon-btn pakcli-lines-toggle-btn ${this.showLines ? 'active' : ''}`,
             title: 'Toggle Lines (Show/Hide)'
@@ -793,22 +830,7 @@ export class BubbleGraphView extends ItemView {
             }
         };
 
-        // 2. Toggle Text Node Labels
-        this.textToggleBtnEl = togglesCluster.createEl('button', {
-            cls: `pakcli-icon-btn pakcli-text-toggle-btn ${this.showLabels ? 'active' : ''}`,
-            title: 'Toggle Text Labels'
-        });
-        this.textToggleBtnEl.setAttribute('aria-pressed', this.showLabels ? 'true' : 'false');
-        setIcon(this.textToggleBtnEl, 'type');
-        this.textToggleBtnEl.onclick = async () => {
-            this.showLabels = !this.showLabels;
-            this.textToggleBtnEl.toggleClass('active', this.showLabels);
-            this.textToggleBtnEl.setAttribute('aria-pressed', this.showLabels ? 'true' : 'false');
-            this.plugin.settings.bubbleShowLabels = this.showLabels;
-            await this.plugin.saveSettings();
-        };
-
-        // 3. Toggle Captain Folder Colors
+        // 2. The folder colour (Captain Folder Colors)
         this.captainColorsBtnEl = togglesCluster.createEl('button', {
             cls: `pakcli-icon-btn pakcli-captain-colors-btn ${this.useCaptainColors ? 'active' : ''}`,
             title: 'Toggle Captain Folder Colors (show custom colors on Captain Folders)'
@@ -824,79 +846,73 @@ export class BubbleGraphView extends ItemView {
             this.applyCaptainFolderColors();
         };
 
-        // 4. Toggle SFX Sound (Procedural Audio)
-        this.sfxToggleBtnEl = togglesCluster.createEl('button', {
-            cls: `pakcli-icon-btn pakcli-sfx-toggle-btn ${this.sfxManager.isEnabled() ? 'active' : ''}`,
-            title: 'Toggle Graph Sound FX (Mute / Unmute)'
-        });
-        this.sfxToggleBtnEl.setAttribute('aria-pressed', this.sfxManager.isEnabled() ? 'true' : 'false');
-        setIcon(this.sfxToggleBtnEl, this.sfxManager.isEnabled() ? 'volume-2' : 'volume-x');
-        this.sfxToggleBtnEl.onclick = async () => {
-            const newState = !this.sfxManager.isEnabled();
-            this.sfxManager.setEnabled(newState);
-            this.sfxToggleBtnEl.toggleClass('active', newState);
-            this.sfxToggleBtnEl.setAttribute('aria-pressed', newState ? 'true' : 'false');
-            setIcon(this.sfxToggleBtnEl, newState ? 'volume-2' : 'volume-x');
-            this.plugin.settings.bubbleEnableSfx = newState;
-            await this.plugin.saveSettings();
-            if (newState) {
-                this.sfxManager.playNodeSpawn(1);
-            }
-        };
-
-        // Divider 1: Separator after Toggles
+        // Divider: Separator after Toggles
         textGroup.createDiv({ cls: 'pakcli-row2-divider' });
 
-        // 5. SFX Volume Slider
-        const volGroup = textGroup.createDiv({ cls: 'pakcli-volume-group' });
-        volGroup.createSpan({ text: 'Vol:', cls: 'pakcli-volume-label' });
-        this.volumeSliderEl = volGroup.createEl('input', {
-            type: 'range',
-            cls: 'pakcli-volume-slider'
-        });
-        this.volumeSliderEl.min = '0';
-        this.volumeSliderEl.max = '100';
-        this.volumeSliderEl.step = '5';
-        const currentVol = Math.round((this.plugin.settings.bubbleSfxVolume ?? DEFAULT_BUBBLE_GRAPH_SETTINGS.bubbleSfxVolume) * 100);
-        this.volumeSliderEl.value = currentVol.toString();
-        this.volumeSliderEl.title = `Sound FX Volume: ${currentVol}%`;
-
-        this.volumeDisplayEl = volGroup.createSpan({
-            text: `${currentVol}%`,
-            cls: 'pakcli-volume-display'
+        // 3. Text dropdown + Custom format textbox
+        const labelModeWrap = textGroup.createDiv({ cls: 'pakcli-label-mode-wrap' });
+        labelModeWrap.createSpan({ text: 'Text:', cls: 'pakcli-level-label' });
+        
+        this.labelModeSelectEl = labelModeWrap.createEl('select', {
+            cls: 'dropdown pakcli-label-mode-select'
         });
 
-        this.volumeSliderEl.oninput = () => {
-            const val = parseInt(this.volumeSliderEl.value, 10) || 0;
-            this.volumeDisplayEl.setText(`${val}%`);
-            this.volumeSliderEl.title = `Sound FX Volume: ${val}%`;
-            const normalized = val / 100;
-            this.sfxManager.setVolume(normalized);
-            if (val > 0 && !this.sfxManager.isEnabled()) {
-                this.sfxManager.setEnabled(true);
-                this.sfxToggleBtnEl.addClass('active');
-                this.sfxToggleBtnEl.setAttribute('aria-pressed', 'true');
-                setIcon(this.sfxToggleBtnEl, 'volume-2');
-                this.plugin.settings.bubbleEnableSfx = true;
-            } else if (val === 0) {
-                setIcon(this.sfxToggleBtnEl, 'volume-x');
+        const modes: Array<{ id: 'all' | 'folder' | 'text' | 'custom'; label: string }> = [
+            { id: 'all', label: 'all type' },
+            { id: 'folder', label: 'folder only' },
+            { id: 'text', label: 'text only' },
+            { id: 'custom', label: 'custom' }
+        ];
+
+        for (const m of modes) {
+            const optEl = this.labelModeSelectEl.createEl('option', {
+                value: m.id,
+                text: m.label
+            });
+            if (this.labelMode === m.id) {
+                optEl.selected = true;
             }
-        };
+        }
 
-        this.volumeSliderEl.onchange = async () => {
-            const val = parseInt(this.volumeSliderEl.value, 10) || 0;
-            const normalized = val / 100;
-            this.plugin.settings.bubbleSfxVolume = normalized;
+        this.labelModeSelectEl.onchange = async () => {
+            const val = (this.labelModeSelectEl?.value || 'all') as 'all' | 'folder' | 'text' | 'custom';
+            this.labelMode = val;
+            this.showLabels = true;
+            this.updateLabelModeUI();
+            this.plugin.settings.bubbleLabelMode = this.labelMode;
+            this.plugin.settings.bubbleShowLabels = true;
             await this.plugin.saveSettings();
-            if (normalized > 0 && this.sfxManager.isEnabled()) {
-                this.sfxManager.playNodeSpawn(1);
+            if (this.sfxManager?.isEnabled()) {
+                this.sfxManager.playLinkSwitch();
             }
         };
 
-        // Divider 2: Separator before Text Level
+        // Custom Format Textbox
+        this.customFormatInputEl = labelModeWrap.createEl('input', {
+            type: 'text',
+            cls: `pakcli-label-custom-input ${this.showLabels && this.labelMode === 'custom' ? 'visible' : ''}`,
+            value: this.customLabelFormats,
+            placeholder: 'md, canvas, json, base, csv, folder'
+        });
+        this.customFormatInputEl.title = 'Enter comma-separated file formats to show labels for (e.g. md, canvas, json, base, csv, folder)';
+        this.customFormatInputEl.style.display = (this.showLabels && this.labelMode === 'custom') ? 'inline-block' : 'none';
+
+        this.customFormatInputEl.oninput = () => {
+            const val = this.customFormatInputEl?.value || '';
+            this.updateCustomLabelFormatsSet(val);
+        };
+
+        this.customFormatInputEl.onchange = async () => {
+            const val = this.customFormatInputEl?.value || '';
+            this.updateCustomLabelFormatsSet(val);
+            this.plugin.settings.bubbleLabelCustomFormats = val;
+            await this.plugin.saveSettings();
+        };
+
+        // Divider: Separator after Text Mode
         textGroup.createDiv({ cls: 'pakcli-row2-divider' });
 
-        // 6. Text Level Dual Handle Slider (1-4) + Reset to Single Level Button
+        // 4. Text Level Dual Handle Slider (1-4) + Reset to Single Level Button
         const levelGroup = textGroup.createDiv({ cls: 'pakcli-level-group' });
         levelGroup.createSpan({ text: 'Text Level:', cls: 'pakcli-level-label' });
 
@@ -1002,10 +1018,10 @@ export class BubbleGraphView extends ItemView {
             }
         };
 
-        // Divider 3: Separator before Text Size
+        // Divider: Separator after Text Level
         textGroup.createDiv({ cls: 'pakcli-row2-divider' });
 
-        // 7. Text Size Slider
+        // 5. Text Size Slider
         const sizeGroup = textGroup.createDiv({ cls: 'pakcli-size-group' });
         sizeGroup.createSpan({ text: 'Size:', cls: 'pakcli-size-label' });
         this.fontSizeSliderEl = sizeGroup.createEl('input', {
@@ -1031,6 +1047,76 @@ export class BubbleGraphView extends ItemView {
             this.labelFontSize = parseInt(this.fontSizeSliderEl.value, 10) || 11;
             this.plugin.settings.bubbleLabelFontSize = this.labelFontSize;
             await this.plugin.saveSettings();
+        };
+
+        // Divider: Separator after Text Size
+        textGroup.createDiv({ cls: 'pakcli-row2-divider' });
+
+        // 6. Toggle Speaker (Sound FX Mute / Unmute)
+        const sfxCluster = textGroup.createDiv({ cls: 'pakcli-layer-toggles-cluster' });
+        this.sfxToggleBtnEl = sfxCluster.createEl('button', {
+            cls: `pakcli-icon-btn pakcli-sfx-toggle-btn ${this.sfxManager.isEnabled() ? 'active' : ''}`,
+            title: 'Toggle Graph Sound FX (Mute / Unmute)'
+        });
+        this.sfxToggleBtnEl.setAttribute('aria-pressed', this.sfxManager.isEnabled() ? 'true' : 'false');
+        setIcon(this.sfxToggleBtnEl, this.sfxManager.isEnabled() ? 'volume-2' : 'volume-x');
+        this.sfxToggleBtnEl.onclick = async () => {
+            const newState = !this.sfxManager.isEnabled();
+            this.sfxManager.setEnabled(newState);
+            this.sfxToggleBtnEl.toggleClass('active', newState);
+            this.sfxToggleBtnEl.setAttribute('aria-pressed', newState ? 'true' : 'false');
+            setIcon(this.sfxToggleBtnEl, newState ? 'volume-2' : 'volume-x');
+            this.plugin.settings.bubbleEnableSfx = newState;
+            await this.plugin.saveSettings();
+            if (newState) {
+                this.sfxManager.playNodeSpawn(1);
+            }
+        };
+
+        // 7. Speaker Slider (SFX Volume Slider)
+        const volGroup = textGroup.createDiv({ cls: 'pakcli-volume-group' });
+        volGroup.createSpan({ text: 'Vol:', cls: 'pakcli-volume-label' });
+        this.volumeSliderEl = volGroup.createEl('input', {
+            type: 'range',
+            cls: 'pakcli-volume-slider'
+        });
+        this.volumeSliderEl.min = '0';
+        this.volumeSliderEl.max = '100';
+        this.volumeSliderEl.step = '5';
+        const currentVol = Math.round((this.plugin.settings.bubbleSfxVolume ?? DEFAULT_BUBBLE_GRAPH_SETTINGS.bubbleSfxVolume) * 100);
+        this.volumeSliderEl.value = currentVol.toString();
+        this.volumeSliderEl.title = `Sound FX Volume: ${currentVol}%`;
+
+        this.volumeDisplayEl = volGroup.createSpan({
+            text: `${currentVol}%`,
+            cls: 'pakcli-volume-display'
+        });
+
+        this.volumeSliderEl.oninput = () => {
+            const val = parseInt(this.volumeSliderEl.value, 10) || 0;
+            this.volumeDisplayEl.setText(`${val}%`);
+            this.volumeSliderEl.title = `Sound FX Volume: ${val}%`;
+            const normalized = val / 100;
+            this.sfxManager.setVolume(normalized);
+            if (val > 0 && !this.sfxManager.isEnabled()) {
+                this.sfxManager.setEnabled(true);
+                this.sfxToggleBtnEl.addClass('active');
+                this.sfxToggleBtnEl.setAttribute('aria-pressed', 'true');
+                setIcon(this.sfxToggleBtnEl, 'volume-2');
+                this.plugin.settings.bubbleEnableSfx = true;
+            } else if (val === 0) {
+                setIcon(this.sfxToggleBtnEl, 'volume-x');
+            }
+        };
+
+        this.volumeSliderEl.onchange = async () => {
+            const val = parseInt(this.volumeSliderEl.value, 10) || 0;
+            const normalized = val / 100;
+            this.plugin.settings.bubbleSfxVolume = normalized;
+            await this.plugin.saveSettings();
+            if (normalized > 0 && this.sfxManager.isEnabled()) {
+                this.sfxManager.playNodeSpawn(1);
+            }
         };
     }
 
@@ -1869,6 +1955,8 @@ export class BubbleGraphView extends ItemView {
                     interLinkGlow: this.plugin.settings.bubbleInterLinkGlow !== false,
                     showLines: this.showLines,
                     showLabels: this.showLabels,
+                    labelMode: this.labelMode,
+                    customLabelFormats: this.customLabelFormatsSet,
                     labelRangeLevel: this.labelRangeLevel,
                     labelMinLevel: this.labelMinLevel,
                     labelMaxLevel: this.labelMaxLevel,
