@@ -1,18 +1,18 @@
 # 📋 Architecture Brief: Automated Heartbeat Scorecard Audit & 0-Risk Remediation Loop
 
 ## 🎯 1. Objective & Vision
-Automate the end-to-end audit, publishing, verification, and self-healing error remediation cycle for **PakCLI Table** to achieve **0 Blocking Risks** and **0 Unhandled Warnings** on the official [Obsidian Community Plugin Review](https://community.obsidian.md/plugins/pakcli-table).
+Automate the end-to-end audit, publishing, verification, and self-healing error remediation cycle for **PakCLI Table** to achieve **0 Blocking Risks** and **0 Unhandled Warnings** on the official [Obsidian Community Plugin Review](https://community.obsidian.md/plugins/pakcli-panel).
 
 ---
 
 ## 🌐 2. Target URLs Involved
 | Purpose | Target URL |
 |---|---|
-| **Public Community Store Listing** | `https://community.obsidian.md/plugins/pakcli-table` |
-| **Official Scorecard Anchor** | `https://community.obsidian.md/plugins/pakcli-table#scorecard` |
-| **Developer Check-Release Endpoint** | `https://community.obsidian.md/account/plugins/pakcli-table/check-release` |
+| **Public Community Store Listing** | `https://community.obsidian.md/plugins/pakcli-panel` |
+| **Official Scorecard Anchor** | `https://community.obsidian.md/plugins/pakcli-panel#scorecard` |
+| **Developer Check-Release Endpoint** | `https://community.obsidian.md/account/plugins/pakcli-panel/check-release` |
 | **GitHub Releases & Attestation** | `https://github.com/pakcli/table/releases` |
-| **Local Vault Target** | `D:\1sot\MAIN-DIGITAL-LIBRARY\MAIN-DIGITAL-LIBRARY\.obsidian\plugins\pakcli-table` |
+| **Local Vault Target** | `D:\1sot\MAIN-DIGITAL-LIBRARY\MAIN-DIGITAL-LIBRARY\.obsidian\plugins\pakcli-panel` |
 
 ---
 
