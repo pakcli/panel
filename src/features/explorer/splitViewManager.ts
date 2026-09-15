@@ -1,9 +1,10 @@
-import { App, Menu, Notice, setIcon, TFile, TFolder, TAbstractFile, WorkspaceLeaf, Keymap } from 'obsidian';
+import { App, Menu, Notice, setIcon, TFile, TFolder, TAbstractFile, WorkspaceLeaf, Keymap, HoverParent, HoverPopover } from 'obsidian';
 import type PakCLITablePlugin from '../../main';
 import { ExplorerSectionId, RecentTimeFilter, RECENT_TIME_FILTER_OPTIONS } from './types';
 import { ensureFolderExists } from '../sqlseal/utils/views';
 
-export class SplitViewManager {
+export class SplitViewManager implements HoverParent {
+  public hoverPopover: HoverPopover | null = null;
   private app: App;
   private plugin: PakCLITablePlugin;
   private splitBtnEl: HTMLElement | null = null;
@@ -61,6 +62,9 @@ export class SplitViewManager {
     if (this.badgeDebounce !== null) {
       cancelAnimationFrame(this.badgeDebounce);
       this.badgeDebounce = null;
+    }
+    if (this.hoverPopover) {
+      this.hoverPopover = null;
     }
     this.detach();
   }
@@ -830,17 +834,39 @@ export class SplitViewManager {
         }
       }
       if (shouldReapply) {
+        // Check both: focused element AND any rename input present anywhere in the explorer DOM
+        const isRenaming = () => {
+          const activeEl = document.activeElement;
+          if (activeEl && (
+            activeEl.tagName === 'INPUT' ||
+            activeEl.tagName === 'TEXTAREA' ||
+            activeEl.closest('.nav-folder-title') ||
+            activeEl.closest('.nav-file-title')
+          )) return true;
+          // Also check if any inline rename input exists in the DOM (may not be focused yet)
+          if (targetEl.querySelector('.nav-folder-title input, .nav-file-title input')) return true;
+          return false;
+        };
+
+        if (isRenaming()) return;
+
         if (this.baseExplorerDebounce !== null) {
           cancelAnimationFrame(this.baseExplorerDebounce);
         }
         this.baseExplorerDebounce = requestAnimationFrame(() => {
           this.baseExplorerDebounce = null;
-          if (this.plugin.settings.baseExplorerActive) {
-            this.applyBaseExplorerFilter();
-          }
-          if (this.plugin.settings.enableMergeFolderIndex !== false) {
-            this.refreshFolderBadges();
-          }
+          // Re-check after frame — Obsidian may still be finishing rename DOM rebuild
+          if (isRenaming()) return;
+          // Extra safety: defer badge injection one more tick to let Obsidian settle
+          setTimeout(() => {
+            if (isRenaming()) return;
+            if (this.plugin.settings.baseExplorerActive) {
+              this.applyBaseExplorerFilter();
+            }
+            if (this.plugin.settings.enableMergeFolderIndex !== false) {
+              this.refreshFolderBadges();
+            }
+          }, 50);
         });
       }
     });
@@ -1197,6 +1223,17 @@ export class SplitViewManager {
   }
 
   public refreshFolderBadges(customContainer?: HTMLElement) {
+    // Never inject badge DOM while user is typing in a rename/create input
+    const activeEl = document.activeElement;
+    if (activeEl && (
+      activeEl.tagName === 'INPUT' ||
+      activeEl.tagName === 'TEXTAREA' ||
+      activeEl.closest('.nav-folder-title') ||
+      activeEl.closest('.nav-file-title')
+    )) return;
+    // Also check if rename input exists anywhere in explorer DOM (even if not focused)
+    if (document.querySelector('.nav-folder-title input, .nav-file-title input')) return;
+
     const leaves = this.app.workspace.getLeavesOfType('file-explorer');
     if (!leaves || leaves.length === 0) return;
     const view = leaves[0].view as any;
@@ -1229,18 +1266,48 @@ export class SplitViewManager {
 
       const contentEl = (titleEl.querySelector('.nav-folder-title-content, .tree-item-inner') as HTMLElement) || titleEl;
 
-      // Clean up old badges if attached directly to titleEl
-      const oldWrap = titleEl.querySelector(':scope > .pakcli-folder-index-badges');
-      if (oldWrap && oldWrap.parentElement !== contentEl) {
-        oldWrap.remove();
+      const badgePosition = this.plugin.settings.folderBadgePosition ?? 'right-inline';
+      const showI = this.plugin.settings.showFolderBadgeI !== false;
+      const showBase = this.plugin.settings.showFolderBadgeBase !== false;
+
+      // If hidden, remove any existing badges and skip
+      if (badgePosition === 'hidden') {
+        contentEl.querySelector(':scope > .pakcli-folder-index-badges')?.remove();
+        titleEl.querySelector(':scope > .pakcli-folder-index-badges')?.remove();
+        return;
       }
 
-      let badgesWrap = contentEl.querySelector('.pakcli-folder-index-badges') as HTMLElement;
+      // right-align: badges live on titleEl (flex parent) with margin-left:auto
+      // left / right-inline: badges live inside contentEl
+      const useTitle = badgePosition === 'right-align';
+      const parentEl = useTitle ? titleEl : contentEl;
+      const otherEl = useTitle ? contentEl : titleEl;
+
+      // Remove badges from the wrong parent (position changed)
+      const wrongParentBadge = otherEl.querySelector(':scope > .pakcli-folder-index-badges');
+      if (wrongParentBadge) wrongParentBadge.remove();
+
+      let badgesWrap = parentEl.querySelector(':scope > .pakcli-folder-index-badges') as HTMLElement;
       if (!badgesWrap) {
         badgesWrap = document.createElement('span');
         badgesWrap.className = 'pakcli-folder-index-badges';
+        badgesWrap.contentEditable = 'false'; // prevents text insertion during contenteditable rename
         badgesWrap.addEventListener('click', (e) => e.stopPropagation());
-        contentEl.appendChild(badgesWrap);
+      }
+
+      // Apply position class for CSS targeting
+      badgesWrap.removeClass('pakcli-badge-pos-left');
+      badgesWrap.removeClass('pakcli-badge-pos-right-inline');
+      badgesWrap.removeClass('pakcli-badge-pos-right-align');
+      badgesWrap.addClass(`pakcli-badge-pos-${badgePosition}`);
+
+      // Place in correct position within parent
+      if (badgePosition === 'left') {
+        if (contentEl.firstElementChild !== badgesWrap) contentEl.prepend(badgesWrap);
+      } else if (badgePosition === 'right-inline') {
+        if (!contentEl.contains(badgesWrap) || contentEl.lastElementChild !== badgesWrap) contentEl.appendChild(badgesWrap);
+      } else if (badgePosition === 'right-align') {
+        if (!titleEl.contains(badgesWrap)) titleEl.appendChild(badgesWrap);
       }
 
       // 1. [i] badge box (i first!)
@@ -1250,6 +1317,19 @@ export class SplitViewManager {
         badgeI.className = 'pakcli-folder-badge pakcli-badge-i';
         badgeI.textContent = 'i';
         badgeI.addEventListener('click', (e) => this.handleIndexBadgeClick(folder, e));
+        badgeI.addEventListener('mouseover', (e: MouseEvent) => {
+          if (this.plugin.settings.enableFolderIndexHoverPreview === false) return;
+          const { indexMd: currentMd } = this.getFolderIndexFiles(folder);
+          if (!currentMd) return;
+          this.app.workspace.trigger('hover-link', {
+            event: e,
+            source: 'preview',
+            hoverParent: this,
+            targetEl: badgeI,
+            linktext: currentMd.path,
+            sourcePath: currentMd.path,
+          });
+        });
         badgeI.addEventListener('contextmenu', (e) => {
           e.stopPropagation();
           e.preventDefault();
@@ -1291,6 +1371,19 @@ export class SplitViewManager {
         badgeBase.className = 'pakcli-folder-badge pakcli-badge-base';
         badgeBase.textContent = 'base';
         badgeBase.addEventListener('click', (e) => this.handleBaseBadgeClick(folder, e));
+        badgeBase.addEventListener('mouseover', (e: MouseEvent) => {
+          if (this.plugin.settings.enableFolderIndexHoverPreview === false) return;
+          const { baseFile: currentBase } = this.getFolderIndexFiles(folder);
+          if (!currentBase) return;
+          this.app.workspace.trigger('hover-link', {
+            event: e,
+            source: 'preview',
+            hoverParent: this,
+            targetEl: badgeBase,
+            linktext: currentBase.path,
+            sourcePath: currentBase.path,
+          });
+        });
         badgeBase.addEventListener('contextmenu', (e) => {
           e.stopPropagation();
           e.preventDefault();
@@ -1330,22 +1423,26 @@ export class SplitViewManager {
         badgesWrap.insertBefore(badgeI, badgeBase);
       }
 
+      // Show/hide individual badges per setting
+      badgeI.style.display = showI ? '' : 'none';
+      badgeBase.style.display = showBase ? '' : 'none';
+
+      const previewHint = this.plugin.settings.enableFolderIndexHoverPreview !== false ? ' (Hover to preview)' : '';
+
       if (baseFile) {
         badgeBase.removeClass('is-missing');
         badgeBase.addClass('has-file');
-        badgeBase.style.removeProperty('display');
-        badgeBase.setAttribute('aria-label', `Open ${baseFile.name} (Ctrl+click for new tab)`);
+        badgeBase.setAttribute('aria-label', `Open ${baseFile.name}${previewHint} (Ctrl+click for new tab)`);
       } else {
         badgeBase.removeClass('has-file');
         badgeBase.addClass('is-missing');
-        badgeBase.style.removeProperty('display'); // badge always visible — row hiding is handled by applyBaseExplorerFilter
         badgeBase.setAttribute('aria-label', 'Create & open index.base');
       }
 
       if (indexMd) {
         badgeI.removeClass('is-missing');
         badgeI.addClass('has-file');
-        badgeI.setAttribute('aria-label', `Open ${indexMd.name} (Ctrl+click for new tab)`);
+        badgeI.setAttribute('aria-label', `Open ${indexMd.name}${previewHint} (Ctrl+click for new tab)`);
       } else {
         badgeI.removeClass('has-file');
         badgeI.addClass('is-missing');

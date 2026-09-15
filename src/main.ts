@@ -1665,6 +1665,60 @@ export default class PakCLITablePlugin extends Plugin {
 					});
 
 				new Setting(containerEl)
+					.setName('Folder Badge Position')
+					.setDesc('Where [i] and [base] badges appear on each folder row.')
+					.addDropdown((d) => {
+						d.addOption('left', 'Left of the text')
+							.addOption('right-inline', 'Right beside the text')
+							.addOption('right-align', 'Right align of the row')
+							.addOption('hidden', 'Hidden')
+							.setValue(this.settings.folderBadgePosition ?? 'right-inline')
+							.onChange(async (val) => {
+								this.settings.folderBadgePosition = val as 'left' | 'right-inline' | 'right-align' | 'hidden';
+								await this.saveSettings();
+								if (this.splitViewManager) {
+									this.splitViewManager.refreshFolderBadges();
+								}
+							});
+					});
+
+				new Setting(containerEl)
+					.setName('Show [i] Badge')
+					.setDesc('Show the index.md badge on folder rows.')
+					.addToggle((t) => {
+						t.setValue(this.settings.showFolderBadgeI !== false)
+							.onChange(async (val) => {
+								this.settings.showFolderBadgeI = val;
+								await this.saveSettings();
+								if (this.splitViewManager) this.splitViewManager.refreshFolderBadges();
+							});
+					});
+
+				new Setting(containerEl)
+					.setName('Show [base] Badge')
+					.setDesc('Show the index.base badge on folder rows.')
+					.addToggle((t) => {
+						t.setValue(this.settings.showFolderBadgeBase !== false)
+							.onChange(async (val) => {
+								this.settings.showFolderBadgeBase = val;
+								await this.saveSettings();
+								if (this.splitViewManager) this.splitViewManager.refreshFolderBadges();
+							});
+					});
+
+				new Setting(containerEl)
+					.setName('Hover Preview for [i] Badge')
+					.setDesc('Show note page preview popup when hovering over the [i] badge on folder rows.')
+					.addToggle((t) => {
+						t.setValue(this.settings.enableFolderIndexHoverPreview !== false)
+							.onChange(async (val) => {
+								this.settings.enableFolderIndexHoverPreview = val;
+								await this.saveSettings();
+								if (this.splitViewManager) this.splitViewManager.refreshFolderBadges();
+							});
+					});
+
+				new Setting(containerEl)
 					.setName('Folder Index Title Prefix')
 					.setDesc('Custom prefix to add before the folder name in index.md title frontmatter.')
 					.addText((text) => {

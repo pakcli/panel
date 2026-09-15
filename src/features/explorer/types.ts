@@ -81,6 +81,10 @@ export interface ExplorerSettings {
   enableAutoFolderIndex?: boolean;
   enableMergeFolderIndex?: boolean;
   showBaselessFolderBadge?: boolean;
+  folderBadgePosition?: 'left' | 'right-inline' | 'right-align' | 'hidden';
+  showFolderBadgeI?: boolean;
+  showFolderBadgeBase?: boolean;
+  enableFolderIndexHoverPreview?: boolean;
   folderIndexPrefix?: string;
   folderIndexSuffix?: string;
   folderIndexUseTimestamp?: boolean;
@@ -103,6 +107,10 @@ export const DEFAULT_EXPLORER_SETTINGS: ExplorerSettings = {
   enableAutoFolderIndex: false,
   enableMergeFolderIndex: true,
   showBaselessFolderBadge: false,
+  folderBadgePosition: 'right-inline',
+  showFolderBadgeI: true,
+  showFolderBadgeBase: true,
+  enableFolderIndexHoverPreview: true,
   folderIndexPrefix: '',
   folderIndexSuffix: '',
   folderIndexUseTimestamp: false,
