@@ -3,7 +3,8 @@ import { updateClusterHulls } from './hullGenerator';
 import { SfxManager } from './sfxManager';
 
 export interface SimulationOptions {
-    maxDragDepth: number;
+    maxDragDepth?: number;
+    isLocked?: boolean;
     layoutMode: 'bubble' | 'default';
     scopedFolder?: string | null;
     denseScale?: number;
@@ -247,6 +248,12 @@ export class BubbleSimulation {
     private alphaDecay: number = 0.012;
 
     private draggedNodes: Array<{ node: BubbleNode; offsetX: number; offsetY: number }> = [];
+    private draggedCluster: BubbleCluster | null = null;
+    private draggedParentCluster: BubbleCluster | null = null;
+    private draggedDescendantClusters: BubbleCluster[] = [];
+    private lastDragWorldPos: { x: number; y: number } = { x: 0, y: 0 };
+    private descendantClusterOffsets: Map<string, { x: number; y: number }> = new Map();
+    private clusterNodeOffsets: Map<string, { x: number; y: number }> = new Map();
     private isDragging: boolean = false;
 
     constructor(
@@ -507,21 +514,70 @@ export class BubbleSimulation {
     public setOptions(opts: Partial<SimulationOptions>): void {
         const prevMode = this.options.layoutMode;
         this.options = { ...this.options, ...opts };
+        if (opts.isLocked) {
+            this.endDrag();
+        }
         if (opts.layoutMode && opts.layoutMode !== prevMode) {
             this.initializePositions();
             this.reheat(1.0);
         } else if (opts.sfxThreshold !== undefined && Object.keys(opts).length === 1) {
             // Adjusting sound threshold does not reheat settled physics
-        } else {
+        } else if (!opts.isLocked) {
             this.reheat();
         }
     }
 
     public reheat(amount: number = 0.4): void {
+        if (this.options.isLocked) return;
         this.alpha = Math.max(this.alpha, amount);
     }
 
+    private isClusterInDraggedTree(c?: BubbleCluster | null): boolean {
+        if (!c || !this.draggedCluster) return false;
+        if (c.id === this.draggedCluster.id) return true;
+        return this.draggedDescendantClusters.some(d => d.id === c.id);
+    }
+
+    private getDescendantClusters(root: BubbleCluster): BubbleCluster[] {
+        const result: BubbleCluster[] = [];
+        const queue: string[] = [root.id];
+        const visited = new Set<string>([root.id]);
+
+        while (queue.length > 0) {
+            const parentId = queue.shift()!;
+            for (const c of this.clusters) {
+                if (c.parentClusterId === parentId && !visited.has(c.id)) {
+                    visited.add(c.id);
+                    result.push(c);
+                    queue.push(c.id);
+                }
+            }
+        }
+        return result;
+    }
+
+    private getClusterMemberNodes(root: BubbleCluster, descendants: BubbleCluster[]): BubbleNode[] {
+        const clusterIdSet = new Set<string>([root.id, ...descendants.map(c => c.id)]);
+        const nodeIdSet = new Set<string>(root.nodeIds);
+        for (const desc of descendants) {
+            for (const id of desc.nodeIds) {
+                nodeIdSet.add(id);
+            }
+        }
+
+        return this.nodes.filter(n => {
+            if (nodeIdSet.has(n.id)) return true;
+            if (n.clusterId && clusterIdSet.has(n.clusterId)) return true;
+            if (n.subClusterId && clusterIdSet.has(n.subClusterId)) return true;
+            return false;
+        });
+    }
+
     public step(visibleNodeIds?: Set<string> | null): boolean {
+        if (this.options.isLocked) {
+            return false;
+        }
+
         const isBubbleMode = this.options.layoutMode === 'bubble';
 
         // In bubble mode: run FOREVER so gravity continuously pulls clusters to center.
@@ -558,6 +614,9 @@ export class BubbleSimulation {
 
             // 0. Update all cluster radii strictly across all depths (1 to 5)
             computeAllClusterRadii(this.clusters, this.nodeMap, visibleNodeIds, this.options.scopedFolder, this.options.denseScale ?? DENSE_BUBBLE_MULTIPLIER);
+            if (this.isDragging && this.draggedParentCluster && this.draggedParentCluster.baseRadius) {
+                this.draggedParentCluster.radius = this.draggedParentCluster.baseRadius;
+            }
             for (const c of this.clusters) { c.vx = 0; c.vy = 0; }
 
             // Snapshot ALL centroids before any change this frame
@@ -589,6 +648,9 @@ export class BubbleSimulation {
             // 2. Top-level individual cluster gravity: steady inward pull toward (0,0)
             for (const c of topClusters) {
                 if (c.radius === 0) continue;
+                if (this.isClusterInDraggedTree(c) || (this.draggedParentCluster && c.id === this.draggedParentCluster.id)) {
+                    continue;
+                }
                 if (isSingleOrScoped) {
                     if (!this.isDragging) {
                         c.centroid.x = 0;
@@ -636,9 +698,22 @@ export class BubbleSimulation {
                                     this.options.sfx.playBubbleBubbleCollision(intensity);
                                 }
                             }
-                            const s = ((minD - d) * 0.5) / d;
-                            ca.centroid.x -= dx * s; ca.centroid.y -= dy * s;
-                            cb.centroid.x += dx * s; cb.centroid.y += dy * s;
+                            const isCaDragged = this.isClusterInDraggedTree(ca) || Boolean(this.draggedParentCluster && ca.id === this.draggedParentCluster.id);
+                            const isCbDragged = this.isClusterInDraggedTree(cb) || Boolean(this.draggedParentCluster && cb.id === this.draggedParentCluster.id);
+
+                            if (isCaDragged && !isCbDragged) {
+                                const s = overlap / d;
+                                cb.centroid.x += dx * s;
+                                cb.centroid.y += dy * s;
+                            } else if (isCbDragged && !isCaDragged) {
+                                const s = overlap / d;
+                                ca.centroid.x -= dx * s;
+                                ca.centroid.y -= dy * s;
+                            } else if (!isCaDragged && !isCbDragged) {
+                                const s = ((minD - d) * 0.5) / d;
+                                ca.centroid.x -= dx * s; ca.centroid.y -= dy * s;
+                                cb.centroid.x += dx * s; cb.centroid.y += dy * s;
+                            }
                         }
                     }
                 }
@@ -654,6 +729,7 @@ export class BubbleSimulation {
 
                 // Co-move with parent's displacement
                 for (const sub of clustersAtDepth) {
+                    if (this.isClusterInDraggedTree(sub)) continue;
                     const parent = clusterById.get(sub.parentClusterId!);
                     if (!parent || parent.radius === 0) continue;
                     const pp = prevPos.get(parent.id);
@@ -666,6 +742,7 @@ export class BubbleSimulation {
                 // Subfolder inward gravity toward parent center
                 const subGravK = 0.02 * alpha;
                 for (const sub of clustersAtDepth) {
+                    if (this.isClusterInDraggedTree(sub)) continue;
                     const parent = clusterById.get(sub.parentClusterId!);
                     if (!parent || parent.radius === 0) continue;
                     const isParentScopedRoot = Boolean(this.options.scopedFolder && (parent.id === this.options.scopedFolder || parent.depth === 1));
@@ -680,6 +757,10 @@ export class BubbleSimulation {
                     for (let j = i + 1; j < clustersAtDepth.length; j++) {
                         const sb = clustersAtDepth[j];
                         if (sa.parentClusterId !== sb.parentClusterId) continue;
+                        const saIn = this.isClusterInDraggedTree(sa);
+                        const sbIn = this.isClusterInDraggedTree(sb);
+                        if (saIn || sbIn) continue;
+
                         const parent = clusterById.get(sa.parentClusterId);
                         if (!parent) continue;
                         const isParentScopedRoot = Boolean(this.options.scopedFolder && (parent.id === this.options.scopedFolder || parent.depth === 1));
@@ -694,10 +775,16 @@ export class BubbleSimulation {
                             const d = Math.sqrt(d2);
                             const repStrength = isParentScopedRoot ? 0.35 : 0.25;
                             const rep = ((idealD - d) / idealD) * repStrength * alpha;
-                            sa.centroid.x -= (dx / d) * rep;
-                            sa.centroid.y -= (dy / d) * rep;
-                            sb.centroid.x += (dx / d) * rep;
-                            sb.centroid.y += (dy / d) * rep;
+                            const rx = (dx / d) * rep;
+                            const ry = (dy / d) * rep;
+                            if (!saIn) {
+                                sa.centroid.x -= rx;
+                                sa.centroid.y -= ry;
+                            }
+                            if (!sbIn) {
+                                sb.centroid.x += rx;
+                                sb.centroid.y += ry;
+                            }
                         }
                     }
                 }
@@ -709,6 +796,10 @@ export class BubbleSimulation {
                         for (let j = i + 1; j < clustersAtDepth.length; j++) {
                             const sb = clustersAtDepth[j];
                             if (sa.parentClusterId !== sb.parentClusterId) continue;
+                            const saIn = this.isClusterInDraggedTree(sa);
+                            const sbIn = this.isClusterInDraggedTree(sb);
+                            if (saIn && sbIn) continue;
+
                             const parent = clusterById.get(sa.parentClusterId);
                             const isParentScopedRoot = Boolean(this.options.scopedFolder && parent && (parent.id === this.options.scopedFolder || parent.depth === 1));
                             const minD = sa.radius + sb.radius + (isParentScopedRoot ? 8.0 : (sa.isDense || sb.isDense ? 5.0 : 3.0));
@@ -731,9 +822,19 @@ export class BubbleSimulation {
                                         this.options.sfx.playBubbleBubbleCollision(intensity);
                                     }
                                 }
-                                const s = ((minD - dist) * 0.5) / dist;
-                                sa.centroid.x -= dx * s; sa.centroid.y -= dy * s;
-                                sb.centroid.x += dx * s; sb.centroid.y += dy * s;
+                                if (saIn && !sbIn) {
+                                    const pushFactor = iter < 3 ? 0.6 : 0.25;
+                                    sb.centroid.x += (dx / dist) * overlap * pushFactor;
+                                    sb.centroid.y += (dy / dist) * overlap * pushFactor;
+                                } else if (sbIn && !saIn) {
+                                    const pushFactor = iter < 3 ? 0.6 : 0.25;
+                                    sa.centroid.x -= (dx / dist) * overlap * pushFactor;
+                                    sa.centroid.y -= (dy / dist) * overlap * pushFactor;
+                                } else {
+                                    const s = ((minD - dist) * 0.5) / dist;
+                                    sa.centroid.x -= dx * s; sa.centroid.y -= dy * s;
+                                    sb.centroid.x += dx * s; sb.centroid.y += dy * s;
+                                }
                             }
                         }
                     }
@@ -742,6 +843,7 @@ export class BubbleSimulation {
                     for (const sub of clustersAtDepth) {
                         const parent = clusterById.get(sub.parentClusterId!);
                         if (!parent || parent.radius === 0) continue;
+
                         const isParentScopedRoot = Boolean(this.options.scopedFolder && (parent.id === this.options.scopedFolder || parent.depth === 1));
                         const effectiveParentR = parent.baseRadius || parent.radius;
                         const maxSubD = Math.max(0, effectiveParentR - sub.radius - (isParentScopedRoot ? 5.0 : 3.5));
@@ -759,7 +861,9 @@ export class BubbleSimulation {
                                     this.options.sfx.playBubbleBubbleCollision(Math.min(1.0, (pen * subSpeed) / 8.0));
                                 }
                             }
-                            const scale = maxSubD / dist;
+                            // Strict containment: guarantee subfolder NEVER leaves parent circle
+                            const targetD = iter >= 6 ? maxSubD : Math.max(maxSubD, dist - Math.min(pen, Math.max(16, pen * 0.35 * Math.max(alpha, 0.4))));
+                            const scale = targetD / dist;
                             sub.centroid.x = parent.centroid.x + dx * scale;
                             sub.centroid.y = parent.centroid.y + dy * scale;
                         }
@@ -771,41 +875,20 @@ export class BubbleSimulation {
             for (let d = maxDepth - 1; d >= 1; d--) {
                 const parents = this.clusters.filter(c => c.depth === d && c.radius > 0);
                 for (const p of parents) {
+                    if (this.isClusterInDraggedTree(p) || (this.draggedParentCluster && p.id === this.draggedParentCluster.id)) continue;
                     const childSubs = this.clusters.filter(s => s.parentClusterId === p.id && s.radius > 0);
                     if (childSubs.length === 0) continue;
 
-                    // Center of mass of child subclusters and direct notes
-                    let sumX = 0;
-                    let sumY = 0;
-                    let totalW = 0;
-                    for (const sub of childSubs) {
-                        const w = Math.max(1, sub.radius);
-                        sumX += sub.centroid.x * w;
-                        sumY += sub.centroid.y * w;
-                        totalW += w;
-                    }
-
                     const pDirectNodes = this.nodes.filter(n => {
                         if (visibleNodeIds && !visibleNodeIds.has(n.id)) return false;
+                        if (n.fx !== null) return false;
                         return (n.subClusterId === p.id) || (!n.subClusterId && n.clusterId === p.id);
                     });
-                    for (const n of pDirectNodes) {
-                        sumX += n.x * 4;
-                        sumY += n.y * 4;
-                        totalW += 4;
-                    }
-
-                    const isScopedRoot = Boolean(this.options.scopedFolder && (p.id === this.options.scopedFolder || p.depth === 1));
-                    if (totalW > 0 && !this.isDragging && !isScopedRoot && topClusters.length > 1) {
-                        const comX = sumX / totalW;
-                        const comY = sumY / totalW;
-                        p.centroid.x = p.centroid.x * 0.90 + comX * 0.10;
-                        p.centroid.y = p.centroid.y * 0.90 + comY * 0.10;
-                    }
 
                     // Enclosing radius with margin
                     let maxReqR = 0;
                     for (const sub of childSubs) {
+                        if (this.isClusterInDraggedTree(sub)) continue;
                         const dist = Math.hypot(sub.centroid.x - p.centroid.x, sub.centroid.y - p.centroid.y);
                         const req = dist + sub.radius + (p.isDense ? 5.0 : 3.0);
                         if (req > maxReqR) maxReqR = req;
@@ -827,6 +910,7 @@ export class BubbleSimulation {
                     }
                 }
             }
+
 
             // Shift nodes by the displacement of their IMMEDIATE container cluster
             for (const node of this.nodes) {
@@ -913,6 +997,7 @@ export class BubbleSimulation {
             for (const [clusterId, directNodes] of clusterDirectNodeMap.entries()) {
                 const container = clusterById.get(clusterId);
                 if (!container || directNodes.length === 0) continue;
+                if (this.isClusterInDraggedTree(container)) continue;
 
                 const count = directNodes.length;
                 const childSubs = this.clusters.filter(s => s.parentClusterId === container.id && s.radius > 0);
@@ -1059,6 +1144,7 @@ export class BubbleSimulation {
 
                 // 4. Smooth 2-way leaf cluster radius fit (hug nodes comfortably, shrink when settled)
                 if (childSubs.length === 0) {
+                    if (this.isClusterInDraggedTree(container)) continue;
                     const baseR = container.baseRadius || computeNodesRequiredRadius(directNodes);
                     let maxReqR = baseR;
                     for (let i = 0; i < count; i++) {
@@ -1272,81 +1358,268 @@ export class BubbleSimulation {
                 node.vy = 0;
             }
         }
+        if (this.isDragging && this.draggedCluster) {
+            const cluster = this.draggedCluster;
+            for (const desc of this.draggedDescendantClusters) {
+                const off = this.descendantClusterOffsets.get(desc.id);
+                if (off) {
+                    desc.centroid.x = cluster.centroid.x + off.x;
+                    desc.centroid.y = cluster.centroid.y + off.y;
+                }
+            }
+            for (const item of this.draggedNodes) {
+                const off = this.clusterNodeOffsets.get(item.node.id);
+                if (off) {
+                    const nx = cluster.centroid.x + off.x;
+                    const ny = cluster.centroid.y + off.y;
+                    item.node.x = nx;
+                    item.node.y = ny;
+                    item.node.fx = nx;
+                    item.node.fy = ny;
+                    item.node.vx = 0;
+                    item.node.vy = 0;
+                }
+            }
+        }
 
         updateClusterHulls(this.clusters, this.nodeMap, 18, visibleNodeIds, isBubbleMode);
-        this.alpha *= (1 - this.alphaDecay);
+        if (this.isDragging) {
+            this.alpha = Math.max(this.alpha, 0.28);
+        } else {
+            this.alpha *= (1 - this.alphaDecay);
+        }
         // In bubble mode: always keep running (gravity is a continuous living force)
         return isBubbleMode ? true : (this.alpha >= this.alphaMin || this.isDragging);
     }
 
     public startDrag(targetNode: BubbleNode, worldX: number, worldY: number): void {
-        const isDefaultMode = this.options.layoutMode === 'default';
-        if (isDefaultMode) {
-            // In Graph View mode: literally simulate Obsidian Graph View
-            // Drag only the single clicked node, connected links pull other nodes via springs
-            this.isDragging = true;
-            this.draggedNodes = [{
-                node: targetNode,
-                offsetX: targetNode.x - worldX,
-                offsetY: targetNode.y - worldY
-            }];
-            targetNode.fx = targetNode.x;
-            targetNode.fy = targetNode.y;
-            this.reheat(0.4);
-            return;
-        }
-
-        const depth = this.options.maxDragDepth;
-        if (depth === 0) return;
+        if (this.options.isLocked) return;
         this.isDragging = true;
-        this.draggedNodes = [];
+        this.draggedCluster = null;
+        this.draggedDescendantClusters = [];
+        this.descendantClusterOffsets.clear();
+        this.clusterNodeOffsets.clear();
 
-        if (depth >= 1 && depth <= 5) {
-            const cluster = this.clusters.find(c => c.depth === depth && c.nodeIds.includes(targetNode.id));
-            if (cluster) {
-                const clusterNodes = this.nodes.filter(n => cluster.nodeIds.includes(n.id));
-                for (const n of clusterNodes) {
-                    this.draggedNodes.push({ node: n, offsetX: n.x - worldX, offsetY: n.y - worldY });
-                    n.fx = n.x; n.fy = n.y;
-                }
-            } else {
-                this.draggedNodes.push({ node: targetNode, offsetX: targetNode.x - worldX, offsetY: targetNode.y - worldY });
-                targetNode.fx = targetNode.x; targetNode.fy = targetNode.y;
+        this.draggedNodes = [{
+            node: targetNode,
+            offsetX: targetNode.x - worldX,
+            offsetY: targetNode.y - worldY
+        }];
+        targetNode.fx = targetNode.x;
+        targetNode.fy = targetNode.y;
+        targetNode.vx = 0;
+        targetNode.vy = 0;
+        this.reheat(0.35);
+    }
+
+    public startDragCluster(cluster: BubbleCluster, worldX: number, worldY: number): void {
+        if (this.options.isLocked) return;
+        this.isDragging = true;
+        this.draggedCluster = cluster;
+        this.draggedDescendantClusters = this.getDescendantClusters(cluster);
+        this.lastDragWorldPos = { x: worldX, y: worldY };
+
+        // Parent cluster tracking: if dragged cluster is inside a parent bubble
+        this.draggedParentCluster = cluster.parentClusterId ? (this.clusters.find(c => c.id === cluster.parentClusterId) || null) : null;
+        if (this.draggedParentCluster) {
+            const parent = this.draggedParentCluster;
+            const fixedR = Math.max(parent.radius, parent.baseRadius || 0);
+            parent.baseRadius = fixedR;
+            parent.radius = fixedR;
+            const parentR = fixedR;
+            const maxAllowedD = Math.max(0, parentR - cluster.radius - 4.0);
+            const dx = cluster.centroid.x - parent.centroid.x;
+            const dy = cluster.centroid.y - parent.centroid.y;
+            const d = Math.hypot(dx, dy) || 0.0001;
+            if (d > maxAllowedD) {
+                cluster.centroid.x = parent.centroid.x + (dx / d) * maxAllowedD;
+                cluster.centroid.y = parent.centroid.y + (dy / d) * maxAllowedD;
             }
-        } else {
-            this.draggedNodes.push({ node: targetNode, offsetX: targetNode.x - worldX, offsetY: targetNode.y - worldY });
-            targetNode.fx = targetNode.x; targetNode.fy = targetNode.y;
         }
-        this.reheat(0.3);
+
+        // 1. Offsets of all descendant subclusters relative to dragged cluster centroid
+        this.descendantClusterOffsets.clear();
+        for (const desc of this.draggedDescendantClusters) {
+            this.descendantClusterOffsets.set(desc.id, {
+                x: desc.centroid.x - cluster.centroid.x,
+                y: desc.centroid.y - cluster.centroid.y
+            });
+        }
+
+        // 2. Offsets of all member nodes relative to dragged cluster centroid
+        this.clusterNodeOffsets.clear();
+        this.draggedNodes = [];
+        const memberNodes = this.getClusterMemberNodes(cluster, this.draggedDescendantClusters);
+        for (const n of memberNodes) {
+            this.clusterNodeOffsets.set(n.id, {
+                x: n.x - cluster.centroid.x,
+                y: n.y - cluster.centroid.y
+            });
+            this.draggedNodes.push({
+                node: n,
+                offsetX: n.x - worldX,
+                offsetY: n.y - worldY
+            });
+            n.fx = n.x;
+            n.fy = n.y;
+            n.vx = 0;
+            n.vy = 0;
+        }
+
+        this.reheat(0.35);
     }
 
     public updateDrag(worldX: number, worldY: number): void {
-        if (!this.isDragging || this.draggedNodes.length === 0) return;
-        for (const item of this.draggedNodes) {
-            const prevX = item.node.x;
-            const prevY = item.node.y;
-            const newX = worldX + item.offsetX;
-            const newY = worldY + item.offsetY;
+        if (!this.isDragging) return;
 
-            // Impart momentum velocity so node can be thrown naturally on release
-            item.node.vx = (newX - prevX) * 0.5;
-            item.node.vy = (newY - prevY) * 0.5;
-            item.node.fx = newX;
-            item.node.fy = newY;
-            item.node.x = newX;
-            item.node.y = newY;
-        }
-        const depth = this.options.maxDragDepth;
-        if (this.options.layoutMode !== 'default' && depth >= 1 && depth <= 5 && this.draggedNodes.length > 0) {
-            const firstNodeId = this.draggedNodes[0].node.id;
-            const cluster = this.clusters.find(c => c.depth === depth && c.nodeIds.includes(firstNodeId));
-            if (cluster) {
-                let sx = 0, sy = 0;
-                this.draggedNodes.forEach(item => { sx += item.node.x; sy += item.node.y; });
-                cluster.centroid.x = sx / this.draggedNodes.length;
-                cluster.centroid.y = sy / this.draggedNodes.length;
+        if (this.draggedCluster) {
+            const dx = worldX - this.lastDragWorldPos.x;
+            const dy = worldY - this.lastDragWorldPos.y;
+            this.lastDragWorldPos = { x: worldX, y: worldY };
+
+            if (dx === 0 && dy === 0) return;
+
+            const cluster = this.draggedCluster;
+            const parent = this.draggedParentCluster;
+
+            if (parent) {
+                // Rule 1: Child cluster CANNOT leave parent bubble
+                // Rule 2: Parent bubble won't resize (strictly keep fixed baseRadius)
+                const parentR = parent.baseRadius || parent.radius;
+                parent.radius = parentR;
+
+                const maxAllowedD = Math.max(0, parentR - cluster.radius - 4.0);
+
+                const targetX = cluster.centroid.x + dx;
+                const targetY = cluster.centroid.y + dy;
+
+                const offX = targetX - parent.centroid.x;
+                const offY = targetY - parent.centroid.y;
+                const dist = Math.hypot(offX, offY) || 0.0001;
+
+                if (dist <= maxAllowedD) {
+                    // Inside parent: child moves freely inside parent
+                    cluster.centroid.x = targetX;
+                    cluster.centroid.y = targetY;
+                } else {
+                    // Child reached inner boundary of parent:
+                    // 1. Clamp child strictly to boundary (CANNOT leave parent)
+                    cluster.centroid.x = parent.centroid.x + (offX / dist) * maxAllowedD;
+                    cluster.centroid.y = parent.centroid.y + (offY / dist) * maxAllowedD;
+
+                    // 2. The excess pull moves the parent!
+                    const excess = dist - maxAllowedD;
+                    let shiftX = (offX / dist) * excess;
+                    let shiftY = (offY / dist) * excess;
+
+                    // If parent itself has a grandparent cluster, clamp parent inside grandparent
+                    if (parent.parentClusterId) {
+                        const grandParent = this.clusters.find(c => c.id === parent.parentClusterId);
+                        if (grandParent) {
+                            const gpR = grandParent.baseRadius || grandParent.radius;
+                            const maxParentD = Math.max(0, gpR - parent.radius - 4.0);
+                            const gpTargetX = parent.centroid.x + shiftX;
+                            const gpTargetY = parent.centroid.y + shiftY;
+                            const gpOffX = gpTargetX - grandParent.centroid.x;
+                            const gpOffY = gpTargetY - grandParent.centroid.y;
+                            const gpDist = Math.hypot(gpOffX, gpOffY) || 0.0001;
+                            if (gpDist > maxParentD) {
+                                const allowedPX = grandParent.centroid.x + (gpOffX / gpDist) * maxParentD;
+                                const allowedPY = grandParent.centroid.y + (gpOffY / gpDist) * maxParentD;
+                                shiftX = allowedPX - parent.centroid.x;
+                                shiftY = allowedPY - parent.centroid.y;
+                            }
+                        }
+                    }
+
+                    // Shift parent
+                    parent.centroid.x += shiftX;
+                    parent.centroid.y += shiftY;
+
+                    // Child is pinned to boundary, so child also moves with parent
+                    cluster.centroid.x += shiftX;
+                    cluster.centroid.y += shiftY;
+
+                    // All other clusters inside parent (all sibling subclusters and their descendants) co-move with parent
+                    const parentDescendants = this.getDescendantClusters(parent);
+                    const draggedClusterIdSet = new Set<string>([cluster.id, ...this.draggedDescendantClusters.map(d => d.id)]);
+                    for (const otherCluster of parentDescendants) {
+                        if (!draggedClusterIdSet.has(otherCluster.id)) {
+                            otherCluster.centroid.x += shiftX;
+                            otherCluster.centroid.y += shiftY;
+                        }
+                    }
+
+                    // All other nodes inside parent (direct notes and all sibling/descendant member notes) co-move with parent
+                    const draggedNodeIdSet = new Set<string>(this.draggedNodes.map(item => item.node.id));
+                    const allParentNodes = this.getClusterMemberNodes(parent, parentDescendants);
+                    for (const n of allParentNodes) {
+                        if (!draggedNodeIdSet.has(n.id)) {
+                            n.x += shiftX;
+                            n.y += shiftY;
+                        }
+                    }
+                }
+            } else {
+                // Top-level cluster drag (no parent)
+                cluster.centroid.x += dx;
+                cluster.centroid.y += dy;
+            }
+
+            // Sync all descendant clusters relative to cluster.centroid
+            for (const desc of this.draggedDescendantClusters) {
+                const off = this.descendantClusterOffsets.get(desc.id);
+                if (off) {
+                    desc.centroid.x = cluster.centroid.x + off.x;
+                    desc.centroid.y = cluster.centroid.y + off.y;
+                }
+            }
+
+            // Sync all member nodes relative to cluster.centroid
+            for (const item of this.draggedNodes) {
+                const off = this.clusterNodeOffsets.get(item.node.id);
+                if (off) {
+                    const nx = cluster.centroid.x + off.x;
+                    const ny = cluster.centroid.y + off.y;
+                    item.node.x = nx;
+                    item.node.y = ny;
+                    item.node.fx = nx;
+                    item.node.fy = ny;
+                    item.node.vx = 0;
+                    item.node.vy = 0;
+                }
+            }
+        } else if (this.draggedNodes.length > 0) {
+            // Single node drag
+            for (const item of this.draggedNodes) {
+                const prevX = item.node.x;
+                const prevY = item.node.y;
+                let newX = worldX + item.offsetX;
+                let newY = worldY + item.offsetY;
+
+                // In bubble mode, single node also stays clamped to its container bubble
+                const containerId = item.node.subClusterId || item.node.clusterId;
+                const container = containerId ? this.clusters.find(c => c.id === containerId) : null;
+                if (container && container.radius > 0) {
+                    const maxR = Math.max(2.0, (container.baseRadius || container.radius) - item.node.radius - 2.0);
+                    const cdx = newX - container.centroid.x;
+                    const cdy = newY - container.centroid.y;
+                    const cd = Math.hypot(cdx, cdy) || 0.001;
+                    if (cd > maxR) {
+                        newX = container.centroid.x + (cdx / cd) * maxR;
+                        newY = container.centroid.y + (cdy / cd) * maxR;
+                    }
+                }
+
+                item.node.vx = (newX - prevX) * 0.5;
+                item.node.vy = (newY - prevY) * 0.5;
+                item.node.fx = newX;
+                item.node.fy = newY;
+                item.node.x = newX;
+                item.node.y = newY;
             }
         }
+
         this.reheat(0.35);
     }
 
@@ -1355,8 +1628,15 @@ export class BubbleSimulation {
         for (const item of this.draggedNodes) {
             item.node.fx = null;
             item.node.fy = null;
+            item.node.vx = 0;
+            item.node.vy = 0;
         }
         this.draggedNodes = [];
+        this.draggedCluster = null;
+        this.draggedParentCluster = null;
+        this.draggedDescendantClusters = [];
+        this.descendantClusterOffsets.clear();
+        this.clusterNodeOffsets.clear();
         this.reheat(0.25);
     }
 }

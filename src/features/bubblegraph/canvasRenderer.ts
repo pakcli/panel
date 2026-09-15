@@ -18,6 +18,7 @@ export interface RenderState {
     hoveredNode: BubbleNode | null;
     hoveredCluster: BubbleCluster | null;
     selectedNode: BubbleNode | null;
+    isInspectorOpen?: boolean;
     searchQuery: string;
     scopeFilter: string;
     scopedFolder?: string | null;
@@ -25,7 +26,7 @@ export interface RenderState {
     interLinkGlow: boolean;
     showLines: boolean;
     showLabels: boolean;
-    labelMode?: 'all' | 'folder' | 'text' | 'custom' | 'off';
+    labelMode?: 'all' | 'folder' | 'text' | 'custom' | 'off' | 'hide';
     customLabelFormats?: Set<string>;
     labelRangeLevel?: number; // legacy single level fallback
     labelMinLevel?: number; // 1 to 4 (hierarchy depth: 1 = root/top, 2 = subfolder, 3 = L3, 4 = L4+)
@@ -208,12 +209,12 @@ export class CanvasRenderer {
             }
 
             // Folder Label Tab Badge (Hierarchy Depth based)
-            const isFolderModeAllowed = !state.labelMode || state.labelMode === 'all' || state.labelMode === 'folder' ||
+            const isFolderModeAllowed = state.labelMode !== 'hide' && (!state.labelMode || state.labelMode === 'all' || state.labelMode === 'folder' ||
                 (state.labelMode === 'custom' && (
                     state.customLabelFormats?.has('folder') ||
                     state.customLabelFormats?.has('folders') ||
                     state.customLabelFormats?.has('*')
-                ));
+                )));
 
             if (state.showLabels && isFolderModeAllowed) {
                 const clusterParts = cluster.id ? cluster.id.split('/').filter(Boolean) : [];
@@ -372,7 +373,8 @@ export class CanvasRenderer {
             }
 
             // Tier 3: Directional Flow / Hover Marching Particles
-            if (isEdgeConnectedToHover || (state.showLines && src.isActive && edge.tier === 'tier2_inter')) {
+            const isSrcActive = Boolean(state.isInspectorOpen && src.isActive);
+            if (isEdgeConnectedToHover || (state.showLines && isSrcActive && edge.tier === 'tier2_inter')) {
                 this.drawFlowParticle(src, tgt, edge.tier === 'tier2_inter' ? '#00f2ff' : src.color);
             }
 
@@ -417,7 +419,8 @@ export class CanvasRenderer {
 
             const isHovered = state.hoveredNode?.id === node.id;
             const isNeighbor = hoveredNeighbors.has(node.id);
-            const isSelected = state.selectedNode?.id === node.id;
+            const isSelected = Boolean(state.isInspectorOpen && state.selectedNode?.id === node.id);
+            const isNodeActive = Boolean(state.isInspectorOpen && node.isActive);
             const isDimmed = state.hoveredNode && !isHovered && !isNeighbor;
 
             ctx.save();
@@ -426,7 +429,7 @@ export class CanvasRenderer {
             }
 
             // Draw Node Glyphs
-            this.drawNodeGlyph(node, isHovered, isSelected);
+            this.drawNodeGlyph(node, isHovered, isSelected, isNodeActive);
 
             // Draw Labels (Dual Handle Range Level 1-4: File/Folder Hierarchy Depth based)
             // Level 1 = Vault root files (nodeParts.length === 0)
@@ -438,14 +441,14 @@ export class CanvasRenderer {
             const isLevelAllowed = nodeLevel >= effectiveMinLevel && nodeLevel <= effectiveMaxLevel;
 
             const ext = (node.extension || 'md').toLowerCase();
-            const isNodeFormatAllowed = !state.labelMode || state.labelMode === 'all' || state.labelMode === 'text' ||
+            const isNodeFormatAllowed = state.labelMode !== 'hide' && (!state.labelMode || state.labelMode === 'all' || state.labelMode === 'text' ||
                 (state.labelMode === 'custom' && (
                     state.customLabelFormats?.has(ext) ||
                     state.customLabelFormats?.has('*') ||
                     state.customLabelFormats?.has('.' + ext)
-                ));
+                )));
 
-            const shouldShowLabel = state.showLabels && (
+            const shouldShowLabel = state.showLabels && state.labelMode !== 'hide' && (
                 isHovered ||
                 isSelected ||
                 (isLevelAllowed && isNodeFormatAllowed)
@@ -459,11 +462,11 @@ export class CanvasRenderer {
         }
     }
 
-    private drawNodeGlyph(node: BubbleNode, isHovered: boolean, isSelected: boolean): void {
+    private drawNodeGlyph(node: BubbleNode, isHovered: boolean, isSelected: boolean, isNodeActive: boolean = false): void {
         const ctx = this.ctx;
 
-        // 1. Active Node Pulse Aura
-        if (node.isActive) {
+        // 1. Active Node Pulse Aura (Only if Inspector is active)
+        if (isNodeActive) {
             const pulse = (this.animationTime % 1500) / 1500;
             const currentWaveR = node.radius + pulse * 14;
             const waveAlpha = (1 - pulse) * 0.7;
@@ -476,11 +479,12 @@ export class CanvasRenderer {
         }
 
         // 2. Base Node Circle Body
+        const effRadius = isNodeActive ? Math.max(node.radius, 6.5) : node.radius;
         ctx.beginPath();
-        ctx.arc(node.x, node.y, node.radius, 0, Math.PI * 2);
-        const nodeColor = node.isActive ? '#00f2ff' : (node.color || '#4a5568');
+        ctx.arc(node.x, node.y, effRadius, 0, Math.PI * 2);
+        const nodeColor = isNodeActive ? '#00f2ff' : (node.color || '#4a5568');
         ctx.fillStyle = nodeColor;
-        if (node.isActive) {
+        if (isNodeActive) {
             ctx.shadowColor = '#00f2ff';
             ctx.shadowBlur = 16;
         } else if (isHovered || isSelected) {
@@ -489,9 +493,9 @@ export class CanvasRenderer {
         }
         ctx.fill();
 
-        if (isHovered || isSelected || node.totalDegree >= 2) {
+        if (isHovered || isSelected || isNodeActive || node.totalDegree >= 2) {
             ctx.strokeStyle = '#ffffff';
-            ctx.lineWidth = isHovered || isSelected ? 2.0 : 1.2;
+            ctx.lineWidth = isHovered || isSelected || isNodeActive ? 2.0 : 1.2;
             ctx.stroke();
         }
 

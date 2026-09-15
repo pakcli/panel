@@ -23,6 +23,7 @@ export class BubbleGraphView extends ItemView {
     // Interactive State
     private layoutMode: 'bubble' | 'default' = 'bubble';
     private maxDragDepth: number = 2;
+    private isSimulationLocked: boolean = false;
     private hoveredNode: BubbleNode | null = null;
     private hoveredCluster: BubbleCluster | null = null;
     private selectedNode: BubbleNode | null = null;
@@ -32,7 +33,7 @@ export class BubbleGraphView extends ItemView {
 
     // Label & Line Controls
     private showLabels: boolean = true;
-    private labelMode: 'all' | 'folder' | 'text' | 'custom' = 'all';
+    private labelMode: 'hide' | 'all' | 'folder' | 'text' | 'custom' = 'all';
     private customLabelFormats: string = 'md, canvas, json, base, csv, folder';
     private customLabelFormatsSet: Set<string> = new Set(['md', 'canvas', 'json', 'base', 'csv', 'folder']);
     private showLines: boolean = true;
@@ -57,6 +58,7 @@ export class BubbleGraphView extends ItemView {
     private panStartX: number = 0;
     private panStartY: number = 0;
     private isDraggingNode: boolean = false;
+    private isDraggingCluster: boolean = false;
 
     // UI Elements
     private headerEl!: HTMLElement;
@@ -81,6 +83,9 @@ export class BubbleGraphView extends ItemView {
     private row2El!: HTMLElement;
     private timelineEl!: HTMLElement;
     private depthGroupEl: HTMLElement | null = null;
+    private simLockGroupEl: HTMLElement | null = null;
+    private simFreeBtnEl: HTMLButtonElement | null = null;
+    private simLockBtnEl: HTMLButtonElement | null = null;
     private depthButtons: HTMLElement[] = [];
     private wandBtnEl: HTMLElement | null = null;
     private linesToggleBtnEl!: HTMLElement;
@@ -134,8 +139,11 @@ export class BubbleGraphView extends ItemView {
 
         this.layoutMode = this.plugin.settings.bubbleDefaultLayout || 'bubble';
         this.maxDragDepth = this.plugin.settings.bubbleMaxDragDepth ?? DEFAULT_BUBBLE_GRAPH_SETTINGS.bubbleMaxDragDepth;
-        this.showLabels = this.plugin.settings.bubbleShowLabels !== false;
-        this.labelMode = this.plugin.settings.bubbleLabelMode || 'all';
+        this.isSimulationLocked = Boolean(this.plugin.settings.bubbleSimulationLocked);
+        this.labelMode = (this.plugin.settings.bubbleLabelMode as any) || 'all';
+        if ((this.labelMode as string) === 'off') this.labelMode = 'hide';
+        this.showLabels = this.plugin.settings.bubbleShowLabels !== false && this.labelMode !== 'hide';
+        if (!this.showLabels) this.labelMode = 'hide';
         this.customLabelFormats = this.plugin.settings.bubbleLabelCustomFormats || 'md, canvas, json, base, csv, folder';
         this.updateCustomLabelFormatsSet(this.customLabelFormats);
         const savedTimelapse = this.plugin.settings.bubbleTimelapseMode as string;
@@ -228,17 +236,15 @@ export class BubbleGraphView extends ItemView {
                     const activePath = file.path;
                     let foundNode: BubbleNode | null = null;
                     for (const node of this.graphData.nodes) {
-                        const wasActive = node.isActive;
-                        node.isActive = node.id === activePath;
+                        node.isActive = Boolean(this.isInspectorOpen && node.id === activePath);
                         if (node.isActive) {
-                            node.glyph = 'active';
                             foundNode = node;
-                        } else if (wasActive) {
-                            node.glyph = node.totalDegree <= 1 ? 'leaf' : 'document';
                         }
                     }
-                    if (foundNode) {
+                    if (this.isInspectorOpen && foundNode) {
                         this.selectNode(foundNode, false);
+                    } else if (!this.isInspectorOpen) {
+                        this.selectedNode = null;
                     }
                 }
             })
@@ -298,7 +304,8 @@ export class BubbleGraphView extends ItemView {
         this.maxDragDepth = DEFAULT_BUBBLE_GRAPH_SETTINGS.bubbleMaxDragDepth;
         this.showLines = DEFAULT_BUBBLE_GRAPH_SETTINGS.bubbleShowLines;
         this.showLabels = DEFAULT_BUBBLE_GRAPH_SETTINGS.bubbleShowLabels;
-        this.labelMode = DEFAULT_BUBBLE_GRAPH_SETTINGS.bubbleLabelMode || 'all';
+        this.labelMode = (DEFAULT_BUBBLE_GRAPH_SETTINGS.bubbleLabelMode as any) || 'all';
+        if ((this.labelMode as string) === 'off') this.labelMode = 'hide';
         this.customLabelFormats = DEFAULT_BUBBLE_GRAPH_SETTINGS.bubbleLabelCustomFormats || 'md, canvas, json, base, csv, folder';
         this.updateCustomLabelFormatsSet(this.customLabelFormats);
         this.useCaptainColors = DEFAULT_BUBBLE_GRAPH_SETTINGS.bubbleUseCaptainColors;
@@ -312,9 +319,11 @@ export class BubbleGraphView extends ItemView {
         this.isFooterOpen = DEFAULT_BUBBLE_GRAPH_SETTINGS.bubbleFooterOpen !== false;
         this.autoFitMode = DEFAULT_BUBBLE_GRAPH_SETTINGS.bubbleAutoFitMode ?? 'off';
         this.timelapseMode = (DEFAULT_BUBBLE_GRAPH_SETTINGS.bubbleTimelapseMode || 'vanilla') as 'vanilla' | 'time' | 'filename' | 'title';
+        this.isSimulationLocked = false;
 
         // 2. Persist to plugin settings
         this.plugin.settings.bubbleMaxDragDepth = this.maxDragDepth;
+        this.plugin.settings.bubbleSimulationLocked = false;
         this.plugin.settings.bubbleShowLines = this.showLines;
         this.plugin.settings.bubbleShowLabels = this.showLabels;
         this.plugin.settings.bubbleLabelMode = this.labelMode;
@@ -373,15 +382,7 @@ export class BubbleGraphView extends ItemView {
                 this.volumeDisplayEl.setText(`${defVol}%`);
             }
         }
-        if (this.depthButtons) {
-            this.depthButtons.forEach(btn => {
-                const text = btn.innerText.trim();
-                const isMatch = text.startsWith(`${this.maxDragDepth}:`) ||
-                    (this.maxDragDepth === 99 && text.includes('Node'));
-                btn.toggleClass('active', isMatch);
-                btn.setAttribute('aria-pressed', isMatch ? 'true' : 'false');
-            });
-        }
+        await this.setSimulationLocked(false);
         this.syncLevelControls();
         if (this.fontSizeSliderEl) {
             this.fontSizeSliderEl.value = this.labelFontSize.toString();
@@ -458,7 +459,7 @@ export class BubbleGraphView extends ItemView {
         };
         this.graphData = buildVaultGraph(
             this.app, 
-            activeFile ? activeFile.path : null, 
+            this.isInspectorOpen && activeFile ? activeFile.path : null, 
             captainRules, 
             this.useCaptainColors, 
             maxDepth, 
@@ -494,6 +495,7 @@ export class BubbleGraphView extends ItemView {
             this.graphData.clusters,
             {
                 maxDragDepth: this.maxDragDepth,
+                isLocked: this.isSimulationLocked,
                 layoutMode: this.layoutMode,
                 scopedFolder: this.scopedFolder,
                 denseScale: this.plugin.settings.bubbleDenseScale ?? 1.15,
@@ -595,6 +597,58 @@ export class BubbleGraphView extends ItemView {
         this.lastVisibleCount = -1;
         this.updateTimelineUI();
         this.drawHeatmap();
+    }
+
+    public async setSimulationLocked(locked: boolean): Promise<void> {
+        this.isSimulationLocked = locked;
+        this.plugin.settings.bubbleSimulationLocked = locked;
+        await this.plugin.saveSettings();
+
+        if (this.simFreeBtnEl) {
+            this.simFreeBtnEl.toggleClass('active', !locked);
+            this.simFreeBtnEl.setAttribute('aria-pressed', !locked ? 'true' : 'false');
+        }
+        if (this.simLockBtnEl) {
+            this.simLockBtnEl.toggleClass('active', locked);
+            this.simLockBtnEl.setAttribute('aria-pressed', locked ? 'true' : 'false');
+        }
+
+        if (this.simulation) {
+            this.simulation.setOptions({ isLocked: locked });
+        }
+
+        if (locked) {
+            if (this.isTimelapseRunning) {
+                this.pauseTimelapse();
+            }
+            if (this.isDraggingNode || this.isDraggingCluster) {
+                this.simulation?.endDrag();
+                this.isDraggingNode = false;
+                this.isDraggingCluster = false;
+            }
+        } else {
+            this.simulation?.reheat(0.35);
+        }
+
+        this.updateTimelapseLockedUI();
+        new Notice(locked ? 'Simulation Locked (dragging & timelapse disabled)' : 'Simulation Free (nodes & bubbles draggable)');
+    }
+
+    private updateTimelapseLockedUI(): void {
+        if (!this.timelineEl) return;
+        this.timelineEl.toggleClass('is-locked', this.isSimulationLocked);
+        this.timelineEl.toggleClass('pakcli-timeline-disabled', this.isSimulationLocked);
+
+        if (this.wandBtnEl) {
+            if (this.isSimulationLocked) this.wandBtnEl.setAttribute('disabled', 'true');
+            else this.wandBtnEl.removeAttribute('disabled');
+        }
+        if (this.timelapseModeSelectEl) {
+            this.timelapseModeSelectEl.disabled = this.isSimulationLocked;
+        }
+        if (this.timelineSliderEl) {
+            this.timelineSliderEl.disabled = this.isSimulationLocked;
+        }
     }
 
     private renderHeader(container: HTMLElement): void {
@@ -700,6 +754,23 @@ export class BubbleGraphView extends ItemView {
             this.inspectorBtnEl.setAttribute('title', this.isInspectorOpen ? 'Hide Inspector Sidepanel' : 'Show Inspector Sidepanel');
             this.plugin.settings.bubbleInspectorOpen = this.isInspectorOpen;
             await this.plugin.saveSettings();
+
+            if (this.graphData) {
+                const activeFile = this.app.workspace.getActiveFile();
+                const activePath = activeFile ? activeFile.path : null;
+                for (const node of this.graphData.nodes) {
+                    node.isActive = Boolean(this.isInspectorOpen && activePath && node.id === activePath);
+                }
+                if (this.isInspectorOpen && activePath) {
+                    const activeNode = this.graphData.nodes.find(n => n.id === activePath);
+                    if (activeNode) {
+                        this.selectNode(activeNode, false);
+                    }
+                } else {
+                    this.selectedNode = null;
+                }
+            }
+
             if (this.sfxManager?.isEnabled()) {
                 this.sfxManager.playLinkSwitch();
             }
@@ -776,8 +847,8 @@ export class BubbleGraphView extends ItemView {
         bubbleTab.setAttribute('aria-pressed', this.layoutMode === 'bubble' ? 'true' : 'false');
 
         const updateDepthVisibility = () => {
-            if (this.depthGroupEl) {
-                this.depthGroupEl.style.display = this.layoutMode === 'bubble' ? 'flex' : 'none';
+            if (this.simLockGroupEl) {
+                this.simLockGroupEl.style.display = 'flex';
             }
         };
 
@@ -806,45 +877,34 @@ export class BubbleGraphView extends ItemView {
         this.scopeBarEl = row1Center.createDiv({ cls: 'pakcli-scope-bar' });
         this.updateScopeBar();
 
-        // Right: Depth Scrubber
+        // Right: Simulation Lock / Free Toggle
         const row1Right = row1.createDiv({ cls: 'pakcli-header-row-right' });
-        const depthGroup = row1Right.createDiv({ cls: 'pakcli-depth-group' });
-        this.depthGroupEl = depthGroup;
-        updateDepthVisibility();
-        depthGroup.createSpan({ text: 'Depth:', cls: 'pakcli-depth-label' });
-        const depthWrap = depthGroup.createDiv({ cls: 'pakcli-depth-buttons' });
+        const simLockGroup = row1Right.createDiv({ cls: 'pakcli-depth-group pakcli-sim-lock-group' });
+        this.depthGroupEl = simLockGroup;
+        this.simLockGroupEl = simLockGroup;
+        simLockGroup.createSpan({ text: 'Simulation:', cls: 'pakcli-depth-label' });
+        const simLockWrap = simLockGroup.createDiv({ cls: 'pakcli-depth-buttons' });
 
-        const maxDepthSetting = Math.min(5, Math.max(2, this.plugin.settings.bubbleMaxClusterDepth ?? 3));
-        const depths: Array<{ level: number; label: string }> = [
-            { level: 0, label: '0: Lock' },
-            { level: 1, label: '1: Folder' },
-            { level: 2, label: '2: Subfolder' }
-        ];
-        for (let lvl = 3; lvl <= maxDepthSetting; lvl++) {
-            depths.push({ level: lvl, label: `${lvl}: L${lvl}` });
-        }
-        depths.push({ level: 99, label: 'Node' });
-
-        this.depthButtons = depths.map(d => {
-            const isMatch = this.maxDragDepth === d.level;
-            const btn = depthWrap.createEl('button', {
-                text: d.label,
-                cls: `pakcli-depth-btn ${isMatch ? 'active' : ''}`
-            });
-            btn.setAttribute('aria-pressed', isMatch ? 'true' : 'false');
-            btn.onclick = async () => {
-                this.maxDragDepth = d.level;
-                this.depthButtons.forEach(b => {
-                    const active = b === btn;
-                    b.toggleClass('active', active);
-                    b.setAttribute('aria-pressed', active ? 'true' : 'false');
-                });
-                this.simulation.setOptions({ maxDragDepth: d.level });
-                this.plugin.settings.bubbleMaxDragDepth = d.level;
-                await this.plugin.saveSettings();
-            };
-            return btn;
+        this.simFreeBtnEl = simLockWrap.createEl('button', {
+            text: '🔓 Free',
+            cls: `pakcli-depth-btn ${!this.isSimulationLocked ? 'active' : ''}`,
+            title: 'Simulation Free: Drag any node or bubble freely'
         });
+        this.simFreeBtnEl.setAttribute('aria-pressed', !this.isSimulationLocked ? 'true' : 'false');
+
+        this.simLockBtnEl = simLockWrap.createEl('button', {
+            text: '🔒 Lock',
+            cls: `pakcli-depth-btn ${this.isSimulationLocked ? 'active' : ''}`,
+            title: 'Simulation Locked: Freeze movement, disable dragging & timelapse'
+        });
+        this.simLockBtnEl.setAttribute('aria-pressed', this.isSimulationLocked ? 'true' : 'false');
+
+        this.simFreeBtnEl.onclick = async () => {
+            await this.setSimulationLocked(false);
+        };
+        this.simLockBtnEl.onclick = async () => {
+            await this.setSimulationLocked(true);
+        };
 
         // ==========================================
         // ROW 2: Collapsible Settings Controls Row
@@ -905,7 +965,8 @@ export class BubbleGraphView extends ItemView {
             cls: 'dropdown pakcli-label-mode-select'
         });
 
-        const modes: Array<{ id: 'all' | 'folder' | 'text' | 'custom'; label: string }> = [
+        const modes: Array<{ id: 'hide' | 'all' | 'folder' | 'text' | 'custom'; label: string }> = [
+            { id: 'hide', label: 'hide' },
             { id: 'all', label: 'all type' },
             { id: 'folder', label: 'folder only' },
             { id: 'text', label: 'text only' },
@@ -923,12 +984,12 @@ export class BubbleGraphView extends ItemView {
         }
 
         this.labelModeSelectEl.onchange = async () => {
-            const val = (this.labelModeSelectEl?.value || 'all') as 'all' | 'folder' | 'text' | 'custom';
+            const val = (this.labelModeSelectEl?.value || 'all') as 'hide' | 'all' | 'folder' | 'text' | 'custom';
             this.labelMode = val;
-            this.showLabels = true;
+            this.showLabels = val !== 'hide';
             this.updateLabelModeUI();
             this.plugin.settings.bubbleLabelMode = this.labelMode;
-            this.plugin.settings.bubbleShowLabels = true;
+            this.plugin.settings.bubbleShowLabels = this.showLabels;
             await this.plugin.saveSettings();
             if (this.sfxManager?.isEnabled()) {
                 this.sfxManager.playLinkSwitch();
@@ -1715,6 +1776,7 @@ export class BubbleGraphView extends ItemView {
         }
 
         this.updateTimelineUI();
+        this.updateTimelapseLockedUI();
     }
 
     private setupCanvasEvents(): void {
@@ -1741,17 +1803,39 @@ export class BubbleGraphView extends ItemView {
         canvas.addEventListener('mousedown', (e) => {
             this.sfxManager?.initContext();
             const worldPos = this.screenToWorld(e.clientX, e.clientY);
-            const clickedNode = this.findNodeAt(worldPos.x, worldPos.y);
 
-            if (clickedNode) {
-                this.isDraggingNode = true;
-                this.simulation.startDrag(clickedNode, worldPos.x, worldPos.y);
-            } else {
+            if (this.isSimulationLocked) {
+                // When locked: cannot drag nodes or bubbles; only pan canvas
                 this.isPanning = true;
                 this.panStartX = e.clientX - this.transform.panX;
                 this.panStartY = e.clientY - this.transform.panY;
                 if (this.autoFitMode !== 'off') {
                     this.setAutoFitMode('off');
+                }
+                canvas.setCssStyles({ cursor: 'grabbing' });
+                return;
+            }
+
+            const clickedNode = this.findNodeAt(worldPos.x, worldPos.y);
+
+            if (clickedNode) {
+                this.isDraggingNode = true;
+                this.simulation.startDrag(clickedNode, worldPos.x, worldPos.y);
+                canvas.setCssStyles({ cursor: 'grabbing' });
+            } else {
+                const clickedCluster = this.findClusterAt(worldPos.x, worldPos.y);
+                if (clickedCluster && this.layoutMode === 'bubble') {
+                    this.isDraggingCluster = true;
+                    this.simulation.startDragCluster(clickedCluster, worldPos.x, worldPos.y);
+                    canvas.setCssStyles({ cursor: 'grabbing' });
+                } else {
+                    this.isPanning = true;
+                    this.panStartX = e.clientX - this.transform.panX;
+                    this.panStartY = e.clientY - this.transform.panY;
+                    if (this.autoFitMode !== 'off') {
+                        this.setAutoFitMode('off');
+                    }
+                    canvas.setCssStyles({ cursor: 'grabbing' });
                 }
             }
         });
@@ -1759,12 +1843,12 @@ export class BubbleGraphView extends ItemView {
         window.addEventListener('mousemove', (e) => {
             const rect = canvas.getBoundingClientRect();
             if (e.clientX < rect.left || e.clientX > rect.right || e.clientY < rect.top || e.clientY > rect.bottom) {
-                if (!this.isPanning && !this.isDraggingNode) return;
+                if (!this.isPanning && !this.isDraggingNode && !this.isDraggingCluster) return;
             }
 
             const worldPos = this.screenToWorld(e.clientX, e.clientY);
 
-            if (this.isDraggingNode) {
+            if (this.isDraggingNode || this.isDraggingCluster) {
                 this.simulation.updateDrag(worldPos.x, worldPos.y);
             } else if (this.isPanning) {
                 this.transform.panX = e.clientX - this.panStartX;
@@ -1773,7 +1857,6 @@ export class BubbleGraphView extends ItemView {
                 // Hover Detection
                 const node = this.findNodeAt(worldPos.x, worldPos.y);
                 this.hoveredNode = node;
-                canvas.setCssStyles({ cursor: node ? 'pointer' : 'grab' });
 
                 // Check cluster hover if no node hovered
                 if (!node && this.graphData) {
@@ -1781,21 +1864,35 @@ export class BubbleGraphView extends ItemView {
                 } else {
                     this.hoveredCluster = null;
                 }
+
+                if (this.isSimulationLocked) {
+                    canvas.setCssStyles({ cursor: node ? 'pointer' : 'default' });
+                } else {
+                    canvas.setCssStyles({ cursor: node ? 'pointer' : (this.hoveredCluster ? 'grab' : 'default') });
+                }
             }
         });
 
         window.addEventListener('mouseup', () => {
-            if (this.isDraggingNode) {
+            if (this.isDraggingNode || this.isDraggingCluster) {
                 this.simulation.endDrag();
                 this.isDraggingNode = false;
+                this.isDraggingCluster = false;
             }
             this.isPanning = false;
+            if (this.hoveredNode) {
+                canvas.setCssStyles({ cursor: 'pointer' });
+            } else if (this.hoveredCluster && !this.isSimulationLocked) {
+                canvas.setCssStyles({ cursor: 'grab' });
+            } else {
+                canvas.setCssStyles({ cursor: 'default' });
+            }
         });
 
         canvas.addEventListener('click', (e) => {
             const worldPos = this.screenToWorld(e.clientX, e.clientY);
             const clickedNode = this.findNodeAt(worldPos.x, worldPos.y);
-            if (clickedNode) {
+            if (clickedNode && this.isInspectorOpen) {
                 this.selectNode(clickedNode, false, true);
             }
         });
@@ -2004,7 +2101,8 @@ export class BubbleGraphView extends ItemView {
                     layoutMode: this.layoutMode,
                     hoveredNode: this.hoveredNode,
                     hoveredCluster: this.hoveredCluster,
-                    selectedNode: this.selectedNode,
+                    selectedNode: this.isInspectorOpen ? this.selectedNode : null,
+                    isInspectorOpen: this.isInspectorOpen,
                     searchQuery: this.searchQuery,
                     scopeFilter: this.scopeFilter,
                     scopedFolder: this.scopedFolder,
@@ -2113,11 +2211,21 @@ export class BubbleGraphView extends ItemView {
             if (dist <= cluster.radius) {
                 return cluster;
             }
+            // Also hit-test folder tab badge above the cluster rim
+            if (worldY >= cluster.centroid.y - cluster.radius - 24 && worldY <= cluster.centroid.y - cluster.radius + 6) {
+                if (Math.abs(worldX - cluster.centroid.x) <= Math.max(60, cluster.radius)) {
+                    return cluster;
+                }
+            }
         }
         return null;
     }
 
     public selectNode(node: BubbleNode, centerCamera: boolean = true, playSound: boolean = false): void {
+        if (!this.isInspectorOpen) {
+            this.selectedNode = null;
+            return;
+        }
         this.selectedNode = node;
         this.updateInspectorContent();
 

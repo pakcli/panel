@@ -1219,9 +1219,22 @@
     flex-shrink: 0;
     position: relative;
     z-index: 20;
+    transition: opacity 0.2s ease, filter 0.2s ease;
 
     &.collapsed {
         display: none !important;
+    }
+
+    &.is-locked,
+    &.pakcli-timeline-disabled {
+        opacity: 0.35 !important;
+        pointer-events: none !important;
+        filter: grayscale(0.85) !important;
+        cursor: not-allowed !important;
+
+        * {
+            cursor: not-allowed !important;
+        }
     }
 }
 

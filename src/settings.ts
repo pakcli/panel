@@ -14,11 +14,12 @@ export interface BubbleGraphSettings {
     bubbleGraphMode: BubbleGraphIntegrationMode;
     bubbleRibbonIcon: string;
     bubbleMaxDragDepth: number;
+    bubbleSimulationLocked?: boolean;
     bubbleDefaultLayout: 'bubble' | 'default';
     bubbleHullOpacity: number;
     bubbleShowLines: boolean;
     bubbleShowLabels: boolean;
-    bubbleLabelMode: 'all' | 'folder' | 'text' | 'custom' | 'off';
+    bubbleLabelMode: 'all' | 'folder' | 'text' | 'custom' | 'off' | 'hide';
     bubbleLabelCustomFormats: string;
     bubbleShowVennBridges: boolean;
     bubbleIntraLinkOpacity: number;
@@ -100,6 +101,7 @@ export const DEFAULT_BUBBLE_GRAPH_SETTINGS: BubbleGraphSettings = {
     bubbleGraphMode: 'second',
     bubbleRibbonIcon: 'circle-dot',
     bubbleMaxDragDepth: 2,
+    bubbleSimulationLocked: false,
     bubbleDefaultLayout: 'bubble',
     bubbleHullOpacity: 0.12,
     bubbleShowLabels: true,

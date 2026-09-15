@@ -339,9 +339,7 @@ export function buildVaultGraph(
         const glyph = resolveNodeGlyph(inDeg, outDeg, glyphSettings);
         let radius: number;
 
-        if (isActive) {
-            radius = 8; // Fixed 8px + pulse aura
-        } else if (isIndexNote && totalDeg >= 2) {
+        if (isIndexNote && totalDeg >= 2) {
             radius = Math.round(6 + Math.sqrt(inDeg + outDeg));
         } else if (totalDeg === 0) {
             radius = 3.5; // Compact 3.5px for isolated notes
