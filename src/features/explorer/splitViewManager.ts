@@ -803,7 +803,8 @@ export class SplitViewManager {
       fileName.endsWith('.base.md') ||
       fileName.endsWith('.base.yaml') ||
       fileName.endsWith('.base.canvas') ||
-      fileName.includes('.base.')
+      fileName.includes('.base.') ||
+      fileName === 'index.md'
     );
   }
 
@@ -870,7 +871,7 @@ export class SplitViewManager {
 
     const normalize = (p: string) => (p || '').replace(/\\/g, '/').replace(/^\/+|\/+$/g, '').trim();
 
-    // 1. Scan vault files for base files and determine affected folder ancestry
+    // 1. Scan vault files for base files and determine affected folder ancestry across all level ranges
     const allFiles = this.app.vault.getFiles();
     const baseFiles = allFiles.filter((f) => this.isBaseFile(f.path));
     const foldersWithBase = new Set<string>();
@@ -883,6 +884,22 @@ export class SplitViewManager {
           foldersWithBase.add(norm);
         }
         curr = curr.parent;
+      }
+    }
+
+    // Also scan all loaded folders across all level ranges to check getFolderIndexFiles
+    const allFolders = this.app.vault.getAllLoadedFiles().filter((f): f is TFolder => f instanceof TFolder);
+    for (const folder of allFolders) {
+      const { baseFile } = this.getFolderIndexFiles(folder);
+      if (baseFile) {
+        let curr: TFolder | null = folder;
+        while (curr) {
+          const norm = normalize(curr.path);
+          if (norm && norm !== '') {
+            foldersWithBase.add(norm);
+          }
+          curr = curr.parent;
+        }
       }
     }
 
@@ -932,26 +949,16 @@ export class SplitViewManager {
             item.el.addClass('pakcli-base-hidden');
           }
         } else if (item.file instanceof TFolder) {
-          if (path === '/' || item.file.path === '/') {
-            item.el.style.removeProperty('display');
-            continue;
-          }
+          // Folders at ALL ranges/levels (L1, L2, L3, L4, L5...) are ALWAYS kept visible!
+          item.el.style.removeProperty('display');
+          item.el.removeClass('pakcli-folder-hidden');
 
-          const norm = normalize(item.file.path || path);
-          // If no base files exist in vault, keep all folders visible so explorer is never empty!
-          // If base files exist, show folders containing base files, hide unaffected folders.
-          const shouldShowFolder = baseFiles.length === 0 || foldersWithBase.has(norm);
-
-          if (shouldShowFolder) {
-            item.el.style.removeProperty('display');
-            item.el.removeClass('pakcli-folder-hidden');
-            // Auto-expand folder with base files so the user immediately sees thebase.base
-            if (baseFiles.length > 0 && item.collapsed && typeof item.setCollapsed === 'function') {
+          if (isActive) {
+            const norm = normalize(item.file.path || path);
+            // Auto-expand folder with base files across any depth range so the user immediately sees base files
+            if (foldersWithBase.has(norm) && item.collapsed && typeof item.setCollapsed === 'function') {
               item.setCollapsed(false);
             }
-          } else {
-            item.el.style.display = 'none';
-            item.el.addClass('pakcli-folder-hidden');
           }
         }
       }
@@ -1006,22 +1013,14 @@ export class SplitViewManager {
       const titleEl = folderEl.querySelector('.nav-folder-title') as HTMLElement;
       const path = normalize(titleEl?.getAttribute('data-path') || folderEl.getAttribute('data-path') || '');
 
-      if (!isActive) {
-        (folderEl as HTMLElement).style.removeProperty('display');
-        folderEl.removeClass('pakcli-folder-hidden');
-      } else {
-        const shouldShow = baseFiles.length === 0 || foldersWithBase.has(path);
-        if (shouldShow) {
-          (folderEl as HTMLElement).style.removeProperty('display');
-          folderEl.removeClass('pakcli-folder-hidden');
-          if (baseFiles.length > 0 && folderEl.classList.contains('is-collapsed')) {
-            folderEl.classList.remove('is-collapsed');
-            const children = folderEl.querySelector('.nav-folder-children') as HTMLElement;
-            if (children) children.style.removeProperty('display');
-          }
-        } else {
-          (folderEl as HTMLElement).style.display = 'none';
-          folderEl.addClass('pakcli-folder-hidden');
+      (folderEl as HTMLElement).style.removeProperty('display');
+      folderEl.removeClass('pakcli-folder-hidden');
+
+      if (isActive) {
+        if (foldersWithBase.has(path) && folderEl.classList.contains('is-collapsed')) {
+          folderEl.classList.remove('is-collapsed');
+          const children = folderEl.querySelector('.nav-folder-children') as HTMLElement;
+          if (children) children.style.removeProperty('display');
         }
       }
     });

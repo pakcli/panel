@@ -22,10 +22,10 @@
       display: none !important;
     }
 
-    /* Ensure unaffected folders remain hidden */
-    .nav-folder.pakcli-folder-hidden,
-    .tree-item.nav-folder.pakcli-folder-hidden {
-      display: none !important;
+    /* Ensure folders at all level ranges remain visible and fully interactive */
+    .nav-folder,
+    .tree-item.nav-folder {
+      display: block;
     }
 
     /* Subtle highlight for base files */
