@@ -875,8 +875,15 @@ export class SplitViewManager {
     const allFiles = this.app.vault.getFiles();
     const baseFiles = allFiles.filter((f) => this.isBaseFile(f.path));
     const foldersWithBase = new Set<string>();
+    const foldersWithDirectBase = new Set<string>(); // only the folder that directly owns a base file
 
     for (const file of baseFiles) {
+      // Mark the direct parent folder
+      if (file.parent) {
+        const norm = normalize(file.parent.path);
+        if (norm && norm !== '') foldersWithDirectBase.add(norm);
+      }
+      // Mark all ancestors so they stay visible
       let curr = file.parent;
       while (curr) {
         const norm = normalize(curr.path);
@@ -892,11 +899,13 @@ export class SplitViewManager {
     for (const folder of allFolders) {
       const { baseFile } = this.getFolderIndexFiles(folder);
       if (baseFile) {
+        const norm = normalize(folder.path);
+        if (norm && norm !== '') foldersWithDirectBase.add(norm);
         let curr: TFolder | null = folder;
         while (curr) {
-          const norm = normalize(curr.path);
-          if (norm && norm !== '') {
-            foldersWithBase.add(norm);
+          const normA = normalize(curr.path);
+          if (normA && normA !== '') {
+            foldersWithBase.add(normA);
           }
           curr = curr.parent;
         }
@@ -949,17 +958,25 @@ export class SplitViewManager {
             item.el.addClass('pakcli-base-hidden');
           }
         } else if (item.file instanceof TFolder) {
-          // Folders at ALL ranges/levels (L1, L2, L3, L4, L5...) are ALWAYS kept visible!
-          item.el.style.removeProperty('display');
-          item.el.removeClass('pakcli-folder-hidden');
+          const norm = normalize(item.file.path || path);
+          const hasDirectBase = foldersWithDirectBase.has(norm);
+          const isAncestorOfBase = foldersWithBase.has(norm);
+          const showBaseless = this.plugin.settings.showBaselessFolderBadge === true;
 
-          if (isActive) {
-            const norm = normalize(item.file.path || path);
-            // Auto-expand folder with base files across any depth range so the user immediately sees base files
-            if (foldersWithBase.has(norm) && item.collapsed && typeof item.setCollapsed === 'function') {
-              item.setCollapsed(false);
-            }
+          if (!showBaseless && !hasDirectBase && !isAncestorOfBase) {
+            // Hide: folder has no base file and no descendant with base file
+            item.el.style.display = 'none';
+            item.el.addClass('pakcli-folder-hidden');
+          } else if (!showBaseless && !hasDirectBase && isAncestorOfBase) {
+            // Show ancestor folders so user can navigate to base-file subfolder
+            item.el.style.removeProperty('display');
+            item.el.removeClass('pakcli-folder-hidden');
+          } else {
+            // showBaseless=true OR has direct base → always visible
+            item.el.style.removeProperty('display');
+            item.el.removeClass('pakcli-folder-hidden');
           }
+          // NOTE: Do NOT call setCollapsed() here — it fights user expand clicks
         }
       }
 
@@ -1013,16 +1030,24 @@ export class SplitViewManager {
       const titleEl = folderEl.querySelector('.nav-folder-title') as HTMLElement;
       const path = normalize(titleEl?.getAttribute('data-path') || folderEl.getAttribute('data-path') || '');
 
-      (folderEl as HTMLElement).style.removeProperty('display');
-      folderEl.removeClass('pakcli-folder-hidden');
-
-      if (isActive) {
-        if (foldersWithBase.has(path) && folderEl.classList.contains('is-collapsed')) {
-          folderEl.classList.remove('is-collapsed');
-          const children = folderEl.querySelector('.nav-folder-children') as HTMLElement;
-          if (children) children.style.removeProperty('display');
-        }
+      if (!isActive) {
+        (folderEl as HTMLElement).style.removeProperty('display');
+        folderEl.removeClass('pakcli-folder-hidden');
+        return;
       }
+
+      const hasDirectBase = foldersWithDirectBase.has(path);
+      const isAncestorOfBase = foldersWithBase.has(path);
+      const showBaseless = this.plugin.settings.showBaselessFolderBadge === true;
+
+      if (!showBaseless && !hasDirectBase && !isAncestorOfBase) {
+        (folderEl as HTMLElement).style.display = 'none';
+        folderEl.addClass('pakcli-folder-hidden');
+      } else {
+        (folderEl as HTMLElement).style.removeProperty('display');
+        folderEl.removeClass('pakcli-folder-hidden');
+      }
+      // NOTE: Do NOT manipulate is-collapsed here — it fights user expand clicks
     });
 
     if (this.plugin.settings.enableMergeFolderIndex !== false) {
@@ -1308,10 +1333,12 @@ export class SplitViewManager {
       if (baseFile) {
         badgeBase.removeClass('is-missing');
         badgeBase.addClass('has-file');
+        badgeBase.style.removeProperty('display');
         badgeBase.setAttribute('aria-label', `Open ${baseFile.name} (Ctrl+click for new tab)`);
       } else {
         badgeBase.removeClass('has-file');
         badgeBase.addClass('is-missing');
+        badgeBase.style.removeProperty('display'); // badge always visible — row hiding is handled by applyBaseExplorerFilter
         badgeBase.setAttribute('aria-label', 'Create & open index.base');
       }
 

@@ -80,6 +80,7 @@ export interface ExplorerSettings {
   baseExplorerActive?: boolean;
   enableAutoFolderIndex?: boolean;
   enableMergeFolderIndex?: boolean;
+  showBaselessFolderBadge?: boolean;
   folderIndexPrefix?: string;
   folderIndexSuffix?: string;
   folderIndexUseTimestamp?: boolean;
@@ -101,6 +102,7 @@ export const DEFAULT_EXPLORER_SETTINGS: ExplorerSettings = {
   baseExplorerActive: false,
   enableAutoFolderIndex: false,
   enableMergeFolderIndex: true,
+  showBaselessFolderBadge: false,
   folderIndexPrefix: '',
   folderIndexSuffix: '',
   folderIndexUseTimestamp: false,

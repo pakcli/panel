@@ -1651,6 +1651,20 @@ export default class PakCLITablePlugin extends Plugin {
 					});
 
 				new Setting(containerEl)
+					.setName('Show Baseless Folders in Base Filter Mode')
+					.setDesc('When Base filter is active: show ALL folder rows including those without an index.base file. When disabled (default), only folders that have a base file (or contain a subfolder with one) are shown.')
+					.addToggle((t) => {
+						t.setValue(this.settings.showBaselessFolderBadge === true)
+							.onChange(async (val) => {
+								this.settings.showBaselessFolderBadge = val;
+								await this.saveSettings();
+								if (this.splitViewManager) {
+									this.splitViewManager.applyBaseExplorerFilter();
+								}
+							});
+					});
+
+				new Setting(containerEl)
 					.setName('Folder Index Title Prefix')
 					.setDesc('Custom prefix to add before the folder name in index.md title frontmatter.')
 					.addText((text) => {
