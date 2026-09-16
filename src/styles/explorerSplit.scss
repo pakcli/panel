@@ -568,25 +568,29 @@ body.pakcli-resizing-y {
 /* ── Relationship Virtual Folders in File Explorer ──────────────────────── */
 
 .pakcli-virtual-folder {
-  margin: 2px 0;
   position: relative;
+  margin: 0;
+  border-radius: var(--radius-s);
 
-  &.pakcli-virtual-nested {
-    margin: 3px 0 3px 6px;
-    border-left: 2px solid var(--tier-color, var(--interactive-accent));
-    border-radius: 4px;
-    background: rgba(var(--mono-rgb-100), 0.02);
-    transition: background-color 0.15s ease;
+  // Subtle pixelated checkerbox watermark pattern (digital / virtual canvas texture)
+  background-image: repeating-conic-gradient(
+    rgba(var(--mono-rgb-100), 0.024) 0% 25%, 
+    transparent 0% 50%
+  );
+  background-size: 8px 8px;
+  background-position: 0 0;
 
-    &:hover {
-      background: rgba(var(--mono-rgb-100), 0.04);
-    }
+  &.pakcli-drop-target {
+    background-color: rgba(var(--interactive-accent-rgb, 120, 80, 200), 0.14) !important;
+    outline: 2px dashed var(--tier-color, var(--interactive-accent)) !important;
+    outline-offset: -2px;
+    box-shadow: 0 0 8px rgba(var(--interactive-accent-rgb, 120, 80, 200), 0.25);
   }
 
   .pakcli-virtual-folder-title {
     display: flex;
     align-items: center;
-    padding: 3px 6px 3px 18px;
+    padding: 2px 6px;
     border-radius: var(--radius-s);
     cursor: pointer;
     user-select: none;
@@ -597,27 +601,36 @@ body.pakcli-resizing-y {
     }
 
     .collapse-icon {
-      margin-right: 4px;
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      transition: transform 0.15s ease;
+      margin-right: 4px;
+      color: var(--nav-item-color, var(--text-muted));
+      pointer-events: none;
 
       svg {
-        width: 9px;
-        height: 9px;
-        fill: currentColor;
+        width: 14px;
+        height: 14px;
+        stroke: currentColor;
+        fill: none;
+        stroke-width: 2;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+        transition: transform 0.15s ease;
+        transform: rotate(90deg) !important; // Open: points down 'v'
+        pointer-events: none;
       }
     }
 
     .pakcli-virtual-folder-dot {
-      width: 8px;
-      height: 8px;
+      width: 7px;
+      height: 7px;
       border-radius: 50%;
       display: inline-block;
       margin-right: 6px;
       flex-shrink: 0;
-      box-shadow: 0 0 4px rgba(0, 0, 0, 0.2);
+      box-shadow: 0 0 2px rgba(0, 0, 0, 0.25);
+      pointer-events: none;
     }
 
     .nav-folder-title-content {
@@ -627,42 +640,81 @@ body.pakcli-resizing-y {
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
+      flex-shrink: 0;
+      pointer-events: none;
     }
 
+    // Connecting line between text and virtual badge
+    .pakcli-virtual-folder-line {
+      flex: 1 1 auto;
+      height: 1px;
+      margin: 0 10px 0 8px;
+      background: var(--tier-color, var(--interactive-accent));
+      opacity: 0.32;
+      border-radius: 1px;
+      transition: opacity 0.15s ease;
+      pointer-events: none;
+    }
+
+    &:hover .pakcli-virtual-folder-line {
+      opacity: 0.75;
+    }
+
+    // Bases-style info badge: pill with "i" icon and small "virtual" text
     .pakcli-virtual-badge {
-      font-size: 10px;
-      font-weight: 600;
-      padding: 1px 6px;
-      border-radius: 4px;
-      background: rgba(139, 92, 246, 0.18);
-      color: var(--text-accent);
-      border: 1px solid rgba(139, 92, 246, 0.35);
-      margin-left: 6px;
-      letter-spacing: 0.2px;
       display: inline-flex;
       align-items: center;
-      flex-shrink: 0;
-    }
-
-    .pakcli-virtual-range {
-      font-size: 10px;
+      gap: 3px;
+      font-size: 9.5px;
+      font-weight: 500;
+      line-height: 1;
+      padding: 1px 5px;
+      border-radius: 10px;
+      background: var(--background-modifier-form-field, rgba(var(--mono-rgb-100), 0.06));
       color: var(--text-muted);
-      font-family: var(--font-monospace);
+      border: 1px solid var(--background-modifier-border);
       margin-left: 6px;
       flex-shrink: 0;
+      vertical-align: middle;
+      user-select: none;
+      letter-spacing: 0.02em;
+      pointer-events: none;
+
+      .pakcli-badge-i {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        color: var(--text-faint);
+        pointer-events: none;
+
+        svg {
+          width: 9.5px;
+          height: 9.5px;
+          pointer-events: none;
+        }
+      }
+
+      .pakcli-badge-text {
+        font-size: 9px;
+        font-weight: 600;
+        color: var(--text-muted);
+        text-transform: lowercase;
+        pointer-events: none;
+      }
     }
 
     .pakcli-virtual-count {
       font-size: 11px;
-      color: var(--text-muted);
-      margin-left: 5px;
+      color: var(--text-faint);
+      margin-left: 6px;
       flex-shrink: 0;
+      pointer-events: none;
     }
   }
 
   &.is-collapsed {
-    .pakcli-virtual-folder-title .collapse-icon {
-      transform: rotate(-90deg);
+    .pakcli-virtual-folder-title .collapse-icon svg {
+      transform: rotate(0deg) !important; // Collapsed: points right '>'
     }
 
     .pakcli-virtual-folder-children {
@@ -671,16 +723,16 @@ body.pakcli-resizing-y {
   }
 
   .pakcli-virtual-folder-children {
-    padding-left: 14px;
+    padding-left: var(--nav-indent, 14px);
     position: relative;
     border-left: 1px solid var(--nav-indentation-guide-color, var(--background-modifier-border));
-    margin-left: 10px;
+    margin-left: 6px;
 
     .pakcli-virtual-empty {
       font-size: 11px;
-      color: var(--text-muted);
+      color: var(--text-faint);
       font-style: italic;
-      padding: 4px 0 4px 12px;
+      padding: 4px 0 4px 8px;
     }
   }
 }

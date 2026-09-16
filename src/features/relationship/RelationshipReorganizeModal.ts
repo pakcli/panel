@@ -236,7 +236,7 @@ export class RelationshipReorganizeModal extends Modal {
             const isMeNote = lowerName === 'me' || lowerRole.includes('self') || lowerRole.includes('me') || lowerName.includes('myself');
 
             if (rawCloseness !== undefined && rawCloseness !== null && !isNaN(Number(rawCloseness))) {
-                score = Math.max(0, Math.min(1, Number(rawCloseness)));
+                score = Math.max(-1, Math.min(1, Number(rawCloseness)));
             } else if (isMeNote) {
                 score = 1.0;
             }

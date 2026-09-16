@@ -1,5 +1,5 @@
 import { Plugin, Notice, Setting, PluginSettingTab, ButtonComponent, TFile, TFolder, TextComponent, setIcon, normalizePath } from 'obsidian';
-import { PakCLITableSettings, DEFAULT_TABLE_SETTINGS, DEFAULT_BUBBLE_GRAPH_SETTINGS, RelationshipTierConfig, DEFAULT_RELATIONSHIP_TIERS, RelationshipFolderEntry, RelationshipViewStructure } from './settings';
+import { PakCLITableSettings, DEFAULT_TABLE_SETTINGS, DEFAULT_BUBBLE_GRAPH_SETTINGS, RelationshipTierConfig, DEFAULT_RELATIONSHIP_TIERS, RelationshipFolderEntry, RelationshipViewStructure, RelationshipSortOrder } from './settings';
 import { handleArtifactRename, moveArtifactsBetweenFolders } from './features/sqlseal/utils/views';
 import { SplitViewManager } from './features/explorer/splitViewManager';
 import { ExplorerSectionId, EXPLORER_SECTIONS_INFO, DEFAULT_EXPLORER_SECTION_ORDER } from './features/explorer/types';
@@ -651,6 +651,22 @@ export default class PakCLITablePlugin extends Plugin {
 		const stored = await this.loadData();
 		const fallback = await loadVaultConfig(this.app, 'pakcli-panel');
 		this.settings = Object.assign({}, DEFAULT_TABLE_SETTINGS, fallback, stored);
+
+		// Auto-migrate relationship tiers if outdated (e.g. still has 'enemy' instead of 'unsure' and 'bad')
+		if (this.settings.relationshipTiers && this.settings.relationshipTiers.length > 0) {
+			const hasEnemy = this.settings.relationshipTiers.some(t => t.id === 'enemy');
+			const hasUnsure = this.settings.relationshipTiers.some(t => t.id === 'unsure');
+			const hasBad = this.settings.relationshipTiers.some(t => t.id === 'bad');
+			if (hasEnemy || !hasUnsure || !hasBad) {
+				this.settings.relationshipTiers = this.settings.relationshipTiers.filter(t => t.id !== 'enemy');
+				if (!this.settings.relationshipTiers.some(t => t.id === 'unsure')) {
+					this.settings.relationshipTiers.push({ id: 'unsure', name: 'Unsure', min: 0.00, max: 0.00, color: '#94a3b8', folderName: '6 - Unsure' });
+				}
+				if (!this.settings.relationshipTiers.some(t => t.id === 'bad')) {
+					this.settings.relationshipTiers.push({ id: 'bad', name: 'Bad', min: -1.00, max: -0.01, color: '#ef4444', folderName: '7 - Bad' });
+				}
+			}
+		}
 	}
 
 	async saveSettings() {
@@ -881,6 +897,23 @@ export default class PakCLITablePlugin extends Plugin {
 							.onChange(async (v) => {
 								this.settings.bubbleUseCaptainColors = v;
 								await this.saveSettings();
+							});
+					});
+
+				new Setting(containerEl)
+					.setName('Relationship All Scope State (Concentric Rings in All Scopes)')
+					.setDesc('When disabled (default), concentric relationship rings (Friends ➔ Household, Unsure, Bad) are only displayed when the Bubble Graph is scoped to the virtual relationship folder. When enabled, concentric rings are displayed in all scope states, including the vault root All Notes scope.')
+					.addToggle((t) => {
+						t.setValue(this.settings.bubbleRelationshipAllScopeState === true)
+							.onChange(async (v) => {
+								this.settings.bubbleRelationshipAllScopeState = v;
+								await this.saveSettings();
+								const leaves = this.app.workspace.getLeavesOfType(BUBBLE_GRAPH_VIEW_TYPE);
+								leaves.forEach((leaf) => {
+									if (leaf.view instanceof BubbleGraphView) {
+										leaf.view.reloadGraphData();
+									}
+								});
 							});
 					});
 
@@ -1363,6 +1396,63 @@ export default class PakCLITablePlugin extends Plugin {
 							});
 					});
 
+				// Virtual Folder Styling Toggles (dot, color text, line)
+				new Setting(containerEl)
+					.setName('Show Tier Dot 🟠')
+					.setDesc('Display a colored indicator dot next to virtual folder names in File Explorer (Default: Off).')
+					.addToggle((toggle) => {
+						toggle.setValue(this.settings.explorerVirtualFolderShowDot === true)
+							.onChange(async (val) => {
+								this.settings.explorerVirtualFolderShowDot = val;
+								await this.saveSettings();
+								if (this.relationshipExplorerManager) {
+									this.relationshipExplorerManager.refreshVirtualFolders();
+								}
+							});
+					});
+
+				new Setting(containerEl)
+					.setName('Color Folder Name Text')
+					.setDesc('Color virtual folder name text with its corresponding relationship tier color in File Explorer (Default: Off).')
+					.addToggle((toggle) => {
+						toggle.setValue(this.settings.explorerVirtualFolderColorText === true)
+							.onChange(async (val) => {
+								this.settings.explorerVirtualFolderColorText = val;
+								await this.saveSettings();
+								if (this.relationshipExplorerManager) {
+									this.relationshipExplorerManager.refreshVirtualFolders();
+								}
+							});
+					});
+
+				new Setting(containerEl)
+					.setName('Show Connecting Accent Line')
+					.setDesc('Display a colored horizontal connecting line between the folder text and the [i virtual] badge (Default: On).')
+					.addToggle((toggle) => {
+						toggle.setValue(this.settings.explorerVirtualFolderShowLine !== false)
+							.onChange(async (val) => {
+								this.settings.explorerVirtualFolderShowLine = val;
+								await this.saveSettings();
+								if (this.relationshipExplorerManager) {
+									this.relationshipExplorerManager.refreshVirtualFolders();
+								}
+							});
+					});
+
+				new Setting(containerEl)
+					.setName('Allow Drag & Drop between Virtual Folders')
+					.setDesc('Drag notes directly onto relationship virtual folders in File Explorer to update their closeness affinity.')
+					.addToggle((toggle) => {
+						toggle.setValue(this.settings.explorerVirtualFolderDragDrop !== false)
+							.onChange(async (val) => {
+								this.settings.explorerVirtualFolderDragDrop = val;
+								await this.saveSettings();
+								if (this.relationshipExplorerManager) {
+									this.relationshipExplorerManager.refreshVirtualFolders();
+								}
+							});
+					});
+
 				let populateDropdowns: (() => void) | null = null;
 				const tiersSectionWrap = containerEl.createDiv({ cls: 'pakcli-tiers-section-wrap' });
 
@@ -1676,7 +1766,7 @@ export default class PakCLITablePlugin extends Plugin {
 							id: `rel_${Date.now()}`,
 							path: currentActivePath,
 							mode: this.settings.relationshipMode || '1dir',
-							viewStructure: this.settings.relationshipViewStructure || 'flat',
+							viewStructure: this.settings.relationshipViewStructure || 'concentric',
 							label: currentActivePath.split('/').pop() || 'Relationships',
 							createdAt: Date.now()
 						});
@@ -1706,7 +1796,7 @@ export default class PakCLITablePlugin extends Plugin {
 									id: `rel_${Date.now()}`,
 									path: cleanPath,
 									mode: '1dir',
-									viewStructure: 'flat',
+									viewStructure: 'concentric',
 									label: cleanPath.split('/').pop() || cleanPath,
 									createdAt: Date.now()
 								});
@@ -1772,6 +1862,7 @@ export default class PakCLITablePlugin extends Plugin {
 					theadRow.createEl('th', { text: 'Folder Path' }).style.cssText = 'padding: 6px 8px;';
 					theadRow.createEl('th', { text: 'Storage' }).style.cssText = 'padding: 6px 8px;';
 					theadRow.createEl('th', { text: 'Viewing' }).style.cssText = 'padding: 6px 8px;';
+					theadRow.createEl('th', { text: 'Sort Order' }).style.cssText = 'padding: 6px 8px;';
 					theadRow.createEl('th', { text: 'Notes' }).style.cssText = 'padding: 6px 8px;';
 					theadRow.createEl('th', { text: 'Active' }).style.cssText = 'padding: 6px 8px;';
 					theadRow.createEl('th', { text: 'Actions' }).style.cssText = 'padding: 6px 8px; text-align: right;';
@@ -1798,6 +1889,9 @@ export default class PakCLITablePlugin extends Plugin {
 							if (fEntry.viewStructure) {
 								this.settings.relationshipViewStructure = fEntry.viewStructure;
 								this.settings.explorerRelationshipVirtualFolders = fEntry.viewStructure !== 'flat';
+							}
+							if (fEntry.sortOrder) {
+								this.settings.relationshipSortOrder = fEntry.sortOrder;
 							}
 							await this.saveSettings();
 							renderFullSection();
@@ -1861,6 +1955,39 @@ export default class PakCLITablePlugin extends Plugin {
 							new Notice(`Viewing mode for "${fEntry.path}" set to ${chosen}`);
 						};
 
+						// 3b. Sort Order
+						const tdSort = tr.createEl('td');
+						tdSort.style.cssText = 'padding: 8px;';
+						const sortSelect = tdSort.createEl('select');
+						sortSelect.style.cssText = 'font-size: 11px; padding: 2px 6px; background: var(--background-primary); border: 1px solid var(--background-modifier-border); border-radius: 4px; color: var(--text-normal); cursor: pointer;';
+
+						const sortOptions: { value: RelationshipSortOrder; label: string }[] = [
+							{ value: 'closeness_desc', label: 'Score Desc (+1 ➔ -1)' },
+							{ value: 'closeness_asc', label: 'Score Asc (-1 ➔ +1)' },
+							{ value: 'filename_asc', label: 'File Name (A ➔ Z)' },
+							{ value: 'filename_desc', label: 'File Name (Z ➔ A)' },
+							{ value: 'title_asc', label: 'Frontmatter Title (A ➔ Z)' },
+							{ value: 'title_desc', label: 'Frontmatter Title (Z ➔ A)' }
+						];
+						sortOptions.forEach(opt => {
+							const optEl = sortSelect.createEl('option', { value: opt.value, text: opt.label });
+							if ((fEntry.sortOrder || 'closeness_desc') === opt.value) {
+								optEl.selected = true;
+							}
+						});
+						sortSelect.onchange = async () => {
+							const chosen = sortSelect.value as RelationshipSortOrder;
+							fEntry.sortOrder = chosen;
+							if (isActive) {
+								this.settings.relationshipSortOrder = chosen;
+							}
+							await this.saveSettings();
+							if (this.relationshipExplorerManager) {
+								this.relationshipExplorerManager.refreshVirtualFolders();
+							}
+							new Notice(`Sort order for "${fEntry.path}" set to ${sortSelect.options[sortSelect.selectedIndex].text}`);
+						};
+
 						// 4. Notes Count
 						const tdCount = tr.createEl('td');
 						tdCount.style.cssText = 'padding: 8px;';
@@ -1893,6 +2020,9 @@ export default class PakCLITablePlugin extends Plugin {
 								if (fEntry.viewStructure) {
 									this.settings.relationshipViewStructure = fEntry.viewStructure;
 									this.settings.explorerRelationshipVirtualFolders = fEntry.viewStructure !== 'flat';
+								}
+								if (fEntry.sortOrder) {
+									this.settings.relationshipSortOrder = fEntry.sortOrder;
 								}
 								await this.saveSettings();
 								renderFullSection();

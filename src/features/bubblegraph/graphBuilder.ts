@@ -2,7 +2,7 @@ import { App, TFile, normalizePath } from 'obsidian';
 import { BubbleNode, BubbleEdge, BubbleCluster, NodeGlyphType, GraphStats } from './types';
 import { computeClusterRadius } from './simulation';
 import { FolderRule } from '../tree/types';
-import { BubbleNodeGlyphOption, RelationshipTierConfig, DEFAULT_RELATIONSHIP_TIERS } from '../../settings';
+import { BubbleNodeGlyphOption, RelationshipTierConfig, RelationshipFolderEntry, DEFAULT_RELATIONSHIP_TIERS } from '../../settings';
 
 export interface RelationshipGraphSettings {
     rootFolder?: string;
@@ -10,6 +10,8 @@ export interface RelationshipGraphSettings {
     propertyKey?: string;
     tiers?: RelationshipTierConfig[];
     viewStructure?: 'flat' | 'range' | 'concentric';
+    folders?: RelationshipFolderEntry[];
+    allScopeState?: boolean;
 }
 
 /**
@@ -378,49 +380,84 @@ export function buildVaultGraph(
         let subClusterId = '/';
 
         const relRoot = relationshipSettings?.rootFolder ? normalizePath(relationshipSettings.rootFolder) : 'Relationships';
-        const isRelScope = normalizedScoped && (normalizedScoped === relRoot || folderPath === relRoot || folderPath.startsWith(relRoot + '/'));
-        const isRel1Dir = isRelScope && (relationshipSettings?.mode === '1dir' || !relationshipSettings?.mode);
-        const relTiers = (relationshipSettings?.tiers && relationshipSettings.tiers.length > 0)
+        const relFolders = new Set<string>();
+        relFolders.add(relRoot);
+        if (relationshipSettings?.folders && relationshipSettings.folders.length > 0) {
+            for (const f of relationshipSettings.folders) {
+                if (f.path) relFolders.add(normalizePath(f.path));
+            }
+        }
+
+        const allScopeState = relationshipSettings?.allScopeState ?? false;
+        const isRelVirtualActive = Boolean(normalizedScoped && relFolders.has(normalizedScoped)) || allScopeState;
+
+        let matchedRelFolder: string | null = null;
+        if (isRelVirtualActive) {
+            for (const rf of relFolders) {
+                if (folderPath === rf || folderPath.startsWith(rf + '/')) {
+                    matchedRelFolder = rf;
+                    break;
+                }
+            }
+        }
+
+        const rawTiers = (relationshipSettings?.tiers && relationshipSettings.tiers.length > 0)
             ? relationshipSettings.tiers
             : DEFAULT_RELATIONSHIP_TIERS;
+        const relTiers = rawTiers
+            .filter(t => t.id !== 'know')
+            .map(t => (t.id === 'friends' ? { ...t, min: 0.01, max: 0.40 } : { ...t }));
         const propKey = relationshipSettings?.propertyKey || 'closeness';
 
         let matchedRelTier: RelationshipTierConfig | null = null;
-        if (isRel1Dir && folderPath === relRoot) {
-            let closenessVal = 0.25;
-            const rawCloseness = fileCache?.frontmatter?.[propKey] ?? 
-                                 fileCache?.frontmatter?.closeness ?? 
-                                 fileCache?.frontmatter?.score ??
-                                 fileCache?.frontmatter?.affinity;
-            
-            const lowerName = name.toLowerCase();
-            const lowerRole = String(fileCache?.frontmatter?.role || '').toLowerCase();
-            const isMeNote = lowerName === 'me' || lowerRole.includes('self') || lowerRole.includes('me') || lowerName.includes('myself');
-
-            if (rawCloseness !== undefined && rawCloseness !== null && !isNaN(Number(rawCloseness))) {
-                closenessVal = Math.max(0, Math.min(1, Number(rawCloseness)));
-            } else if (isMeNote) {
-                closenessVal = 1.0;
+        if (matchedRelFolder) {
+            if (folderPath.startsWith(matchedRelFolder + '/')) {
+                const subPath = folderPath.slice(matchedRelFolder.length + 1);
+                const subName = subPath.split('/')[0].toLowerCase();
+                matchedRelTier = relTiers.find(t => 
+                    subName === t.folderName.toLowerCase() || 
+                    subName === t.name.toLowerCase() || 
+                    subName === t.id.toLowerCase() ||
+                    subName.includes(t.name.toLowerCase())
+                ) || null;
             }
 
-            matchedRelTier = relTiers.find(t => closenessVal >= Math.min(t.min, t.max) && closenessVal <= Math.max(t.min, t.max)) || null;
             if (!matchedRelTier) {
-                let minDiff = Infinity;
-                for (const t of relTiers) {
-                    const mid = (t.min + t.max) / 2;
-                    const diff = Math.abs(closenessVal - mid);
-                    if (diff < minDiff) {
-                        minDiff = diff;
-                        matchedRelTier = t;
+                let closenessVal = 0.25;
+                const rawCloseness = fileCache?.frontmatter?.[propKey] ?? 
+                                     fileCache?.frontmatter?.closeness ?? 
+                                     fileCache?.frontmatter?.score ??
+                                     fileCache?.frontmatter?.affinity;
+                
+                const lowerName = name.toLowerCase();
+                const lowerRole = String(fileCache?.frontmatter?.role || '').toLowerCase();
+                const isMeNote = lowerName === 'me' || lowerRole.includes('self') || lowerRole.includes('me') || lowerName.includes('myself');
+
+                if (rawCloseness !== undefined && rawCloseness !== null && !isNaN(Number(rawCloseness))) {
+                    closenessVal = Math.max(-1, Math.min(1, Number(rawCloseness)));
+                } else if (isMeNote) {
+                    closenessVal = 1.0;
+                }
+
+                matchedRelTier = relTiers.find(t => closenessVal >= Math.min(t.min, t.max) && closenessVal <= Math.max(t.min, t.max)) || null;
+                if (!matchedRelTier) {
+                    let minDiff = Infinity;
+                    for (const t of relTiers) {
+                        const mid = (t.min + t.max) / 2;
+                        const diff = Math.abs(closenessVal - mid);
+                        if (diff < minDiff) {
+                            minDiff = diff;
+                            matchedRelTier = t;
+                        }
                     }
                 }
             }
             if (!matchedRelTier) matchedRelTier = relTiers[0];
 
-            topLevelFolder = relRoot;
+            topLevelFolder = matchedRelFolder;
             subFolder = matchedRelTier.name;
-            clusterId = relRoot;
-            subClusterId = `${relRoot}/${matchedRelTier.id}`;
+            clusterId = matchedRelFolder;
+            subClusterId = `${matchedRelFolder}/${matchedRelTier.id}`;
         } else if (normalizedScoped) {
             if (folderPath === normalizedScoped) {
                 topLevelFolder = normalizedScoped;
@@ -480,7 +517,7 @@ export function buildVaultGraph(
         }
 
         let color = getFolderColor(folderPath || topLevelFolder, captainRules, useCaptainColors);
-        if (isRel1Dir && matchedRelTier) {
+        if (matchedRelTier) {
             color = matchedRelTier.color;
         }
 
@@ -626,195 +663,279 @@ export function buildVaultGraph(
         }
     }
 
-    const relRoot = relationshipSettings?.rootFolder ? normalizePath(relationshipSettings.rootFolder) : 'Relationships';
-    const isRelScope = normalizedScoped && (normalizedScoped === relRoot || (nodes.length > 0 && nodes.every(n => n.folderPath === relRoot)));
-    const isRel1Dir = isRelScope && (relationshipSettings?.mode === '1dir' || !relationshipSettings?.mode);
-    const relTiers = (relationshipSettings?.tiers && relationshipSettings.tiers.length > 0)
-        ? relationshipSettings.tiers
-        : DEFAULT_RELATIONSHIP_TIERS;
+    function buildRelationshipClusters(
+        targetRelRoot: string,
+        parentClusterId: string | null,
+        baseDepth: number,
+        graphNodes: BubbleNode[],
+        tiers: RelationshipTierConfig[],
+        viewStruct: 'flat' | 'range' | 'concentric',
+        clusterMapRef: Map<string, BubbleCluster>
+    ): BubbleCluster[] {
+        const relClusters: BubbleCluster[] = [];
+        const relNodes = graphNodes.filter(n => n.folderPath === targetRelRoot || n.folderPath.startsWith(targetRelRoot + '/'));
+        if (relNodes.length === 0) return [];
 
-    const viewStruct = relationshipSettings?.viewStructure || 'flat';
-
-    if (isRel1Dir && normalizedScoped === relRoot) {
-        if (viewStruct === 'flat') {
-            // 1. Flat View: Single cluster, no tier sub-hulls
-            const allRelNodeIds = nodes.map(n => n.id);
-            const rootCluster: BubbleCluster = {
-                id: relRoot,
-                name: relRoot.split('/').pop() || relRoot,
-                parentClusterId: null,
-                depth: 1,
-                nodeIds: allRelNodeIds,
-                directNodeIds: allRelNodeIds,
-                centroid: { x: 0, y: 0 },
-                radius: computeClusterRadius(allRelNodeIds.length, 1),
-                color: '#4a5568',
-                hullPolygon: [],
-                smoothedHull: [],
-                boundingBox: { minX: 0, minY: 0, maxX: 0, maxY: 0 }
-            };
-            clusterMap.set(relRoot, rootCluster);
-            return {
-                nodes,
-                edges,
-                clusters: [rootCluster],
-                stats: {
-                    totalNodes: nodes.length,
-                    totalEdges: edges.length,
-                    totalClusters: 1,
-                    intraEdges: edges.filter(e => e.tier === 'tier1_intra').length,
-                    interEdges: edges.filter(e => e.tier === 'tier2_inter').length,
-                    totalVennBridges
-                }
-            };
-        }
-
-        const sortedTiers = [...relTiers].sort((a, b) => Math.max(b.min, b.max) - Math.max(a.min, a.max));
+        const sortedTiers = [...tiers].sort((a, b) => Math.max(b.min, b.max) - Math.max(a.min, a.max));
         const tierDirectNodeMap = new Map<string, string[]>();
         for (const t of sortedTiers) {
-            tierDirectNodeMap.set(`${relRoot}/${t.id}`, []);
+            tierDirectNodeMap.set(`${targetRelRoot}/${t.id}`, []);
         }
-        tierDirectNodeMap.set(relRoot, []);
+        tierDirectNodeMap.set(targetRelRoot, []);
 
-        for (const node of nodes) {
+        for (const node of relNodes) {
             if (tierDirectNodeMap.has(node.subClusterId)) {
                 tierDirectNodeMap.get(node.subClusterId)!.push(node.id);
             } else {
-                tierDirectNodeMap.get(relRoot)!.push(node.id);
+                tierDirectNodeMap.get(targetRelRoot)!.push(node.id);
             }
         }
 
-        const relClusters: BubbleCluster[] = [];
+        const allRelNodeIds = relNodes.map(n => n.id);
+        const rootDirectIds = tierDirectNodeMap.get(targetRelRoot) || [];
+        const rootColor = getFolderColor(targetRelRoot, captainRules, useCaptainColors);
 
-        // Root Cluster
-        const allRelNodeIds = nodes.map(n => n.id);
-        const rootDirectIds = tierDirectNodeMap.get(relRoot) || [];
         const rootCluster: BubbleCluster = {
-            id: relRoot,
-            name: relRoot.split('/').pop() || relRoot,
-            parentClusterId: null,
-            depth: 1,
+            id: targetRelRoot,
+            name: targetRelRoot.split('/').pop() || targetRelRoot,
+            parentClusterId,
+            depth: baseDepth,
             nodeIds: allRelNodeIds,
-            directNodeIds: rootDirectIds,
+            directNodeIds: viewStruct === 'flat' ? allRelNodeIds : rootDirectIds,
             centroid: { x: 0, y: 0 },
-            radius: computeClusterRadius(allRelNodeIds.length, 1),
-            color: '#4a5568',
+            radius: computeClusterRadius(allRelNodeIds.length, baseDepth),
+            color: rootColor,
             hullPolygon: [],
             smoothedHull: [],
             boundingBox: { minX: 0, minY: 0, maxX: 0, maxY: 0 }
         };
         relClusters.push(rootCluster);
-        clusterMap.set(relRoot, rootCluster);
+        clusterMapRef.set(targetRelRoot, rootCluster);
+
+        if (viewStruct === 'flat') {
+            return relClusters;
+        }
 
         if (viewStruct === 'range') {
-            // 2. Range View: All tiers are sibling clusters under root
             for (let i = 0; i < sortedTiers.length; i++) {
                 const tier = sortedTiers[i];
-                const clusterId = `${relRoot}/${tier.id}`;
+                const clusterId = `${targetRelRoot}/${tier.id}`;
                 const directIds = tierDirectNodeMap.get(clusterId) || [];
                 const tierCluster: BubbleCluster = {
                     id: clusterId,
                     name: tier.name,
-                    parentClusterId: relRoot,
-                    depth: 2,
+                    parentClusterId: targetRelRoot,
+                    depth: baseDepth + 1,
                     nodeIds: directIds,
                     directNodeIds: directIds,
                     centroid: { x: 0, y: 0 },
-                    radius: computeClusterRadius(Math.max(1, directIds.length), 2),
+                    radius: computeClusterRadius(Math.max(1, directIds.length), baseDepth + 1),
                     color: tier.color,
                     hullPolygon: [],
                     smoothedHull: [],
                     boundingBox: { minX: 0, minY: 0, maxX: 0, maxY: 0 }
                 };
                 relClusters.push(tierCluster);
-                clusterMap.set(clusterId, tierCluster);
+                clusterMapRef.set(clusterId, tierCluster);
             }
-        } else {
-            // 3. Concentric Matryoshka View (Russian Doll nesting)
-            const concentricTiers = sortedTiers.filter(t => Math.max(t.min, t.max) > 0.0).reverse();
-            const otherTiers = sortedTiers.filter(t => Math.max(t.min, t.max) <= 0.0);
+            return relClusters;
+        }
 
-            // Collect node IDs for other tiers (e.g. Enemy) to include in Know's hull
-            const otherDirectIds: string[] = [];
-            for (const tier of otherTiers) {
-                const cId = `${relRoot}/${tier.id}`;
-                otherDirectIds.push(...(tierDirectNodeMap.get(cId) || []));
+        // Concentric Russian Doll View (Russian Doll Matryoshka nesting):
+        // Outer boundary is targetRelRoot.
+        // targetRelRoot branches directly into:
+        //   1. Friends [0.01 - 0.40] (nests Close Friends [0.41 - 0.60] ➔ Family [0.61 - 0.80] ➔ Household [0.81 - 1.00])
+        //   2. Unsure [0.00 - 0.00] (direct child of targetRelRoot)
+        //   3. Bad [-1.00 - -0.01] (direct child of targetRelRoot)
+
+        const sortedAsc = [...tiers].sort((a, b) => Math.min(a.min, a.max) - Math.min(b.min, b.max));
+        const positiveTiers = sortedAsc.filter(t => Math.max(t.min, t.max) > 0.0);
+        const unsureTiers = sortedAsc.filter(t => t.min === 0.0 && t.max === 0.0);
+        const badTiers = sortedAsc.filter(t => Math.max(t.min, t.max) < 0.0);
+        const otherNeutralOrBad = sortedAsc.filter(t => Math.max(t.min, t.max) <= 0.0 && !unsureTiers.includes(t) && !badTiers.includes(t));
+        const sideBranches = [...unsureTiers, ...badTiers, ...otherNeutralOrBad];
+
+        const friendsTier = positiveTiers.length > 0 ? positiveTiers[0] : null;
+        const innerChainTiers = positiveTiers.length > 0 ? positiveTiers.slice(1) : [];
+
+        if (friendsTier) {
+            const friendsClusterId = `${targetRelRoot}/${friendsTier.id}`;
+            const friendsDirectIds = tierDirectNodeMap.get(friendsClusterId) || [];
+
+            const innerChainAllNodeIds: string[] = [];
+            for (const tier of innerChainTiers) {
+                const cId = `${targetRelRoot}/${tier.id}`;
+                innerChainAllNodeIds.push(...(tierDirectNodeMap.get(cId) || []));
             }
 
-            for (let i = 0; i < concentricTiers.length; i++) {
-                const tier = concentricTiers[i];
-                const clusterId = `${relRoot}/${tier.id}`;
-                const parentId = i === 0 ? relRoot : `${relRoot}/${concentricTiers[i - 1].id}`;
+            const friendsAllNodeIds = [...friendsDirectIds, ...innerChainAllNodeIds];
+
+            const friendsCluster: BubbleCluster = {
+                id: friendsClusterId,
+                name: friendsTier.name,
+                parentClusterId: targetRelRoot,
+                depth: baseDepth + 1,
+                nodeIds: friendsAllNodeIds,
+                directNodeIds: friendsDirectIds,
+                centroid: { x: 0, y: 0 },
+                radius: computeClusterRadius(Math.max(1, friendsAllNodeIds.length), baseDepth + 1),
+                color: friendsTier.color,
+                hullPolygon: [],
+                smoothedHull: [],
+                boundingBox: { minX: 0, minY: 0, maxX: 0, maxY: 0 }
+            };
+            relClusters.push(friendsCluster);
+            clusterMapRef.set(friendsClusterId, friendsCluster);
+
+            for (let i = 0; i < innerChainTiers.length; i++) {
+                const tier = innerChainTiers[i];
+                const clusterId = `${targetRelRoot}/${tier.id}`;
+                const parentId = i === 0 ? friendsClusterId : `${targetRelRoot}/${innerChainTiers[i - 1].id}`;
                 const directIds = tierDirectNodeMap.get(clusterId) || [];
 
                 const allDescendantIds: string[] = [...directIds];
-                for (let j = i + 1; j < concentricTiers.length; j++) {
-                    const subDirects = tierDirectNodeMap.get(`${relRoot}/${concentricTiers[j].id}`) || [];
+                for (let j = i + 1; j < innerChainTiers.length; j++) {
+                    const subDirects = tierDirectNodeMap.get(`${targetRelRoot}/${innerChainTiers[j].id}`) || [];
                     allDescendantIds.push(...subDirects);
                 }
 
-                // If outermost tier (Know, i === 0), include other tiers (Enemy) in its hull as Enemy sits inside Know
-                if (i === 0) {
-                    allDescendantIds.push(...otherDirectIds);
-                }
-
-                const cCluster: BubbleCluster = {
+                const chainCluster: BubbleCluster = {
                     id: clusterId,
                     name: tier.name,
                     parentClusterId: parentId,
-                    depth: 2 + i,
+                    depth: baseDepth + 2 + i,
                     nodeIds: allDescendantIds,
                     directNodeIds: directIds,
                     centroid: { x: 0, y: 0 },
-                    radius: computeClusterRadius(Math.max(1, allDescendantIds.length), 2 + i),
+                    radius: computeClusterRadius(Math.max(1, allDescendantIds.length), baseDepth + 2 + i),
                     color: tier.color,
                     hullPolygon: [],
                     smoothedHull: [],
                     boundingBox: { minX: 0, minY: 0, maxX: 0, maxY: 0 }
                 };
-                relClusters.push(cCluster);
-                clusterMap.set(clusterId, cCluster);
-            }
-
-            // Other tiers (e.g. Enemy) placed at the same level as Friends!
-            // Friends is concentricTiers[1], whose parent is concentricTiers[0] (Know) and depth is 3.
-            const enemyParentId = concentricTiers.length > 0 ? `${relRoot}/${concentricTiers[0].id}` : relRoot;
-            const enemyDepth = concentricTiers.length > 1 ? 3 : 2;
-
-            for (const tier of otherTiers) {
-                const clusterId = `${relRoot}/${tier.id}`;
-                const directIds = tierDirectNodeMap.get(clusterId) || [];
-                const oCluster: BubbleCluster = {
-                    id: clusterId,
-                    name: tier.name,
-                    parentClusterId: enemyParentId,
-                    depth: enemyDepth,
-                    nodeIds: directIds,
-                    directNodeIds: directIds,
-                    centroid: { x: 0, y: 0 },
-                    radius: computeClusterRadius(Math.max(1, directIds.length), enemyDepth),
-                    color: tier.color,
-                    hullPolygon: [],
-                    smoothedHull: [],
-                    boundingBox: { minX: 0, minY: 0, maxX: 0, maxY: 0 }
-                };
-                relClusters.push(oCluster);
-                clusterMap.set(clusterId, oCluster);
+                relClusters.push(chainCluster);
+                clusterMapRef.set(clusterId, chainCluster);
             }
         }
 
+        for (const tier of sideBranches) {
+            const clusterId = `${targetRelRoot}/${tier.id}`;
+            const directIds = tierDirectNodeMap.get(clusterId) || [];
+            const sideCluster: BubbleCluster = {
+                id: clusterId,
+                name: tier.name,
+                parentClusterId: targetRelRoot,
+                depth: baseDepth + 1,
+                nodeIds: directIds,
+                directNodeIds: directIds,
+                centroid: { x: 0, y: 0 },
+                radius: computeClusterRadius(Math.max(1, directIds.length), baseDepth + 1),
+                color: tier.color,
+                hullPolygon: [],
+                smoothedHull: [],
+                boundingBox: { minX: 0, minY: 0, maxX: 0, maxY: 0 }
+            };
+            relClusters.push(sideCluster);
+            clusterMapRef.set(clusterId, sideCluster);
+        }
+
+        return relClusters;
+    }
+
+    const relRoot = relationshipSettings?.rootFolder ? normalizePath(relationshipSettings.rootFolder) : 'Relationships';
+    const relFolders = new Set<string>();
+    relFolders.add(relRoot);
+    if (relationshipSettings?.folders && relationshipSettings.folders.length > 0) {
+        for (const f of relationshipSettings.folders) {
+            if (f.path) relFolders.add(normalizePath(f.path));
+        }
+    }
+
+    const rawTiers = (relationshipSettings?.tiers && relationshipSettings.tiers.length > 0)
+        ? relationshipSettings.tiers
+        : DEFAULT_RELATIONSHIP_TIERS;
+    const relTiers = rawTiers
+        .filter(t => t.id !== 'know')
+        .map(t => (t.id === 'friends' ? { ...t, min: 0.01, max: 0.40 } : { ...t }));
+
+    const defaultViewStruct = relationshipSettings?.viewStructure || 'concentric';
+    const allScopeState = relationshipSettings?.allScopeState ?? false;
+
+    // If scoped directly to a relationship folder:
+    if (normalizedScoped && relFolders.has(normalizedScoped)) {
+        const folderEntry = relationshipSettings?.folders?.find(f => normalizePath(f.path) === normalizedScoped);
+        const folderViewStruct = folderEntry?.viewStructure || defaultViewStruct;
+        const relClusters = buildRelationshipClusters(
+            normalizedScoped,
+            null,
+            1,
+            nodes,
+            relTiers,
+            folderViewStruct,
+            clusterMap
+        );
         return {
             nodes,
             edges,
             clusters: relClusters,
             stats: {
                 totalNodes: nodes.length,
+                totalEdges: edges.length,
                 totalClusters: relClusters.length,
+                intraEdges: edges.filter(e => e.tier === 'tier1_intra').length,
+                interEdges: edges.filter(e => e.tier === 'tier2_inter').length,
                 totalVennBridges
             },
             nodeMap,
             clusterMap
         };
+    }
+
+    // If unscoped, allScopeState enabled, AND all nodes in the graph belong to relationship folders:
+    if (allScopeState && !normalizedScoped && nodes.length > 0 && nodes.every(n => {
+        const fp = n.folderPath || '';
+        for (const rf of relFolders) {
+            if (fp === rf || fp.startsWith(rf + '/')) return true;
+        }
+        return false;
+    })) {
+        const relClusters: BubbleCluster[] = [];
+        for (const rf of relFolders) {
+            const folderEntry = relationshipSettings?.folders?.find(f => normalizePath(f.path) === rf);
+            const folderViewStruct = folderEntry?.viewStructure || defaultViewStruct;
+            const subRelClusters = buildRelationshipClusters(
+                rf,
+                null,
+                1,
+                nodes,
+                relTiers,
+                folderViewStruct,
+                clusterMap
+            );
+            relClusters.push(...subRelClusters);
+        }
+        return {
+            nodes,
+            edges,
+            clusters: relClusters,
+            stats: {
+                totalNodes: nodes.length,
+                totalEdges: edges.length,
+                totalClusters: relClusters.length,
+                intraEdges: edges.filter(e => e.tier === 'tier1_intra').length,
+                interEdges: edges.filter(e => e.tier === 'tier2_inter').length,
+                totalVennBridges
+            },
+            nodeMap,
+            clusterMap
+        };
+    }
+
+    // Ensure all relationship folders that have notes are in allFolderPaths
+    for (const rf of relFolders) {
+        if (nodes.some(n => n.folderPath === rf || n.folderPath.startsWith(rf + '/'))) {
+            allFolderPaths.add(rf);
+        }
     }
 
     // Create cluster objects sorted by depth (shallowest first)
@@ -825,6 +946,16 @@ export function buildVaultGraph(
     });
 
     for (const folderPath of sortedFolderPaths) {
+        // Skip physical subfolders inside relationship folders when allScopeState handles relationship tiers
+        let isInsideRel = false;
+        for (const rf of relFolders) {
+            if (folderPath.startsWith(rf + '/')) {
+                isInsideRel = true;
+                break;
+            }
+        }
+        if (isInsideRel && allScopeState) continue;
+
         let depth = 1;
         let parentPath: string | null = null;
         let name = '';
@@ -837,7 +968,7 @@ export function buildVaultGraph(
             } else {
                 const relParts = folderPath.slice(normalizedScoped.length + 1).split('/');
                 depth = 1 + relParts.length;
-                if (depth > maxClusterDepth) continue;
+                if (depth > maxClusterDepth && !relFolders.has(folderPath)) continue;
                 parentPath = relParts.length === 1
                     ? normalizedScoped
                     : normalizedScoped + '/' + relParts.slice(0, -1).join('/');
@@ -846,9 +977,29 @@ export function buildVaultGraph(
         } else {
             const parts = folderPath.split('/');
             depth = parts.length;
-            if (depth > maxClusterDepth) continue;
+            if (depth > maxClusterDepth && !relFolders.has(folderPath)) continue;
             parentPath = depth > 1 ? parts.slice(0, depth - 1).join('/') : null;
             name = parts[parts.length - 1];
+        }
+
+        // If folderPath is a registered relationship folder:
+        if (relFolders.has(folderPath)) {
+            if (allScopeState) {
+                const folderEntry = relationshipSettings?.folders?.find(f => normalizePath(f.path) === folderPath);
+                const folderViewStruct = folderEntry?.viewStructure || defaultViewStruct;
+                const folderRelClusters = buildRelationshipClusters(
+                    folderPath,
+                    parentPath,
+                    depth,
+                    nodes,
+                    relTiers,
+                    folderViewStruct,
+                    clusterMap
+                );
+                clusters.push(...folderRelClusters);
+                continue;
+            }
+            // If !allScopeState, treat as normal folder cluster at root!
         }
 
         const allIds = [...new Set(clusterAllNodeIds.get(folderPath) || [])];

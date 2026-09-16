@@ -22,12 +22,20 @@ export interface RelationshipTierConfig {
 
 export type RelationshipMode = '1dir' | 'subfolders';
 export type RelationshipViewStructure = 'flat' | 'range' | 'concentric';
+export type RelationshipSortOrder = 
+    | 'closeness_desc' 
+    | 'closeness_asc' 
+    | 'filename_asc' 
+    | 'filename_desc' 
+    | 'title_asc' 
+    | 'title_desc';
 
 export interface RelationshipFolderEntry {
     id: string;
     path: string;
     mode?: RelationshipMode;
     viewStructure?: RelationshipViewStructure;
+    sortOrder?: RelationshipSortOrder;
     label?: string;
     createdAt?: number;
 }
@@ -36,9 +44,9 @@ export const DEFAULT_RELATIONSHIP_TIERS: RelationshipTierConfig[] = [
     { id: 'household', name: 'Household', min: 0.81, max: 1.00, color: '#10b981', folderName: '1 - Household' },
     { id: 'family', name: 'Family', min: 0.61, max: 0.80, color: '#f59e0b', folderName: '2 - Family' },
     { id: 'close_friends', name: 'Close Friends', min: 0.41, max: 0.60, color: '#8b5cf6', folderName: '3 - Close Friends' },
-    { id: 'friends', name: 'Friends', min: 0.21, max: 0.40, color: '#06b6d4', folderName: '4 - Friends' },
-    { id: 'know', name: 'Know', min: 0.01, max: 0.20, color: '#64748b', folderName: '5 - Know' },
-    { id: 'enemy', name: 'Enemy', min: 0.00, max: 0.00, color: '#ef4444', folderName: '6 - Enemy' },
+    { id: 'friends', name: 'Friends', min: 0.01, max: 0.40, color: '#06b6d4', folderName: '4 - Friends' },
+    { id: 'unsure', name: 'Unsure', min: 0.00, max: 0.00, color: '#94a3b8', folderName: '5 - Unsure' },
+    { id: 'bad', name: 'Bad', min: -1.00, max: -0.01, color: '#ef4444', folderName: '6 - Bad' },
 ];
 
 export interface BubbleGraphSettings {
@@ -88,7 +96,13 @@ export interface BubbleGraphSettings {
     relationshipTiers?: RelationshipTierConfig[];
     explorerRelationshipVirtualFolders?: boolean;
     relationshipViewStructure?: RelationshipViewStructure;
+    relationshipSortOrder?: RelationshipSortOrder;
     relationshipFolders?: RelationshipFolderEntry[];
+    explorerVirtualFolderShowDot?: boolean;
+    explorerVirtualFolderColorText?: boolean;
+    explorerVirtualFolderShowLine?: boolean;
+    explorerVirtualFolderDragDrop?: boolean;
+    bubbleRelationshipAllScopeState?: boolean;
 }
 
 export interface PakCLITableSettings extends 
@@ -183,10 +197,16 @@ export const DEFAULT_BUBBLE_GRAPH_SETTINGS: BubbleGraphSettings = {
     relationshipPropertyKey: 'closeness',
     relationshipTiers: DEFAULT_RELATIONSHIP_TIERS,
     explorerRelationshipVirtualFolders: false,
-    relationshipViewStructure: 'flat',
+    relationshipViewStructure: 'concentric',
+    relationshipSortOrder: 'closeness_desc',
     relationshipFolders: [
-        { id: 'rel_default', path: 'Relationships', mode: '1dir', viewStructure: 'flat', label: 'Primary Relationships' }
+        { id: 'rel_default', path: 'Relationships', mode: '1dir', viewStructure: 'concentric', sortOrder: 'closeness_desc', label: 'Primary Relationships' }
     ],
+    explorerVirtualFolderShowDot: false,
+    explorerVirtualFolderColorText: false,
+    explorerVirtualFolderShowLine: true,
+    explorerVirtualFolderDragDrop: true,
+    bubbleRelationshipAllScopeState: false,
 };
 
 export const DEFAULT_TABLE_SETTINGS: PakCLITableSettings = {

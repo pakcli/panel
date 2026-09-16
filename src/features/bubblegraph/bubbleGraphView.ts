@@ -119,6 +119,10 @@ export class BubbleGraphView extends ItemView {
     private nodeImageBorder: 'noborder' | 'thin' | 'thick' = 'thick';
     private imageCoverBtnEl: HTMLElement | null = null;
 
+    // Relationship Concentric Rings All Scope State toggle
+    private relationshipAllScopeState: boolean = false;
+    private relAllScopeBtnEl: HTMLElement | null = null;
+
     public setNodeImageBorder(border: 'noborder' | 'thin' | 'thick'): void {
         this.nodeImageBorder = border;
         this.plugin.settings.bubbleNodeImageBorder = border;
@@ -175,6 +179,7 @@ export class BubbleGraphView extends ItemView {
         this.autoFitMode = this.plugin.settings.bubbleAutoFitMode || (this.plugin.settings.bubbleAlwaysFit ? 'fit' : 'off');
         this.enableNodeImageCover = this.plugin.settings.bubbleEnableNodeImageCover !== false;
         this.nodeImageBorder = this.plugin.settings.bubbleNodeImageBorder || 'thick';
+        this.relationshipAllScopeState = Boolean(this.plugin.settings.bubbleRelationshipAllScopeState);
 
         // Initialize Procedural SFX Engine
         this.sfxManager = new SfxManager(
@@ -401,6 +406,12 @@ export class BubbleGraphView extends ItemView {
             this.imageCoverBtnEl.toggleClass('active', this.enableNodeImageCover);
             this.imageCoverBtnEl.setAttribute('aria-pressed', this.enableNodeImageCover ? 'true' : 'false');
         }
+        this.relationshipAllScopeState = DEFAULT_BUBBLE_GRAPH_SETTINGS.bubbleRelationshipAllScopeState ?? false;
+        this.plugin.settings.bubbleRelationshipAllScopeState = this.relationshipAllScopeState;
+        if (this.relAllScopeBtnEl) {
+            this.relAllScopeBtnEl.toggleClass('active', this.relationshipAllScopeState);
+            this.relAllScopeBtnEl.setAttribute('aria-pressed', this.relationshipAllScopeState ? 'true' : 'false');
+        }
         if (this.sfxToggleBtnEl) {
             this.sfxToggleBtnEl.toggleClass('active', DEFAULT_BUBBLE_GRAPH_SETTINGS.bubbleEnableSfx);
             this.sfxToggleBtnEl.setAttribute('aria-pressed', DEFAULT_BUBBLE_GRAPH_SETTINGS.bubbleEnableSfx ? 'true' : 'false');
@@ -495,7 +506,7 @@ export class BubbleGraphView extends ItemView {
         const folderEntry = folders.find(f => normalizePath(f.path) === targetRelPath) || 
                             folders.find(f => normalizePath(f.path) === normalizePath(relRoot));
         
-        const effectiveViewStructure = folderEntry?.viewStructure || this.plugin.settings.relationshipViewStructure || 'flat';
+        const effectiveViewStructure = folderEntry?.viewStructure || this.plugin.settings.relationshipViewStructure || 'concentric';
         const effectiveMode = folderEntry?.mode || this.plugin.settings.relationshipMode || '1dir';
 
         const relationshipSettings = {
@@ -504,10 +515,10 @@ export class BubbleGraphView extends ItemView {
             propertyKey: this.plugin.settings.relationshipPropertyKey || 'closeness',
             tiers: this.plugin.settings.relationshipTiers,
             viewStructure: effectiveViewStructure,
+            folders: folders,
+            allScopeState: this.relationshipAllScopeState
         };
-        const effMaxDepth = (this.scopedFolder && normalizePath(this.scopedFolder) === normalizePath(relRoot))
-            ? Math.max(maxDepth, 6)
-            : maxDepth;
+        const effMaxDepth = Math.max(maxDepth, 6);
 
         this.graphData = buildVaultGraph(
             this.app, 
@@ -1056,6 +1067,38 @@ export class BubbleGraphView extends ItemView {
             menu.showAtMouseEvent(e);
         };
 
+        // 4. All Scope State Toggle (Virtual Scope Only vs All Scope State for Concentric Relationship Rings)
+        this.relAllScopeBtnEl = togglesCluster.createEl('button', {
+            cls: `pakcli-icon-btn pakcli-rel-allscope-btn ${this.relationshipAllScopeState ? 'active' : ''}`,
+            title: this.relationshipAllScopeState 
+                ? 'All Scope State: Concentric relationship rings shown across all vault scopes (Click to switch to Virtual Scope only)' 
+                : 'Virtual Scope State: Concentric relationship rings only shown inside virtual scope (Click to enable in All Scope States)'
+        });
+        this.relAllScopeBtnEl.setAttribute('aria-pressed', this.relationshipAllScopeState ? 'true' : 'false');
+        setIcon(this.relAllScopeBtnEl, 'orbit');
+        this.relAllScopeBtnEl.onclick = async () => {
+            this.relationshipAllScopeState = !this.relationshipAllScopeState;
+            if (this.relAllScopeBtnEl) {
+                this.relAllScopeBtnEl.toggleClass('active', this.relationshipAllScopeState);
+                this.relAllScopeBtnEl.setAttribute('aria-pressed', this.relationshipAllScopeState ? 'true' : 'false');
+                this.relAllScopeBtnEl.setAttribute('title', this.relationshipAllScopeState 
+                    ? 'All Scope State: Concentric relationship rings shown across all vault scopes (Click to switch to Virtual Scope only)' 
+                    : 'Virtual Scope State: Concentric relationship rings only shown inside virtual scope (Click to enable in All Scope States)');
+            }
+            this.plugin.settings.bubbleRelationshipAllScopeState = this.relationshipAllScopeState;
+            await this.plugin.saveSettings();
+
+            this.reloadGraphData();
+            this.updateScopeBar();
+            this.syncLevelControls();
+            this.updateInspectorContent();
+            this.fitToView();
+
+            new Notice(this.relationshipAllScopeState 
+                ? 'Bubble Graph: All Scope State enabled (Concentric rings active in All Notes)' 
+                : 'Bubble Graph: Virtual Scope only (Concentric rings active when entering relationship folder)');
+        };
+
         // Divider: Separator after Toggles
         textGroup.createDiv({ cls: 'pakcli-row2-divider' });
 
@@ -1582,9 +1625,20 @@ export class BubbleGraphView extends ItemView {
 
         if (!this.scopedFolder) {
             // Unscoped: Showing All Notes in Vault
-            const rootBadge = this.scopeBarEl.createDiv({ cls: 'pakcli-scope-badge root', title: 'Showing all notes in vault' });
+            const wrap = this.scopeBarEl.createDiv({ cls: 'pakcli-scope-wrap' });
+            const rootBadge = wrap.createDiv({ cls: 'pakcli-scope-badge root', title: 'Showing all notes in vault' });
             setIcon(rootBadge.createSpan({ cls: 'pakcli-scope-icon' }), 'globe');
             rootBadge.createSpan({ text: 'All Notes', cls: 'pakcli-scope-text' });
+
+            const relRoot = this.plugin.settings.familyCirclesRootFolder || 'Relationships';
+            const jumpRelBtn = wrap.createEl('button', {
+                cls: 'pakcli-scope-virtual-jump-btn',
+                title: `Switch scope to Virtual Relationship Folder (${relRoot})`
+            });
+            jumpRelBtn.style.cssText = 'display: inline-flex; align-items: center; gap: 4px; font-size: 10px; padding: 2px 8px; margin-left: 6px; border-radius: 12px; background: var(--background-secondary); border: 1px solid var(--background-modifier-border); color: var(--text-muted); cursor: pointer;';
+            setIcon(jumpRelBtn, 'disc');
+            jumpRelBtn.createSpan({ text: `${relRoot} Scope` });
+            jumpRelBtn.onclick = () => this.scopeToFolder(relRoot);
             return;
         }
 
@@ -1604,7 +1658,11 @@ export class BubbleGraphView extends ItemView {
         if (showBreadcrumbs) {
             const crumbsWrap = wrap.createDiv({ cls: 'pakcli-scope-crumbs' });
             
-            const rootCrumb = crumbsWrap.createSpan({ cls: 'pakcli-scope-crumb root', text: 'Vault' });
+            const rootCrumb = crumbsWrap.createSpan({ 
+                cls: 'pakcli-scope-crumb root', 
+                text: 'Vault',
+                title: 'Show all notes in vault'
+            });
             rootCrumb.onclick = () => this.resetScope();
 
             const parts = this.scopedFolder.split('/');
@@ -1634,10 +1692,10 @@ export class BubbleGraphView extends ItemView {
             badge.createSpan({ text: folderName, cls: 'pakcli-scope-text' });
         }
 
-        // 3. Reset Button (✕ Show All)
+        // 3. Reset Button (✕ Show All notes)
         const resetBtn = wrap.createEl('button', {
             cls: 'pakcli-scope-reset-btn',
-            title: 'Reset Scope (Show All notes)'
+            title: 'Reset Scope (Show all notes)'
         });
         setIcon(resetBtn, 'x');
         resetBtn.onclick = () => this.resetScope();

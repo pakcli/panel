@@ -264,12 +264,12 @@ export class AssignRelationshipModal extends Modal {
         let scoreSlider: any = null;
         let scoreDisplay: HTMLElement | null = null;
         const scoreSetting = new Setting(manualSection)
-            .setName('Closeness Score (0.00 - 1.00)')
+            .setName('Closeness Score (-1.00 - 1.00)')
             .setDesc('Fine-tune the closeness value to be stored in frontmatter.');
 
         scoreSetting.addSlider((slider) => {
             scoreSlider = slider;
-            slider.setLimits(0.00, 1.00, 0.01)
+            slider.setLimits(-1.00, 1.00, 0.01)
                 .setValue(this.manualScore)
                 .onChange((val) => {
                     this.manualScore = val;
@@ -364,7 +364,7 @@ export class AssignRelationshipModal extends Modal {
                         cache?.frontmatter?.affinity;
 
             if (raw !== undefined && raw !== null && !isNaN(Number(raw))) {
-                const score = Math.max(0, Math.min(1, Number(raw)));
+                const score = Math.max(-1, Math.min(1, Number(raw)));
                 let matchedTier = tiers.find(t => score >= Math.min(t.min, t.max) && score <= Math.max(t.min, t.max)) || null;
 
                 const isInside = file.path.startsWith(rootNorm + '/') || file.parent?.path === rootNorm;

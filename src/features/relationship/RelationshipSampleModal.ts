@@ -236,38 +236,39 @@ Teman kantor, teman nongkrong, teman komunitas.
 
 ## Connections
 - [[Me]]
-- [[Sample - Know]]
+- [[Sample - Best Friend]]
 `);
 
-                // 6. Know (Acquaintance)
-                await writeNote(`${getDir(4)}/Sample - Know.md`, `---
+                // 6. Unsure (0.00)
+                await writeNote(`${getDir(4)}/Sample - Unsure.md`, `---
 img: ""
-${propKey}: 0.15
-role: Acquaintance / Contact
+${propKey}: 0.00
+role: Unsure / Observing
 tags:
-  - know
-  - acquaintance
+  - unsure
+  - neutral
 ---
-# Sample - Know
+# Sample - Unsure
 
-Kenalan biasa, kontak relasi kerja ringan, network lepas.
+Kontak atau relasi baru yang belum ditentukan posisinya (skor 0.00).
 
 ## Connections
 - [[Me]]
 `);
 
-                // 7. Rival (Enemy / Outermost)
-                await writeNote(`${getDir(5)}/Sample - Rival.md`, `---
+                // 7. Devil (Bad / -1.00)
+                await writeNote(`${getDir(5)}/Sample - Devil.md`, `---
 img: ""
-${propKey}: 0.00
-role: Rival / Conflict
+${propKey}: -1.00
+role: Devil / Nemesis
 tags:
-  - conflict
-  - outermost
+  - bad
+  - devil
+  - nemesis
 ---
-# Sample - Rival
+# Sample - Devil
 
-Relasi dingin atau lawan kompetisi di luar lingkaran intim.
+Relasi toksik, lawan berbahaya, atau musuh (skor -1.00 / bad).
 
 ## Connections
 - [[Me]]
