@@ -1,10 +1,14 @@
-import { Plugin, Notice, Setting, PluginSettingTab, ButtonComponent, TFile, TFolder, TextComponent, setIcon } from 'obsidian';
-import { PakCLITableSettings, DEFAULT_TABLE_SETTINGS, DEFAULT_BUBBLE_GRAPH_SETTINGS } from './settings';
+import { Plugin, Notice, Setting, PluginSettingTab, ButtonComponent, TFile, TFolder, TextComponent, setIcon, normalizePath } from 'obsidian';
+import { PakCLITableSettings, DEFAULT_TABLE_SETTINGS, DEFAULT_BUBBLE_GRAPH_SETTINGS, RelationshipTierConfig, DEFAULT_RELATIONSHIP_TIERS, RelationshipFolderEntry, RelationshipViewStructure } from './settings';
 import { handleArtifactRename, moveArtifactsBetweenFolders } from './features/sqlseal/utils/views';
 import { SplitViewManager } from './features/explorer/splitViewManager';
 import { ExplorerSectionId, EXPLORER_SECTIONS_INFO, DEFAULT_EXPLORER_SECTION_ORDER } from './features/explorer/types';
 import { ImageTriageModal } from './features/carousel/ImageTriageModal';
 import { IMAGE_CAROUSEL_VIEW_TYPE, ImageCarouselView } from './features/carousel/ImageCarouselView';
+import { RelationshipExplorerManager } from './features/relationship/relationshipExplorerManager';
+import { RelationshipReorganizeModal } from './features/relationship/RelationshipReorganizeModal';
+import { RelationshipSampleModal } from './features/relationship/RelationshipSampleModal';
+import { AssignRelationshipModal } from './features/relationship/AssignRelationshipModal';
 
 // Hub Imports
 import { MasterDetailSettingsTab } from './features/hub/settingsHub';
@@ -51,6 +55,7 @@ export default class PakCLITablePlugin extends Plugin {
 	settingsTabInstance: MasterDetailSettingsTab | null = null;
 	settingsPanelStates: Map<string, boolean> = new Map();
 	splitViewManager!: SplitViewManager;
+	relationshipExplorerManager!: RelationshipExplorerManager;
 	vaultRoot: string = '';
 	bubbleRibbonEl: HTMLElement | null = null;
 
@@ -384,11 +389,32 @@ export default class PakCLITablePlugin extends Plugin {
 			}
 		});
 
+		this.addCommand({
+			id: 'reorganize-relationship-files-disk',
+			name: 'Reorganize Relationship Notes on Disk (Physical Switcher)',
+			callback: () => {
+				const target = this.settings.relationshipMode === 'subfolders' ? '1dir' : 'subfolders';
+				new RelationshipReorganizeModal(this.app, this, target).open();
+			}
+		});
+
+		this.addCommand({
+			id: 'assign-relationship-notes',
+			name: 'Assign Relationship (Auto-Detect Closeness Score)',
+			callback: () => {
+				new AssignRelationshipModal(this.app, this).open();
+			}
+		});
+
 		this.updateBubbleRibbon();
 
 		// Initialize Explorer Additions & Split View Manager
 		this.splitViewManager = new SplitViewManager(this);
 		this.splitViewManager.init();
+
+		// Initialize Relationship Virtual Explorer Manager
+		this.relationshipExplorerManager = new RelationshipExplorerManager(this);
+		this.relationshipExplorerManager.init();
 
 		// Replace Vanilla GraphView listener if enabled
 		this.registerEvent(
@@ -614,6 +640,9 @@ export default class PakCLITablePlugin extends Plugin {
 		}
 		if (this.splitViewManager) {
 			this.splitViewManager.destroy();
+		}
+		if (this.relationshipExplorerManager) {
+			this.relationshipExplorerManager.destroy();
 		}
 		eventBus.emit('table:unloaded', { version: this.manifest.version });
 	}
@@ -1087,6 +1116,43 @@ export default class PakCLITablePlugin extends Plugin {
 							});
 					});
 
+				new Setting(containerEl)
+					.setName('Enable Node Image Cover')
+					.setDesc('Override the center symbol of notes with cover images defined in frontmatter (Priority: img > image > img-preview > icon > image-preview). Falls back to the symbol glyph if not found or invalid.')
+					.addToggle((t) => {
+						t.setValue(this.settings.bubbleEnableNodeImageCover !== false)
+							.onChange(async (v) => {
+								this.settings.bubbleEnableNodeImageCover = v;
+								await this.saveSettings();
+								const leaves = this.app.workspace.getLeavesOfType(BUBBLE_GRAPH_VIEW_TYPE);
+								leaves.forEach((leaf) => {
+									if (leaf.view instanceof BubbleGraphView) {
+										leaf.view.reloadGraphData();
+									}
+								});
+							});
+					});
+
+				new Setting(containerEl)
+					.setName('Node Image Border Style')
+					.setDesc('Border thickness for notes with cover images: no border (clean circle), thin border, or thick border (bold - default).')
+					.addDropdown((d) => {
+						d.addOption('noborder', 'No border (Clean circle)')
+							.addOption('thin', 'Border thin (1px subtle rim)')
+							.addOption('thick', 'Border tebel (Bold 2.4px - Default)')
+							.setValue(this.settings.bubbleNodeImageBorder || 'thick')
+							.onChange(async (v: string) => {
+								this.settings.bubbleNodeImageBorder = v as any;
+								await this.saveSettings();
+								const leaves = this.app.workspace.getLeavesOfType(BUBBLE_GRAPH_VIEW_TYPE);
+								leaves.forEach((leaf) => {
+									if (leaf.view instanceof BubbleGraphView) {
+										leaf.view.setNodeImageBorder(v as any);
+									}
+								});
+							});
+					});
+
 				// Sound Effects (SFX) Section
 				new Setting(containerEl)
 					.setName('Procedural Sound Effects (SFX)')
@@ -1145,6 +1211,872 @@ export default class PakCLITablePlugin extends Plugin {
 										leaf.view.setSfxThreshold(Number(v.toFixed(1)));
 									}
 								});
+							});
+					});
+			}
+		});
+
+		// 0.5. Relationship Handler (table-relationship)
+		settingsTab.registerLocalSection({
+			id: 'table-relationship',
+			category: 'table',
+			title: 'Relationship',
+			icon: 'users',
+			isInstalled: true,
+			render: (containerEl) => {
+				new Setting(containerEl)
+					.setName('Relationship (Concentric Radar & Closeness Tiers)')
+					.setDesc('Map personal relationships, family, and friend circles into interactive nested concentric bubbles with customizable closeness tiers, multi-handle visual slider, and batch mode switcher.')
+					.setHeading();
+
+				// Ensure settings defaults
+				if (!this.settings.familyCirclesRootFolder) {
+					this.settings.familyCirclesRootFolder = 'Relationships';
+				}
+				if (!this.settings.relationshipMode) {
+					this.settings.relationshipMode = '1dir';
+				}
+				if (!this.settings.relationshipPropertyKey) {
+					this.settings.relationshipPropertyKey = 'closeness';
+				}
+				if (!this.settings.relationshipTiers || this.settings.relationshipTiers.length === 0) {
+					this.settings.relationshipTiers = JSON.parse(JSON.stringify(DEFAULT_RELATIONSHIP_TIERS));
+				}
+
+				// 4 Possibility Matrix Callout Box
+				const matrixBox = containerEl.createDiv({ cls: 'pakcli-matrix-callout' });
+				matrixBox.style.cssText = 'background: var(--background-secondary); border: 1px solid var(--background-modifier-border); border-radius: 8px; padding: 12px 16px; margin: 12px 0 16px 0; font-size: 12px;';
+				matrixBox.innerHTML = `
+					<div style="font-weight: 600; margin-bottom: 6px; color: var(--text-normal); display: flex; align-items: center; gap: 6px;">
+						<span>💡 4 Relationship Organization Modes (2 Independent Toggles):</span>
+					</div>
+					<div style="color: var(--text-muted); line-height: 1.5;">
+						<b>1. Raw 1 Folder (Default)</b>: Flat notes on disk, normal flat folder in File Explorer.<br>
+						<b>2. Raw 1 Folder + Virtual Folders</b>: Flat notes on disk, dynamically categorized into <span class="pakcli-virtual-badge">🔮 Virtual</span> folders in File Explorer.<br>
+						<b>3. Physical Subfolders</b>: Actual folders on disk (<code>1 - Household/</code>, <code>2 - Family/</code>), native File Explorer display.<br>
+						<b>4. Physical Subfolders + Virtual Folders</b>: Notes organized on disk and also presented via dynamic virtual closeness folders.
+					</div>
+				`;
+
+				// Toggle 1: Explorer Relationship Virtual Folders
+				new Setting(containerEl)
+					.setName('Explorer Relationship Virtual Folders')
+					.setDesc('Group notes inside the relationship folder into virtual closeness folders in Obsidian\'s File Explorer (with [🔮 Virtual] badge). Non-destructive, does not modify actual files on disk. (Default: Disabled)')
+					.addToggle((toggle) => {
+						toggle.setValue(this.settings.explorerRelationshipVirtualFolders === true)
+							.onChange(async (val) => {
+								this.settings.explorerRelationshipVirtualFolders = val;
+								await this.saveSettings();
+								if (this.relationshipExplorerManager) {
+									this.relationshipExplorerManager.refreshVirtualFolders();
+								}
+								new Notice(val ? '🔮 Explorer virtual folders enabled!' : 'Explorer virtual folders disabled.');
+							});
+					});
+
+				// Toggle 2: Physical Subfolders Mode (Raw Files on Disk) with Confirmation Brief Modal
+				let subfoldersToggleRef: any = null;
+				new Setting(containerEl)
+					.setName('Physical Subfolders Mode (Raw Files on Disk)')
+					.setDesc('Reorganize actual note files on disk into physical tier subdirectories (e.g. 1 - Household, 2 - Family). Opens confirmation modal with brief before moving any files. (Default: Disabled / 1 Directory)')
+					.addToggle((toggle) => {
+						subfoldersToggleRef = toggle;
+						toggle.setValue(this.settings.relationshipMode === 'subfolders')
+							.onChange(async (val) => {
+								const targetMode = val ? 'subfolders' : '1dir';
+								const modal = new RelationshipReorganizeModal(
+									this.app,
+									this,
+									targetMode,
+									async () => {
+										toggle.setValue(this.settings.relationshipMode === 'subfolders');
+										renderFullSection();
+										if (this.relationshipExplorerManager) {
+											this.relationshipExplorerManager.refreshVirtualFolders();
+										}
+									},
+									() => {
+										// On cancel, revert toggle back to previous state
+										toggle.setValue(this.settings.relationshipMode === 'subfolders');
+									}
+								);
+								modal.open();
+							});
+					});
+
+				// Manual Switcher Button
+				new Setting(containerEl)
+					.setName('Physical Storage Switcher')
+					.setDesc('Scan and reorganize relationship files on disk into their matching tier subdirectories (or consolidate to 1 directory). Shows preview brief before moving files.')
+					.addButton((btn) => {
+						btn.setButtonText('📁 Reorganize Files on Disk (Physical Switcher)...')
+							.setCta()
+							.onClick(() => {
+								const targetMode = this.settings.relationshipMode === 'subfolders' ? '1dir' : 'subfolders';
+								const modal = new RelationshipReorganizeModal(
+									this.app,
+									this,
+									targetMode,
+									async () => {
+										if (subfoldersToggleRef) {
+											subfoldersToggleRef.setValue(this.settings.relationshipMode === 'subfolders');
+										}
+										renderFullSection();
+										if (this.relationshipExplorerManager) {
+											this.relationshipExplorerManager.refreshVirtualFolders();
+										}
+									},
+									() => {
+										if (subfoldersToggleRef) {
+											subfoldersToggleRef.setValue(this.settings.relationshipMode === 'subfolders');
+										}
+									}
+								);
+								modal.open();
+							});
+					});
+
+				let rootFolderVal = (this.settings.familyCirclesRootFolder || 'Relationships').trim() || 'Relationships';
+
+				new Setting(containerEl)
+					.setName('Root Folder Name')
+					.setDesc('Base folder name in your vault where relationship notes are stored (e.g. Relationships or People).')
+					.addText((text) => {
+						text.setPlaceholder('Relationships')
+							.setValue(rootFolderVal)
+							.onChange(async (val) => {
+								rootFolderVal = val.trim() || 'Relationships';
+								this.settings.familyCirclesRootFolder = rootFolderVal;
+								await this.saveSettings();
+							});
+					});
+
+				new Setting(containerEl)
+					.setName('Frontmatter Property Key')
+					.setDesc('Property name in note frontmatter used for the closeness score (0.00 to 1.00). Default is "closeness".')
+					.addText((text) => {
+						text.setPlaceholder('closeness')
+							.setValue(this.settings.relationshipPropertyKey || 'closeness')
+							.onChange(async (val) => {
+								this.settings.relationshipPropertyKey = val.trim() || 'closeness';
+								await this.saveSettings();
+							});
+					});
+
+				let populateDropdowns: (() => void) | null = null;
+				const tiersSectionWrap = containerEl.createDiv({ cls: 'pakcli-tiers-section-wrap' });
+
+				const renderFullSection = () => {
+					tiersSectionWrap.empty();
+
+					const currentTiers: RelationshipTierConfig[] = this.settings.relationshipTiers || DEFAULT_RELATIONSHIP_TIERS;
+
+					// Validation helper: check for overlaps
+					const validateOverlap = (tiers: RelationshipTierConfig[]): { valid: boolean; error?: string } => {
+						for (const t of tiers) {
+							if (t.min < 0 || t.max > 1 || t.min > t.max) {
+								return { valid: false, error: `Tier "${t.name}" has invalid range: min (${t.min}) must be between 0 and 1, and <= max (${t.max}).` };
+							}
+						}
+						// Check intersections between any two tiers
+						for (let i = 0; i < tiers.length; i++) {
+							for (let j = i + 1; j < tiers.length; j++) {
+								const t1 = tiers[i];
+								const t2 = tiers[j];
+								// Allow touching only if exact boundary or single point
+								if (Math.max(t1.min, t2.min) < Math.min(t1.max, t2.max)) {
+									return { valid: false, error: `Overlap detected between "${t1.name}" [${t1.min.toFixed(2)} - ${t1.max.toFixed(2)}] and "${t2.name}" [${t2.min.toFixed(2)} - ${t2.max.toFixed(2)}]! Rules cannot overlap.` };
+								}
+							}
+						}
+						return { valid: true };
+					};
+
+					const validation = validateOverlap(currentTiers);
+
+					// Warning banner if overlapping
+					if (!validation.valid && validation.error) {
+						const warnBox = tiersSectionWrap.createDiv({ cls: 'pakcli-tiers-warning' });
+						warnBox.style.cssText = 'background: rgba(239, 68, 68, 0.15); border: 1px solid #ef4444; color: #ef4444; padding: 10px 14px; border-radius: 6px; margin: 12px 0; font-weight: 500; font-size: 13px;';
+						warnBox.setText(`⚠️ ${validation.error}`);
+					}
+
+					// Multi-Handle Visual Range Track
+					const sliderWrap = tiersSectionWrap.createDiv({ cls: 'pakcli-multi-range-slider-wrap' });
+					sliderWrap.style.cssText = 'background: var(--background-secondary); border: 1px solid var(--background-modifier-border); border-radius: 8px; padding: 16px; margin: 16px 0;';
+
+					const sliderTitle = sliderWrap.createEl('h4', { text: 'Visual Closeness Multi-Range Slider (0.00 ➔ 1.00):' });
+					sliderTitle.style.cssText = 'margin: 0 0 12px 0; font-size: 13px; color: var(--text-normal);';
+
+					const trackContainer = sliderWrap.createDiv({ cls: 'pakcli-range-track' });
+					trackContainer.style.cssText = 'position: relative; width: 100%; height: 32px; background: var(--background-primary); border: 1px solid var(--background-modifier-border); border-radius: 6px; overflow: hidden; display: flex; align-items: stretch;';
+
+					// Sort tiers ascending for the slider display
+					const sortedForSlider = [...currentTiers].sort((a, b) => a.min - b.min);
+
+					let lastEnd = 0;
+					for (const tier of sortedForSlider) {
+						// Gap before this tier if any
+						if (tier.min > lastEnd) {
+							const gapPct = (tier.min - lastEnd) * 100;
+							const gapEl = trackContainer.createDiv();
+							gapEl.style.cssText = `width: ${gapPct}%; background: rgba(128, 128, 128, 0.15); border-right: 1px dashed var(--background-modifier-border);`;
+							gapEl.title = `Gap: ${lastEnd.toFixed(2)} - ${tier.min.toFixed(2)}`;
+						}
+
+						const widthPct = Math.max(1, (tier.max - tier.min) * 100);
+						const segEl = trackContainer.createDiv();
+						segEl.style.cssText = `width: ${widthPct}%; background: ${tier.color}; opacity: 0.88; display: flex; align-items: center; justify-content: center; color: #ffffff; font-size: 11px; font-weight: 600; text-shadow: 0 1px 2px rgba(0,0,0,0.6); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 0 4px; cursor: default; transition: opacity 0.15s;`;
+						segEl.title = `${tier.name}: ${tier.min.toFixed(2)} - ${tier.max.toFixed(2)}`;
+						segEl.setText(widthPct > 8 ? `${tier.name} (${tier.min.toFixed(2)}-${tier.max.toFixed(2)})` : tier.name);
+
+						lastEnd = Math.max(lastEnd, tier.max);
+					}
+
+					// Bottom scale ticks
+					const scaleLabels = sliderWrap.createDiv();
+					scaleLabels.style.cssText = 'display: flex; justify-content: space-between; margin-top: 6px; font-size: 11px; color: var(--text-muted); font-family: var(--font-monospace);';
+					scaleLabels.innerHTML = '<span>0.00 (Outermost)</span><span>0.20</span><span>0.40</span><span>0.60</span><span>0.80</span><span>1.00 (Core / Me)</span>';
+
+					// Dynamic Tiers Table
+					const tableWrap = tiersSectionWrap.createDiv();
+					tableWrap.style.cssText = 'margin: 16px 0;';
+
+					const tiersHeaderRow = tableWrap.createDiv();
+					tiersHeaderRow.style.cssText = 'display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;';
+					
+					const listTitle = tiersHeaderRow.createEl('h4', { text: 'Customizable Tier Ranges & Rules:' });
+					listTitle.style.cssText = 'margin: 0; font-size: 14px;';
+
+					const addTierBtn = tiersHeaderRow.createEl('button', { text: '+ Add Tier', cls: 'mod-cta' });
+					addTierBtn.style.cssText = 'font-size: 12px; padding: 4px 10px;';
+					addTierBtn.onclick = async () => {
+						const nextMin = currentTiers.length > 0 ? Math.min(1.0, Math.max(...currentTiers.map(t => t.max)) + 0.01) : 0.0;
+						const nextMax = Math.min(1.0, nextMin + 0.1);
+						currentTiers.push({
+							id: `tier_${Date.now()}`,
+							name: `Tier ${currentTiers.length + 1}`,
+							min: parseFloat(nextMin.toFixed(2)),
+							max: parseFloat(nextMax.toFixed(2)),
+							color: '#3b82f6',
+							folderName: `${currentTiers.length + 1} - Custom`
+						});
+						this.settings.relationshipTiers = currentTiers;
+						await this.saveSettings();
+						renderFullSection();
+					};
+
+					// Render each tier row
+					currentTiers.forEach((tier, index) => {
+						const row = tableWrap.createDiv();
+						row.style.cssText = 'display: flex; align-items: center; gap: 8px; margin-bottom: 8px; padding: 8px; background: var(--background-secondary); border-radius: 6px; border: 1px solid var(--background-modifier-border); flex-wrap: wrap;';
+
+						// Color picker
+						const colorInput = row.createEl('input', { type: 'color' });
+						colorInput.value = tier.color || '#10b981';
+						colorInput.style.cssText = 'width: 28px; height: 28px; border: none; border-radius: 4px; cursor: pointer; padding: 0; background: none;';
+						colorInput.onchange = async () => {
+							tier.color = colorInput.value;
+							this.settings.relationshipTiers = currentTiers;
+							await this.saveSettings();
+							renderFullSection();
+						};
+
+						// Tier Name
+						const nameLabel = row.createSpan({ text: 'Name:' });
+						nameLabel.style.cssText = 'font-size: 12px; color: var(--text-muted);';
+						const nameInput = row.createEl('input', { type: 'text', value: tier.name });
+						nameInput.style.cssText = 'width: 120px; font-size: 12px; padding: 4px;';
+						nameInput.onchange = async () => {
+							tier.name = nameInput.value.trim() || tier.name;
+							this.settings.relationshipTiers = currentTiers;
+							await this.saveSettings();
+						};
+
+						// Range Min
+						const minLabel = row.createSpan({ text: 'Min:' });
+						minLabel.style.cssText = 'font-size: 12px; color: var(--text-muted);';
+						const minInput = row.createEl('input', { type: 'number', value: String(tier.min) });
+						minInput.step = '0.01';
+						minInput.min = '0.00';
+						minInput.max = '1.00';
+						minInput.style.cssText = 'width: 65px; font-size: 12px; padding: 4px; font-family: var(--font-monospace);';
+						minInput.onchange = async () => {
+							tier.min = parseFloat(parseFloat(minInput.value).toFixed(2)) || 0;
+							this.settings.relationshipTiers = currentTiers;
+							await this.saveSettings();
+							renderFullSection();
+						};
+
+						// Range Max
+						const maxLabel = row.createSpan({ text: 'Max:' });
+						maxLabel.style.cssText = 'font-size: 12px; color: var(--text-muted);';
+						const maxInput = row.createEl('input', { type: 'number', value: String(tier.max) });
+						maxInput.step = '0.01';
+						maxInput.min = '0.00';
+						maxInput.max = '1.00';
+						maxInput.style.cssText = 'width: 65px; font-size: 12px; padding: 4px; font-family: var(--font-monospace);';
+						maxInput.onchange = async () => {
+							tier.max = parseFloat(parseFloat(maxInput.value).toFixed(2)) || 0;
+							this.settings.relationshipTiers = currentTiers;
+							await this.saveSettings();
+							renderFullSection();
+						};
+
+						// Subfolder Name (for subfolder mode)
+						const folderLabel = row.createSpan({ text: 'Folder:' });
+						folderLabel.style.cssText = 'font-size: 12px; color: var(--text-muted);';
+						const folderInput = row.createEl('input', { type: 'text', value: tier.folderName });
+						folderInput.style.cssText = 'width: 130px; font-size: 12px; padding: 4px;';
+						folderInput.onchange = async () => {
+							tier.folderName = folderInput.value.trim() || tier.folderName;
+							this.settings.relationshipTiers = currentTiers;
+							await this.saveSettings();
+						};
+
+						// Delete Button
+						if (currentTiers.length > 2) {
+							const delBtn = row.createEl('button', { text: '✕' });
+							delBtn.style.cssText = 'color: #ef4444; padding: 2px 8px; font-size: 12px; margin-left: auto;';
+							delBtn.title = 'Remove this tier';
+							delBtn.onclick = async () => {
+								currentTiers.splice(index, 1);
+								this.settings.relationshipTiers = currentTiers;
+								await this.saveSettings();
+								renderFullSection();
+							};
+						}
+					});
+
+					if (populateDropdowns) {
+						populateDropdowns();
+					}
+				};
+
+				renderFullSection();
+
+				// 2. CLOSENESS LEVEL SWITCHER (2 DROPDOWNS + SWITCH BUTTON)
+				const switcherBox = containerEl.createDiv({ cls: 'pakcli-tier-switcher-box' });
+				switcherBox.style.cssText = 'background: var(--background-secondary); border: 1px solid var(--background-modifier-border); border-radius: 8px; padding: 16px; margin: 20px 0;';
+
+				const switcherTitle = switcherBox.createEl('h4', { text: '🔁 Closeness Level Switcher (Swap Tier Ranges):' });
+				switcherTitle.style.cssText = 'margin: 0 0 6px 0; font-size: 14px;';
+
+				const switcherDesc = switcherBox.createEl('p', { text: 'Select two closeness levels to switch or swap their ranges (e.g. switch Enemy with Know, or swap Know range with Close Friends).' });
+				switcherDesc.style.cssText = 'margin: 0 0 14px 0; font-size: 12px; color: var(--text-muted);';
+
+				const dropdownsRow = switcherBox.createDiv();
+				dropdownsRow.style.cssText = 'display: flex; align-items: center; gap: 12px; margin-bottom: 14px; flex-wrap: wrap;';
+
+				const fromLabel = dropdownsRow.createSpan({ text: 'Level 1:' });
+				fromLabel.style.cssText = 'font-size: 13px; font-weight: 500;';
+				const sourceSelect = dropdownsRow.createEl('select');
+				sourceSelect.style.cssText = 'font-size: 12px; padding: 5px 10px; border-radius: 4px;';
+
+				const arrowSpan = dropdownsRow.createSpan({ text: '⇄' });
+				arrowSpan.style.cssText = 'font-size: 16px; color: var(--text-accent); font-weight: bold; padding: 0 4px;';
+
+				const toLabel = dropdownsRow.createSpan({ text: 'Level 2:' });
+				toLabel.style.cssText = 'font-size: 13px; font-weight: 500;';
+				const targetSelect = dropdownsRow.createEl('select');
+				targetSelect.style.cssText = 'font-size: 12px; padding: 5px 10px; border-radius: 4px;';
+
+				populateDropdowns = () => {
+					const prevA = sourceSelect.value;
+					const prevB = targetSelect.value;
+					sourceSelect.empty();
+					targetSelect.empty();
+					const tiers: RelationshipTierConfig[] = this.settings.relationshipTiers || DEFAULT_RELATIONSHIP_TIERS;
+					tiers.forEach((t) => {
+						sourceSelect.createEl('option', { 
+							text: `${t.name} (${t.min.toFixed(2)} - ${t.max.toFixed(2)})`, 
+							value: t.id 
+						});
+						targetSelect.createEl('option', { 
+							text: `${t.name} (${t.min.toFixed(2)} - ${t.max.toFixed(2)})`, 
+							value: t.id 
+						});
+					});
+					if (prevA && tiers.some(t => t.id === prevA)) {
+						sourceSelect.value = prevA;
+					} else if (tiers.length > 0) {
+						sourceSelect.value = tiers[tiers.length - 1].id;
+					}
+					if (prevB && tiers.some(t => t.id === prevB)) {
+						targetSelect.value = prevB;
+					} else if (tiers.length > 1) {
+						targetSelect.value = tiers[tiers.length - 2].id;
+					}
+				};
+
+				populateDropdowns();
+
+				const switchBtn = switcherBox.createEl('button', { text: '🔁 Switch Closeness Levels', cls: 'mod-cta' });
+				switchBtn.style.cssText = 'font-size: 13px; font-weight: 600; padding: 6px 14px;';
+				switchBtn.onclick = async () => {
+					const idA = sourceSelect.value;
+					const idB = targetSelect.value;
+					if (idA === idB) {
+						new Notice('Please select two different closeness levels to switch.');
+						return;
+					}
+
+					const tiers: RelationshipTierConfig[] = this.settings.relationshipTiers || DEFAULT_RELATIONSHIP_TIERS;
+					const tierA = tiers.find(t => t.id === idA);
+					const tierB = tiers.find(t => t.id === idB);
+
+					if (!tierA || !tierB) {
+						new Notice('Could not find selected tiers.');
+						return;
+					}
+
+					// Swap their min and max ranges!
+					const tempMin = tierA.min;
+					const tempMax = tierA.max;
+					tierA.min = tierB.min;
+					tierA.max = tierB.max;
+					tierB.min = tempMin;
+					tierB.max = tempMax;
+
+					this.settings.relationshipTiers = tiers;
+					await this.saveSettings();
+
+					// Re-render UI and multi-handle slider
+					renderFullSection();
+					if (populateDropdowns) {
+						populateDropdowns();
+						sourceSelect.value = idA;
+						targetSelect.value = idB;
+					}
+
+					// Refresh open bubble graph
+					const leaves = this.app.workspace.getLeavesOfType(BUBBLE_GRAPH_VIEW_TYPE);
+					leaves.forEach((leaf) => {
+						if (leaf.view instanceof BubbleGraphView) {
+							leaf.view.reloadGraphData();
+						}
+					});
+
+					new Notice(`🎉 Switched closeness ranges between "${tierA.name}" and "${tierB.name}"!`);
+				};
+
+				// 3. MULTI-RELATIONSHIP FOLDERS & RECORDS MANAGEMENT TABLE VIEW
+				const tableManagementBox = containerEl.createDiv({ cls: 'pakcli-folders-table-box' });
+				tableManagementBox.style.cssText = 'background: var(--background-secondary); border: 1px solid var(--background-modifier-border); border-radius: 8px; padding: 16px; margin: 24px 0 16px 0;';
+
+				const renderFoldersAndRecordsTable = () => {
+					tableManagementBox.empty();
+
+					let folders: RelationshipFolderEntry[] = this.settings.relationshipFolders || [];
+					const currentActivePath = normalizePath(this.settings.familyCirclesRootFolder || 'Relationships');
+
+					// Ensure active folder is registered in folders list
+					if (!folders.some(f => normalizePath(f.path) === currentActivePath)) {
+						folders.push({
+							id: `rel_${Date.now()}`,
+							path: currentActivePath,
+							mode: this.settings.relationshipMode || '1dir',
+							viewStructure: this.settings.relationshipViewStructure || 'flat',
+							label: currentActivePath.split('/').pop() || 'Relationships',
+							createdAt: Date.now()
+						});
+						this.settings.relationshipFolders = folders;
+						this.saveSettings();
+					}
+
+					// Header with title and Action Buttons
+					const headerRow = tableManagementBox.createDiv();
+					headerRow.style.cssText = 'display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-wrap: wrap; gap: 8px;';
+
+					const titleEl = headerRow.createEl('h4', { text: '📁 Managed Relationship Folders' });
+					titleEl.style.cssText = 'margin: 0; font-size: 14px;';
+
+					const btnGroup = headerRow.createDiv();
+					btnGroup.style.cssText = 'display: flex; gap: 8px; align-items: center;';
+
+					// "+ Add Folder" button
+					const addFolderBtn = btnGroup.createEl('button', { text: '+ Add Folder' });
+					addFolderBtn.style.cssText = 'font-size: 12px; padding: 4px 10px;';
+					addFolderBtn.onclick = () => {
+						const inputPath = prompt('Enter vault folder path for relationships (e.g. Social Circles, Contacts):', 'Relationships');
+						if (inputPath && inputPath.trim()) {
+							const cleanPath = normalizePath(inputPath.trim());
+							if (!folders.some(f => normalizePath(f.path) === cleanPath)) {
+								folders.push({
+									id: `rel_${Date.now()}`,
+									path: cleanPath,
+									mode: '1dir',
+									viewStructure: 'flat',
+									label: cleanPath.split('/').pop() || cleanPath,
+									createdAt: Date.now()
+								});
+								this.settings.relationshipFolders = folders;
+								this.saveSettings();
+								renderFoldersAndRecordsTable();
+								new Notice(`Registered relationship folder "${cleanPath}"!`);
+							} else {
+								new Notice('Folder already registered.');
+							}
+						}
+					};
+
+					// "✨ Create Sample Preset..." button (opens RelationshipSampleModal!)
+					const createSampleBtn = btnGroup.createEl('button', { text: '✨ Create Sample...' });
+					createSampleBtn.style.cssText = 'font-size: 12px; font-weight: 600; padding: 4px 12px;';
+					createSampleBtn.onclick = () => {
+						new RelationshipSampleModal(
+							this.app,
+							this,
+							this.settings.familyCirclesRootFolder || 'Relationships',
+							() => {
+								renderFullSection();
+								renderFoldersAndRecordsTable();
+								if (this.relationshipExplorerManager) {
+									this.relationshipExplorerManager.refreshVirtualFolders();
+								}
+							}
+						).open();
+					};
+
+					// "👤 Assign Relationship" button (Auto-detects closeness notes for flat mode)
+					const assignRelBtn = btnGroup.createEl('button', { text: '👤 Assign Relationship', cls: 'mod-cta' });
+					assignRelBtn.style.cssText = 'font-size: 12px; font-weight: 600; padding: 4px 12px;';
+					assignRelBtn.title = 'Auto-detect notes with closeness score across vault and assign them to your flat relationship folder';
+					assignRelBtn.onclick = () => {
+						new AssignRelationshipModal(
+							this.app,
+							this,
+							this.settings.familyCirclesRootFolder || 'Relationships',
+							() => {
+								renderFoldersAndRecordsTable();
+								if (this.relationshipExplorerManager) {
+									this.relationshipExplorerManager.refreshVirtualFolders();
+								}
+							}
+						).open();
+					};
+
+					// Explanatory note
+					const descEl = tableManagementBox.createEl('p', {
+						text: 'Manage multiple relationship folders. Use "Delete Record Only" to untrack a folder without deleting any files from disk, or "Delete File & Record" to permanently remove it.'
+					});
+					descEl.style.cssText = 'margin: 0 0 14px 0; font-size: 12px; color: var(--text-muted);';
+
+					// Table Container
+					const tableEl = tableManagementBox.createEl('table');
+					tableEl.style.cssText = 'width: 100%; border-collapse: collapse; font-size: 12px; margin-bottom: 16px;';
+
+					const thead = tableEl.createEl('thead');
+					const theadRow = thead.createEl('tr');
+					theadRow.style.cssText = 'border-bottom: 2px solid var(--background-modifier-border); text-align: left; color: var(--text-muted); font-size: 11px; text-transform: uppercase;';
+					theadRow.createEl('th', { text: 'Folder Path' }).style.cssText = 'padding: 6px 8px;';
+					theadRow.createEl('th', { text: 'Storage' }).style.cssText = 'padding: 6px 8px;';
+					theadRow.createEl('th', { text: 'Viewing' }).style.cssText = 'padding: 6px 8px;';
+					theadRow.createEl('th', { text: 'Notes' }).style.cssText = 'padding: 6px 8px;';
+					theadRow.createEl('th', { text: 'Active' }).style.cssText = 'padding: 6px 8px;';
+					theadRow.createEl('th', { text: 'Actions' }).style.cssText = 'padding: 6px 8px; text-align: right;';
+
+					const tbody = tableEl.createEl('tbody');
+
+					folders.forEach((fEntry, idx) => {
+						const tr = tbody.createEl('tr');
+						tr.style.cssText = 'border-bottom: 1px solid var(--background-modifier-border); transition: background-color 0.1s ease;';
+
+						const normPath = normalizePath(fEntry.path);
+						const isActive = normPath === currentActivePath;
+
+						// 1. Folder Path
+						const tdPath = tr.createEl('td');
+						tdPath.style.cssText = 'padding: 8px; font-weight: 500; display: flex; align-items: center; gap: 6px;';
+						const folderIcon = tdPath.createSpan({ text: '📂' });
+						const pathLink = tdPath.createSpan({ text: fEntry.path });
+						pathLink.style.cssText = 'cursor: pointer; color: var(--text-normal);';
+						pathLink.title = 'Click to set active';
+						pathLink.onclick = async () => {
+							this.settings.familyCirclesRootFolder = fEntry.path;
+							if (fEntry.mode) this.settings.relationshipMode = fEntry.mode;
+							if (fEntry.viewStructure) {
+								this.settings.relationshipViewStructure = fEntry.viewStructure;
+								this.settings.explorerRelationshipVirtualFolders = fEntry.viewStructure !== 'flat';
+							}
+							await this.saveSettings();
+							renderFullSection();
+							renderFoldersAndRecordsTable();
+							if (this.relationshipExplorerManager) {
+								this.relationshipExplorerManager.refreshVirtualFolders();
+							}
+							const leaves = this.app.workspace.getLeavesOfType('pakcli-bubble-graph-view');
+							leaves.forEach(leaf => {
+								if (leaf.view && typeof (leaf.view as any).reloadGraphData === 'function') {
+									(leaf.view as any).reloadGraphData();
+								} else if (leaf.view && typeof (leaf.view as any).renderGraph === 'function') {
+									(leaf.view as any).renderGraph();
+								}
+							});
+						};
+
+						// 2. Storage Mode
+						const tdMode = tr.createEl('td');
+						tdMode.style.cssText = 'padding: 8px;';
+						const modeBadge = tdMode.createSpan({ text: fEntry.mode === 'subfolders' ? 'Subfolders' : '1 Directory' });
+						modeBadge.style.cssText = 'background: var(--background-primary); border: 1px solid var(--background-modifier-border); padding: 2px 6px; border-radius: 4px; font-size: 11px;';
+
+						// 3. Viewing Mode (Flat / Range / Concentric)
+						const tdViewing = tr.createEl('td');
+						tdViewing.style.cssText = 'padding: 8px;';
+						const viewSelect = tdViewing.createEl('select');
+						viewSelect.style.cssText = 'font-size: 11px; padding: 2px 6px; background: var(--background-primary); border: 1px solid var(--background-modifier-border); border-radius: 4px; color: var(--text-normal); cursor: pointer;';
+
+						const viewOptions: { value: RelationshipViewStructure; label: string }[] = [
+							{ value: 'flat', label: 'Flat (Default)' },
+							{ value: 'concentric', label: 'Concentric Circles' },
+							{ value: 'range', label: 'Cluster Subfolders (Parallel)' }
+						];
+						viewOptions.forEach(opt => {
+							const optEl = viewSelect.createEl('option', { value: opt.value, text: opt.label });
+							if ((fEntry.viewStructure || 'flat') === opt.value) {
+								optEl.selected = true;
+							}
+						});
+						viewSelect.onchange = async () => {
+							const chosen = viewSelect.value as RelationshipViewStructure;
+							fEntry.viewStructure = chosen;
+							if (isActive) {
+								this.settings.relationshipViewStructure = chosen;
+								this.settings.explorerRelationshipVirtualFolders = chosen !== 'flat';
+							}
+							await this.saveSettings();
+							if (this.relationshipExplorerManager) {
+								this.relationshipExplorerManager.refreshVirtualFolders();
+							}
+							// Also reload & refresh bubble graph view if active
+							const leaves = this.app.workspace.getLeavesOfType('pakcli-bubble-graph-view');
+							leaves.forEach(leaf => {
+								if (leaf.view && typeof (leaf.view as any).reloadGraphData === 'function') {
+									(leaf.view as any).reloadGraphData();
+								} else if (leaf.view && typeof (leaf.view as any).renderGraph === 'function') {
+									(leaf.view as any).renderGraph();
+								}
+							});
+							new Notice(`Viewing mode for "${fEntry.path}" set to ${chosen}`);
+						};
+
+						// 4. Notes Count
+						const tdCount = tr.createEl('td');
+						tdCount.style.cssText = 'padding: 8px;';
+						const folderAbstract = this.app.vault.getAbstractFileByPath(normPath);
+						let noteCount = 0;
+						if (folderAbstract instanceof TFolder) {
+							const countMds = (fld: TFolder) => {
+								for (const c of fld.children) {
+									if (c instanceof TFile && c.extension === 'md') noteCount++;
+									else if (c instanceof TFolder) countMds(c);
+								}
+							};
+							countMds(folderAbstract);
+						}
+						const countBadge = tdCount.createSpan({ text: `${noteCount} note${noteCount === 1 ? '' : 's'}` });
+						countBadge.style.cssText = 'font-size: 11px; color: var(--text-muted);';
+
+						// 5. Active Status / Switcher
+						const tdActive = tr.createEl('td');
+						tdActive.style.cssText = 'padding: 8px;';
+						if (isActive) {
+							const activeBadge = tdActive.createSpan({ text: '🟢 Active' });
+							activeBadge.style.cssText = 'font-weight: 600; color: #10b981; font-size: 11px;';
+						} else {
+							const setActiveBtn = tdActive.createEl('button', { text: '⭐ Set Active' });
+							setActiveBtn.style.cssText = 'font-size: 11px; padding: 2px 8px;';
+							setActiveBtn.onclick = async () => {
+								this.settings.familyCirclesRootFolder = fEntry.path;
+								if (fEntry.mode) this.settings.relationshipMode = fEntry.mode;
+								if (fEntry.viewStructure) {
+									this.settings.relationshipViewStructure = fEntry.viewStructure;
+									this.settings.explorerRelationshipVirtualFolders = fEntry.viewStructure !== 'flat';
+								}
+								await this.saveSettings();
+								renderFullSection();
+								renderFoldersAndRecordsTable();
+								if (this.relationshipExplorerManager) {
+									this.relationshipExplorerManager.refreshVirtualFolders();
+								}
+								const leaves = this.app.workspace.getLeavesOfType('pakcli-bubble-graph-view');
+								leaves.forEach(leaf => {
+									if (leaf.view && typeof (leaf.view as any).reloadGraphData === 'function') {
+										(leaf.view as any).reloadGraphData();
+									} else if (leaf.view && typeof (leaf.view as any).renderGraph === 'function') {
+										(leaf.view as any).renderGraph();
+									}
+								});
+								new Notice(`Switched active relationship folder to "${fEntry.path}"`);
+							};
+						}
+
+						// 6. Actions (Delete Record Only vs Delete File & Record)
+						const tdActions = tr.createEl('td');
+						tdActions.style.cssText = 'padding: 8px; text-align: right; display: flex; justify-content: flex-end; gap: 6px;';
+
+						// Action A: Delete Record Only (Untrack from settings, never touch disk)
+						const delRecordBtn = tdActions.createEl('button', { text: '🗑️ Delete Record Only' });
+						delRecordBtn.style.cssText = 'font-size: 11px; padding: 2px 8px; color: var(--text-normal);';
+						delRecordBtn.title = 'Remove this folder from relationship tracking without deleting files on disk';
+						delRecordBtn.onclick = async () => {
+							folders.splice(idx, 1);
+							this.settings.relationshipFolders = folders;
+							if (isActive && folders.length > 0) {
+								this.settings.familyCirclesRootFolder = folders[0].path;
+							}
+							await this.saveSettings();
+							renderFullSection();
+							renderFoldersAndRecordsTable();
+							new Notice(`Removed relationship record for "${fEntry.path}". Files on disk were NOT deleted.`);
+						};
+
+						// Action B: Delete File & Record (Permanently delete files & folder from vault)
+						const delFileBtn = tdActions.createEl('button', { text: '💥 Delete File & Record' });
+						delFileBtn.style.cssText = 'font-size: 11px; padding: 2px 8px; color: #ef4444;';
+						delFileBtn.title = 'Permanently delete this folder and its files from vault';
+						delFileBtn.onclick = async () => {
+							const confirmed = confirm(`⚠️ PERMANENT DELETE:\nAre you sure you want to permanently delete folder "${fEntry.path}" and all its files from your vault?`);
+							if (confirmed) {
+								if (folderAbstract) {
+									await this.app.vault.delete(folderAbstract, true);
+								}
+								folders.splice(idx, 1);
+								this.settings.relationshipFolders = folders;
+								if (isActive && folders.length > 0) {
+									this.settings.familyCirclesRootFolder = folders[0].path;
+								}
+								await this.saveSettings();
+								renderFullSection();
+								renderFoldersAndRecordsTable();
+								new Notice(`💥 Deleted folder "${fEntry.path}" and removed record.`);
+							}
+						};
+					});
+
+					// ── SUB-TABLE: Notes Breakdown inside Active Folder ──
+					const activeFolderAbstract = this.app.vault.getAbstractFileByPath(currentActivePath);
+					if (activeFolderAbstract instanceof TFolder) {
+						const notesBox = tableManagementBox.createDiv();
+						notesBox.style.cssText = 'margin-top: 14px; border-top: 1px dashed var(--background-modifier-border); padding-top: 12px;';
+
+						const notesHeader = notesBox.createEl('h5', { text: `📋 Notes inside Active Folder (${currentActivePath}):` });
+						notesHeader.style.cssText = 'margin: 0 0 10px 0; font-size: 13px; display: flex; align-items: center; justify-content: space-between;';
+
+						const notesList: TFile[] = [];
+						const collectNotes = (fld: TFolder) => {
+							for (const c of fld.children) {
+								if (c instanceof TFile && c.extension === 'md') notesList.push(c);
+								else if (c instanceof TFolder) collectNotes(c);
+							}
+						};
+						collectNotes(activeFolderAbstract);
+
+						if (notesList.length === 0) {
+							const noNotes = notesBox.createDiv();
+							noNotes.style.cssText = 'color: var(--text-muted); font-style: italic; font-size: 12px;';
+							noNotes.setText('No markdown notes found in active relationship folder. Click "Create Sample" to generate starter notes.');
+						} else {
+							const notesTable = notesBox.createEl('table');
+							notesTable.style.cssText = 'width: 100%; border-collapse: collapse; font-size: 11px;';
+
+							const nHead = notesTable.createEl('thead');
+							const nHeadRow = nHead.createEl('tr');
+							nHeadRow.style.cssText = 'border-bottom: 1px solid var(--background-modifier-border); color: var(--text-muted); text-align: left;';
+							nHeadRow.createEl('th', { text: 'Note Name' }).style.cssText = 'padding: 4px 6px;';
+							nHeadRow.createEl('th', { text: 'Closeness Score' }).style.cssText = 'padding: 4px 6px;';
+							nHeadRow.createEl('th', { text: 'Matched Tier' }).style.cssText = 'padding: 4px 6px;';
+							nHeadRow.createEl('th', { text: 'Actions' }).style.cssText = 'padding: 4px 6px; text-align: right;';
+
+							const nBody = notesTable.createEl('tbody');
+							const tiers: RelationshipTierConfig[] = this.settings.relationshipTiers || DEFAULT_RELATIONSHIP_TIERS;
+							const propKey = this.settings.relationshipPropertyKey || 'closeness';
+
+							notesList.forEach((nFile) => {
+								const nTr = nBody.createEl('tr');
+								nTr.style.cssText = 'border-bottom: 1px solid var(--background-modifier-border);';
+
+								const cache = this.app.metadataCache.getFileCache(nFile);
+								const rawCloseness = cache?.frontmatter?.[propKey] ?? 
+								                     cache?.frontmatter?.closeness ?? 
+								                     cache?.frontmatter?.score ??
+								                     cache?.frontmatter?.affinity;
+								let score = 0.25;
+								const lowerName = nFile.basename.toLowerCase();
+								const lowerRole = String(cache?.frontmatter?.role || '').toLowerCase();
+								const isMeNote = lowerName === 'me' || lowerRole.includes('self') || lowerRole.includes('me') || lowerName.includes('myself');
+
+								if (rawCloseness !== undefined && rawCloseness !== null && !isNaN(Number(rawCloseness))) {
+									score = Math.max(0, Math.min(1, Number(rawCloseness)));
+								} else if (isMeNote) {
+									score = 1.0;
+								}
+
+								let matchedTier = tiers.find(t => score >= Math.min(t.min, t.max) && score <= Math.max(t.min, t.max));
+								if (!matchedTier && tiers.length > 0) matchedTier = tiers[0];
+
+								// Note Name
+								const tdName = nTr.createEl('td');
+								tdName.style.cssText = 'padding: 5px 6px; font-weight: 500; cursor: pointer; color: var(--text-accent);';
+								tdName.setText(nFile.name);
+								tdName.onclick = () => {
+									this.app.workspace.openLinkText(nFile.path, '', false);
+								};
+
+								// Score
+								const tdScore = nTr.createEl('td');
+								tdScore.style.cssText = 'padding: 5px 6px; font-family: var(--font-monospace);';
+								tdScore.setText(rawCloseness !== undefined ? `${score.toFixed(2)}` : 'None (default)');
+
+								// Matched Tier
+								const tdTier = nTr.createEl('td');
+								tdTier.style.cssText = 'padding: 5px 6px; display: flex; align-items: center; gap: 4px;';
+								const dot = tdTier.createSpan();
+								dot.style.cssText = `width: 7px; height: 7px; border-radius: 50%; background-color: ${matchedTier?.color || '#64748b'};`;
+								tdTier.createSpan({ text: matchedTier?.name || 'Unknown' });
+
+								// Actions (Delete Record vs Delete File)
+								const tdNoteActions = nTr.createEl('td');
+								tdNoteActions.style.cssText = 'padding: 5px 6px; text-align: right; display: flex; justify-content: flex-end; gap: 4px;';
+
+								// Delete Record Only (clear frontmatter property)
+								const delRecBtn = tdNoteActions.createEl('button', { text: 'Del Record' });
+								delRecBtn.style.cssText = 'font-size: 10px; padding: 1px 6px;';
+								delRecBtn.title = 'Remove closeness metadata from frontmatter (keeps note file on disk)';
+								delRecBtn.onclick = async () => {
+									await this.app.fileManager.processFrontMatter(nFile, (fm) => {
+										delete fm[propKey];
+										delete fm['closeness'];
+										delete fm['score'];
+									});
+									renderFoldersAndRecordsTable();
+									new Notice(`Removed closeness record from "${nFile.name}".`);
+								};
+
+								// Delete File & Record (delete file from vault)
+								const delFBtn = tdNoteActions.createEl('button', { text: 'Del File' });
+								delFBtn.style.cssText = 'font-size: 10px; padding: 1px 6px; color: #ef4444;';
+								delFBtn.title = 'Delete note file from vault';
+								delFBtn.onclick = async () => {
+									await this.app.vault.delete(nFile, true);
+									renderFoldersAndRecordsTable();
+									new Notice(`Deleted file "${nFile.name}".`);
+								};
+							});
+						}
+					}
+				};
+
+				renderFoldersAndRecordsTable();
+
+				new Setting(containerEl)
+					.setName('Open Bubble Graph View')
+					.setDesc('View your concentric relationship circles in full-screen interactive topology.')
+					.addButton((b) => {
+						b.setButtonText('Open Bubble Graph ↗')
+							.onClick(() => {
+								this.openBubbleGraphView();
 							});
 					});
 			}

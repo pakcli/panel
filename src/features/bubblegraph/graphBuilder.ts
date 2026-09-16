@@ -2,7 +2,15 @@ import { App, TFile, normalizePath } from 'obsidian';
 import { BubbleNode, BubbleEdge, BubbleCluster, NodeGlyphType, GraphStats } from './types';
 import { computeClusterRadius } from './simulation';
 import { FolderRule } from '../tree/types';
-import { BubbleNodeGlyphOption } from '../../settings';
+import { BubbleNodeGlyphOption, RelationshipTierConfig, DEFAULT_RELATIONSHIP_TIERS } from '../../settings';
+
+export interface RelationshipGraphSettings {
+    rootFolder?: string;
+    mode?: '1dir' | 'subfolders';
+    propertyKey?: string;
+    tiers?: RelationshipTierConfig[];
+    viewStructure?: 'flat' | 'range' | 'concentric';
+}
 
 /**
  * Returns the effective chronological birth timestamp of a note.
@@ -53,6 +61,81 @@ export function resolveNodeGlyph(
     } else {
         return settings?.bubbleGlyphBoth || 'i';
     }
+}
+
+/**
+ * Resolves an image URL for a node based on frontmatter property waterfall:
+ * 1. img
+ * 2. image
+ * 3. img-preview
+ * 4. icon
+ * 5. image-preview
+ *
+ * Supports:
+ * - External URLs: https://... or http://...
+ * - Data URLs: data:image/...
+ * - Obsidian Wikilinks: [[cover.png]], [[attachments/image.jpg|alt]]
+ * - Vault Paths: "attachments/cover.png", "covers/hero.webp"
+ * - Fallback: returns undefined if not found or invalid
+ */
+export function resolveNodeImageUrl(app: App, file: TFile): string | undefined {
+    const fileCache = app.metadataCache.getFileCache(file);
+    const fm = fileCache?.frontmatter;
+    if (!fm) return undefined;
+
+    // Waterfall keys priority: img |> image |> img-preview |> icon |> image-preview
+    const rawVal = 
+        fm.img ?? fm.Img ??
+        fm.image ?? fm.Image ??
+        fm['img-preview'] ?? fm['img_preview'] ?? fm.imgPreview ??
+        fm.icon ?? fm.Icon ??
+        fm['image-preview'] ?? fm['image_preview'] ?? fm.imagePreview;
+
+    if (rawVal === undefined || rawVal === null) return undefined;
+
+    let targetStr = '';
+    if (Array.isArray(rawVal)) {
+        if (rawVal.length === 0) return undefined;
+        targetStr = String(rawVal[0]).trim();
+    } else {
+        targetStr = String(rawVal).trim();
+    }
+
+    if (!targetStr) return undefined;
+
+    // External URL or Data URL
+    if (targetStr.startsWith('http://') || targetStr.startsWith('https://') || targetStr.startsWith('data:image/')) {
+        return targetStr;
+    }
+
+    // Clean Obsidian Wikilink brackets [[ ... ]] and remove alias | ...
+    let cleanPath = targetStr.replace(/^\[\[/, '').replace(/\]\]$/, '').trim();
+    if (cleanPath.includes('|')) {
+        cleanPath = cleanPath.split('|')[0].trim();
+    }
+
+    // Try resolving link via metadataCache (respects link resolver & attachments settings)
+    let matchedFile = app.metadataCache.getFirstLinkpathDest(cleanPath, file.path);
+
+    // If not found, try direct vault path lookup
+    if (!matchedFile) {
+        const normalized = normalizePath(cleanPath.replace(/^\.?\//, ''));
+        const abstract = app.vault.getAbstractFileByPath(normalized);
+        if (abstract instanceof TFile) {
+            matchedFile = abstract;
+        }
+    }
+
+    // Check if matched file is an image file
+    if (matchedFile instanceof TFile) {
+        const ext = matchedFile.extension ? matchedFile.extension.toLowerCase() : '';
+        const IMAGE_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp', 'ico', 'avif']);
+        if (IMAGE_EXTENSIONS.has(ext)) {
+            return app.vault.getResourcePath(matchedFile);
+        }
+    }
+
+    return undefined;
 }
 
 // Default fallback color
@@ -222,7 +305,8 @@ export function buildVaultGraph(
     useCaptainColors: boolean = false,
     maxClusterDepth: number = 3,
     scopedFolder: string | null = null,
-    glyphSettings?: NodeGlyphSettings
+    glyphSettings?: NodeGlyphSettings,
+    relationshipSettings?: RelationshipGraphSettings
 ): BuiltGraph {
     const BINARY_EXTENSIONS = new Set([
         'png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg', 'ico',
@@ -293,7 +377,51 @@ export function buildVaultGraph(
         let clusterId = '/';
         let subClusterId = '/';
 
-        if (normalizedScoped) {
+        const relRoot = relationshipSettings?.rootFolder ? normalizePath(relationshipSettings.rootFolder) : 'Relationships';
+        const isRelScope = normalizedScoped && (normalizedScoped === relRoot || folderPath === relRoot || folderPath.startsWith(relRoot + '/'));
+        const isRel1Dir = isRelScope && (relationshipSettings?.mode === '1dir' || !relationshipSettings?.mode);
+        const relTiers = (relationshipSettings?.tiers && relationshipSettings.tiers.length > 0)
+            ? relationshipSettings.tiers
+            : DEFAULT_RELATIONSHIP_TIERS;
+        const propKey = relationshipSettings?.propertyKey || 'closeness';
+
+        let matchedRelTier: RelationshipTierConfig | null = null;
+        if (isRel1Dir && folderPath === relRoot) {
+            let closenessVal = 0.25;
+            const rawCloseness = fileCache?.frontmatter?.[propKey] ?? 
+                                 fileCache?.frontmatter?.closeness ?? 
+                                 fileCache?.frontmatter?.score ??
+                                 fileCache?.frontmatter?.affinity;
+            
+            const lowerName = name.toLowerCase();
+            const lowerRole = String(fileCache?.frontmatter?.role || '').toLowerCase();
+            const isMeNote = lowerName === 'me' || lowerRole.includes('self') || lowerRole.includes('me') || lowerName.includes('myself');
+
+            if (rawCloseness !== undefined && rawCloseness !== null && !isNaN(Number(rawCloseness))) {
+                closenessVal = Math.max(0, Math.min(1, Number(rawCloseness)));
+            } else if (isMeNote) {
+                closenessVal = 1.0;
+            }
+
+            matchedRelTier = relTiers.find(t => closenessVal >= Math.min(t.min, t.max) && closenessVal <= Math.max(t.min, t.max)) || null;
+            if (!matchedRelTier) {
+                let minDiff = Infinity;
+                for (const t of relTiers) {
+                    const mid = (t.min + t.max) / 2;
+                    const diff = Math.abs(closenessVal - mid);
+                    if (diff < minDiff) {
+                        minDiff = diff;
+                        matchedRelTier = t;
+                    }
+                }
+            }
+            if (!matchedRelTier) matchedRelTier = relTiers[0];
+
+            topLevelFolder = relRoot;
+            subFolder = matchedRelTier.name;
+            clusterId = relRoot;
+            subClusterId = `${relRoot}/${matchedRelTier.id}`;
+        } else if (normalizedScoped) {
             if (folderPath === normalizedScoped) {
                 topLevelFolder = normalizedScoped;
                 subFolder = '';
@@ -337,17 +465,24 @@ export function buildVaultGraph(
         // 3. inDeg > 0 && outDeg === 0   => Mentioned anywhere (default 'minus')
         // 4. inDeg > 0 && outDeg > 0     => Both linked and mentioned (default 'i')
         const glyph = resolveNodeGlyph(inDeg, outDeg, glyphSettings);
+        const imageUrl = resolveNodeImageUrl(app, file);
         let radius: number;
 
         if (isIndexNote && totalDeg >= 2) {
             radius = Math.round(6 + Math.sqrt(inDeg + outDeg));
         } else if (totalDeg === 0) {
-            radius = 3.5; // Compact 3.5px for isolated notes
+            radius = imageUrl ? 5.5 : 3.5;
         } else {
             radius = Math.round(3.5 + Math.sqrt(totalDeg));
+            if (imageUrl && radius < 5.5) {
+                radius = 5.5;
+            }
         }
 
-        const color = getFolderColor(folderPath || topLevelFolder, captainRules, useCaptainColors);
+        let color = getFolderColor(folderPath || topLevelFolder, captainRules, useCaptainColors);
+        if (isRel1Dir && matchedRelTier) {
+            color = matchedRelTier.color;
+        }
 
         const node: BubbleNode = {
             id: path,
@@ -363,6 +498,7 @@ export function buildVaultGraph(
             outDegree: outDeg,
             totalDegree: totalDeg,
             glyph,
+            imageUrl,
             radius,
             x: 0,
             y: 0,
@@ -488,6 +624,197 @@ export function buildVaultGraph(
                 clusterDirectNodeIds.get(cappedPath)!.push(node.id);
             }
         }
+    }
+
+    const relRoot = relationshipSettings?.rootFolder ? normalizePath(relationshipSettings.rootFolder) : 'Relationships';
+    const isRelScope = normalizedScoped && (normalizedScoped === relRoot || (nodes.length > 0 && nodes.every(n => n.folderPath === relRoot)));
+    const isRel1Dir = isRelScope && (relationshipSettings?.mode === '1dir' || !relationshipSettings?.mode);
+    const relTiers = (relationshipSettings?.tiers && relationshipSettings.tiers.length > 0)
+        ? relationshipSettings.tiers
+        : DEFAULT_RELATIONSHIP_TIERS;
+
+    const viewStruct = relationshipSettings?.viewStructure || 'flat';
+
+    if (isRel1Dir && normalizedScoped === relRoot) {
+        if (viewStruct === 'flat') {
+            // 1. Flat View: Single cluster, no tier sub-hulls
+            const allRelNodeIds = nodes.map(n => n.id);
+            const rootCluster: BubbleCluster = {
+                id: relRoot,
+                name: relRoot.split('/').pop() || relRoot,
+                parentClusterId: null,
+                depth: 1,
+                nodeIds: allRelNodeIds,
+                directNodeIds: allRelNodeIds,
+                centroid: { x: 0, y: 0 },
+                radius: computeClusterRadius(allRelNodeIds.length, 1),
+                color: '#4a5568',
+                hullPolygon: [],
+                smoothedHull: [],
+                boundingBox: { minX: 0, minY: 0, maxX: 0, maxY: 0 }
+            };
+            clusterMap.set(relRoot, rootCluster);
+            return {
+                nodes,
+                edges,
+                clusters: [rootCluster],
+                stats: {
+                    totalNodes: nodes.length,
+                    totalEdges: edges.length,
+                    totalClusters: 1,
+                    intraEdges: edges.filter(e => e.tier === 'tier1_intra').length,
+                    interEdges: edges.filter(e => e.tier === 'tier2_inter').length,
+                    totalVennBridges
+                }
+            };
+        }
+
+        const sortedTiers = [...relTiers].sort((a, b) => Math.max(b.min, b.max) - Math.max(a.min, a.max));
+        const tierDirectNodeMap = new Map<string, string[]>();
+        for (const t of sortedTiers) {
+            tierDirectNodeMap.set(`${relRoot}/${t.id}`, []);
+        }
+        tierDirectNodeMap.set(relRoot, []);
+
+        for (const node of nodes) {
+            if (tierDirectNodeMap.has(node.subClusterId)) {
+                tierDirectNodeMap.get(node.subClusterId)!.push(node.id);
+            } else {
+                tierDirectNodeMap.get(relRoot)!.push(node.id);
+            }
+        }
+
+        const relClusters: BubbleCluster[] = [];
+
+        // Root Cluster
+        const allRelNodeIds = nodes.map(n => n.id);
+        const rootDirectIds = tierDirectNodeMap.get(relRoot) || [];
+        const rootCluster: BubbleCluster = {
+            id: relRoot,
+            name: relRoot.split('/').pop() || relRoot,
+            parentClusterId: null,
+            depth: 1,
+            nodeIds: allRelNodeIds,
+            directNodeIds: rootDirectIds,
+            centroid: { x: 0, y: 0 },
+            radius: computeClusterRadius(allRelNodeIds.length, 1),
+            color: '#4a5568',
+            hullPolygon: [],
+            smoothedHull: [],
+            boundingBox: { minX: 0, minY: 0, maxX: 0, maxY: 0 }
+        };
+        relClusters.push(rootCluster);
+        clusterMap.set(relRoot, rootCluster);
+
+        if (viewStruct === 'range') {
+            // 2. Range View: All tiers are sibling clusters under root
+            for (let i = 0; i < sortedTiers.length; i++) {
+                const tier = sortedTiers[i];
+                const clusterId = `${relRoot}/${tier.id}`;
+                const directIds = tierDirectNodeMap.get(clusterId) || [];
+                const tierCluster: BubbleCluster = {
+                    id: clusterId,
+                    name: tier.name,
+                    parentClusterId: relRoot,
+                    depth: 2,
+                    nodeIds: directIds,
+                    directNodeIds: directIds,
+                    centroid: { x: 0, y: 0 },
+                    radius: computeClusterRadius(Math.max(1, directIds.length), 2),
+                    color: tier.color,
+                    hullPolygon: [],
+                    smoothedHull: [],
+                    boundingBox: { minX: 0, minY: 0, maxX: 0, maxY: 0 }
+                };
+                relClusters.push(tierCluster);
+                clusterMap.set(clusterId, tierCluster);
+            }
+        } else {
+            // 3. Concentric Matryoshka View (Russian Doll nesting)
+            const concentricTiers = sortedTiers.filter(t => Math.max(t.min, t.max) > 0.0).reverse();
+            const otherTiers = sortedTiers.filter(t => Math.max(t.min, t.max) <= 0.0);
+
+            // Collect node IDs for other tiers (e.g. Enemy) to include in Know's hull
+            const otherDirectIds: string[] = [];
+            for (const tier of otherTiers) {
+                const cId = `${relRoot}/${tier.id}`;
+                otherDirectIds.push(...(tierDirectNodeMap.get(cId) || []));
+            }
+
+            for (let i = 0; i < concentricTiers.length; i++) {
+                const tier = concentricTiers[i];
+                const clusterId = `${relRoot}/${tier.id}`;
+                const parentId = i === 0 ? relRoot : `${relRoot}/${concentricTiers[i - 1].id}`;
+                const directIds = tierDirectNodeMap.get(clusterId) || [];
+
+                const allDescendantIds: string[] = [...directIds];
+                for (let j = i + 1; j < concentricTiers.length; j++) {
+                    const subDirects = tierDirectNodeMap.get(`${relRoot}/${concentricTiers[j].id}`) || [];
+                    allDescendantIds.push(...subDirects);
+                }
+
+                // If outermost tier (Know, i === 0), include other tiers (Enemy) in its hull as Enemy sits inside Know
+                if (i === 0) {
+                    allDescendantIds.push(...otherDirectIds);
+                }
+
+                const cCluster: BubbleCluster = {
+                    id: clusterId,
+                    name: tier.name,
+                    parentClusterId: parentId,
+                    depth: 2 + i,
+                    nodeIds: allDescendantIds,
+                    directNodeIds: directIds,
+                    centroid: { x: 0, y: 0 },
+                    radius: computeClusterRadius(Math.max(1, allDescendantIds.length), 2 + i),
+                    color: tier.color,
+                    hullPolygon: [],
+                    smoothedHull: [],
+                    boundingBox: { minX: 0, minY: 0, maxX: 0, maxY: 0 }
+                };
+                relClusters.push(cCluster);
+                clusterMap.set(clusterId, cCluster);
+            }
+
+            // Other tiers (e.g. Enemy) placed at the same level as Friends!
+            // Friends is concentricTiers[1], whose parent is concentricTiers[0] (Know) and depth is 3.
+            const enemyParentId = concentricTiers.length > 0 ? `${relRoot}/${concentricTiers[0].id}` : relRoot;
+            const enemyDepth = concentricTiers.length > 1 ? 3 : 2;
+
+            for (const tier of otherTiers) {
+                const clusterId = `${relRoot}/${tier.id}`;
+                const directIds = tierDirectNodeMap.get(clusterId) || [];
+                const oCluster: BubbleCluster = {
+                    id: clusterId,
+                    name: tier.name,
+                    parentClusterId: enemyParentId,
+                    depth: enemyDepth,
+                    nodeIds: directIds,
+                    directNodeIds: directIds,
+                    centroid: { x: 0, y: 0 },
+                    radius: computeClusterRadius(Math.max(1, directIds.length), enemyDepth),
+                    color: tier.color,
+                    hullPolygon: [],
+                    smoothedHull: [],
+                    boundingBox: { minX: 0, minY: 0, maxX: 0, maxY: 0 }
+                };
+                relClusters.push(oCluster);
+                clusterMap.set(clusterId, oCluster);
+            }
+        }
+
+        return {
+            nodes,
+            edges,
+            clusters: relClusters,
+            stats: {
+                totalNodes: nodes.length,
+                totalClusters: relClusters.length,
+                totalVennBridges
+            },
+            nodeMap,
+            clusterMap
+        };
     }
 
     // Create cluster objects sorted by depth (shallowest first)

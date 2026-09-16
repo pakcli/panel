@@ -36,12 +36,30 @@ export interface RenderState {
     intraLinkOpacity: number;
     timelapseCtimeCutoff?: number | null;
     timelapseVisibleNodeIds?: Set<string> | null;
+    enableNodeImageCover?: boolean;
+    nodeImageBorder?: 'noborder' | 'thin' | 'thick';
 }
 
 export class CanvasRenderer {
     private canvas: HTMLCanvasElement;
     private ctx: CanvasRenderingContext2D;
     private animationTime: number = 0;
+    private imageCache = new Map<string, HTMLImageElement>();
+    private failedImageUrls = new Set<string>();
+
+    private getImage(url: string): HTMLImageElement | null {
+        if (this.failedImageUrls.has(url)) return null;
+        const cached = this.imageCache.get(url);
+        if (cached) return cached;
+
+        const img = new Image();
+        img.src = url;
+        img.onerror = () => {
+            this.failedImageUrls.add(url);
+        };
+        this.imageCache.set(url, img);
+        return img;
+    }
 
     private isNodeVisible(node: BubbleNode, state: RenderState): boolean {
         if (state.timelapseVisibleNodeIds) {
@@ -428,8 +446,15 @@ export class CanvasRenderer {
                 ctx.globalAlpha = 0.12;
             }
 
-            // Draw Node Glyphs
-            this.drawNodeGlyph(node, isHovered, isSelected, isNodeActive);
+            // Draw Node Glyphs (or Image Covers if enabled and available)
+            this.drawNodeGlyph(
+                node, 
+                isHovered, 
+                isSelected, 
+                isNodeActive, 
+                state.enableNodeImageCover !== false,
+                state.nodeImageBorder || 'thick'
+            );
 
             // Draw Labels (Dual Handle Range Level 1-4: File/Folder Hierarchy Depth based)
             // Level 1 = Vault root files (nodeParts.length === 0)
@@ -462,7 +487,14 @@ export class CanvasRenderer {
         }
     }
 
-    private drawNodeGlyph(node: BubbleNode, isHovered: boolean, isSelected: boolean, isNodeActive: boolean = false): void {
+    private drawNodeGlyph(
+        node: BubbleNode, 
+        isHovered: boolean, 
+        isSelected: boolean, 
+        isNodeActive: boolean = false,
+        enableNodeImageCover: boolean = true,
+        nodeImageBorder: 'noborder' | 'thin' | 'thick' = 'thick'
+    ): void {
         const ctx = this.ctx;
 
         // 1. Active Node Pulse Aura (Only if Inspector is active)
@@ -493,13 +525,72 @@ export class CanvasRenderer {
         }
         ctx.fill();
 
-        if (isHovered || isSelected || isNodeActive || node.totalDegree >= 2) {
-            ctx.strokeStyle = '#ffffff';
-            ctx.lineWidth = isHovered || isSelected || isNodeActive ? 2.0 : 1.2;
+        // 3. Optional Cover Image (Waterfall override: img | image | img-preview | icon | image-preview)
+        let hasDrawnImage = false;
+        if (enableNodeImageCover && node.imageUrl) {
+            const img = this.getImage(node.imageUrl);
+            if (img && img.complete && img.naturalWidth > 0) {
+                ctx.save();
+                ctx.beginPath();
+                ctx.arc(node.x, node.y, effRadius, 0, Math.PI * 2);
+                ctx.clip();
+
+                // Object-fit: cover inside circle
+                const nw = img.naturalWidth;
+                const nh = img.naturalHeight;
+                const aspect = nw / nh;
+                let drawW = effRadius * 2;
+                let drawH = effRadius * 2;
+                let drawX = node.x - effRadius;
+                let drawY = node.y - effRadius;
+
+                if (aspect > 1) {
+                    drawW = effRadius * 2 * aspect;
+                    drawX = node.x - drawW / 2;
+                } else {
+                    drawH = (effRadius * 2) / aspect;
+                    drawY = node.y - drawH / 2;
+                }
+
+                ctx.drawImage(img, drawX, drawY, drawW, drawH);
+                ctx.restore();
+                hasDrawnImage = true;
+            }
+        }
+
+        // 4. Outer Rim Stroke
+        const isEmphasized = isHovered || isSelected || isNodeActive;
+        const borderStyle = nodeImageBorder || 'thick';
+        const hasBorder = hasDrawnImage ? (borderStyle !== 'noborder') : (node.totalDegree >= 2);
+
+        if (isEmphasized || hasBorder) {
+            ctx.strokeStyle = isNodeActive
+                ? '#00f2ff'
+                : (isHovered || isSelected
+                    ? '#ffffff'
+                    : (hasDrawnImage ? (node.color || '#ffffff') : '#ffffff'));
+
+            let strokeW = 1.2;
+            if (isEmphasized) {
+                strokeW = 2.0;
+            } else if (hasDrawnImage) {
+                if (borderStyle === 'thin') {
+                    strokeW = 1.0;
+                } else {
+                    strokeW = 2.4; // thick (kayak sekarang)
+                }
+            }
+
+            ctx.lineWidth = strokeW;
             ctx.stroke();
         }
 
-        // 3. Center Glyph Symbol Interior
+        // If image was successfully drawn, it overrides the symbol!
+        if (hasDrawnImage) {
+            return;
+        }
+
+        // 5. Fallback Center Glyph Symbol Interior
         const glyph = node.glyph;
 
         if (glyph === 'no-dot') {

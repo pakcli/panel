@@ -2,7 +2,7 @@ import { ItemView, WorkspaceLeaf, setIcon, TFile, Menu, normalizePath, Notice } 
 import type PakCLITablePlugin from '../../main';
 import { DEFAULT_BUBBLE_GRAPH_SETTINGS } from '../../settings';
 import { BubbleNode, BubbleCluster } from './types';
-import { buildVaultGraph, BuiltGraph, getFolderColor, matchFolderRule, getNodeEffectiveTime, getNodeLatestTime } from './graphBuilder';
+import { buildVaultGraph, BuiltGraph, getFolderColor, matchFolderRule, getNodeEffectiveTime, getNodeLatestTime, resolveNodeImageUrl } from './graphBuilder';
 import { BubbleSimulation } from './simulation';
 import { CanvasRenderer, ViewportTransform, RenderState } from './canvasRenderer';
 import { SfxManager } from './sfxManager';
@@ -114,6 +114,16 @@ export class BubbleGraphView extends ItemView {
     // Captain Folder Colors toggle
     private useCaptainColors: boolean = false;
 
+    // Node Image Cover toggle & Border style
+    private enableNodeImageCover: boolean = true;
+    private nodeImageBorder: 'noborder' | 'thin' | 'thick' = 'thick';
+    private imageCoverBtnEl: HTMLElement | null = null;
+
+    public setNodeImageBorder(border: 'noborder' | 'thin' | 'thick'): void {
+        this.nodeImageBorder = border;
+        this.plugin.settings.bubbleNodeImageBorder = border;
+    }
+
     constructor(leaf: WorkspaceLeaf, plugin: PakCLITablePlugin) {
         super(leaf);
         this.plugin = plugin;
@@ -163,6 +173,8 @@ export class BubbleGraphView extends ItemView {
         this.isFloatingToolsOpen = this.plugin.settings.bubbleFloatingToolsOpen !== false;
         this.isFooterOpen = this.plugin.settings.bubbleFooterOpen !== false;
         this.autoFitMode = this.plugin.settings.bubbleAutoFitMode || (this.plugin.settings.bubbleAlwaysFit ? 'fit' : 'off');
+        this.enableNodeImageCover = this.plugin.settings.bubbleEnableNodeImageCover !== false;
+        this.nodeImageBorder = this.plugin.settings.bubbleNodeImageBorder || 'thick';
 
         // Initialize Procedural SFX Engine
         this.sfxManager = new SfxManager(
@@ -257,6 +269,18 @@ export class BubbleGraphView extends ItemView {
             })
         );
 
+        // Listen for frontmatter metadata changes to dynamically update note cover images
+        this.registerEvent(
+            this.app.metadataCache.on('changed', (file) => {
+                if (file && this.graphData) {
+                    const node = this.graphData.nodeMap.get(file.path);
+                    if (node) {
+                        node.imageUrl = resolveNodeImageUrl(this.app, file);
+                    }
+                }
+            })
+        );
+
         // 6. Start Render Loop
         this.startRenderLoop();
     }
@@ -343,6 +367,10 @@ export class BubbleGraphView extends ItemView {
         this.plugin.settings.bubbleEnableSfx = DEFAULT_BUBBLE_GRAPH_SETTINGS.bubbleEnableSfx;
         this.plugin.settings.bubbleSfxVolume = DEFAULT_BUBBLE_GRAPH_SETTINGS.bubbleSfxVolume;
         this.plugin.settings.bubbleSfxThreshold = DEFAULT_BUBBLE_GRAPH_SETTINGS.bubbleSfxThreshold;
+        this.enableNodeImageCover = DEFAULT_BUBBLE_GRAPH_SETTINGS.bubbleEnableNodeImageCover;
+        this.plugin.settings.bubbleEnableNodeImageCover = this.enableNodeImageCover;
+        this.nodeImageBorder = DEFAULT_BUBBLE_GRAPH_SETTINGS.bubbleNodeImageBorder;
+        this.plugin.settings.bubbleNodeImageBorder = this.nodeImageBorder;
         if (this.sfxManager) {
             this.sfxManager.setEnabled(DEFAULT_BUBBLE_GRAPH_SETTINGS.bubbleEnableSfx);
             this.sfxManager.setVolume(DEFAULT_BUBBLE_GRAPH_SETTINGS.bubbleSfxVolume);
@@ -368,6 +396,10 @@ export class BubbleGraphView extends ItemView {
         if (this.captainColorsBtnEl) {
             this.captainColorsBtnEl.toggleClass('active', this.useCaptainColors);
             this.captainColorsBtnEl.setAttribute('aria-pressed', this.useCaptainColors ? 'true' : 'false');
+        }
+        if (this.imageCoverBtnEl) {
+            this.imageCoverBtnEl.toggleClass('active', this.enableNodeImageCover);
+            this.imageCoverBtnEl.setAttribute('aria-pressed', this.enableNodeImageCover ? 'true' : 'false');
         }
         if (this.sfxToggleBtnEl) {
             this.sfxToggleBtnEl.toggleClass('active', DEFAULT_BUBBLE_GRAPH_SETTINGS.bubbleEnableSfx);
@@ -457,14 +489,35 @@ export class BubbleGraphView extends ItemView {
             bubbleGlyphIncoming: this.plugin.settings.bubbleGlyphIncoming,
             bubbleGlyphBoth: this.plugin.settings.bubbleGlyphBoth,
         };
+        const relRoot = this.plugin.settings.familyCirclesRootFolder || 'Relationships';
+        const folders = this.plugin.settings.relationshipFolders || [];
+        const targetRelPath = this.scopedFolder ? normalizePath(this.scopedFolder) : normalizePath(relRoot);
+        const folderEntry = folders.find(f => normalizePath(f.path) === targetRelPath) || 
+                            folders.find(f => normalizePath(f.path) === normalizePath(relRoot));
+        
+        const effectiveViewStructure = folderEntry?.viewStructure || this.plugin.settings.relationshipViewStructure || 'flat';
+        const effectiveMode = folderEntry?.mode || this.plugin.settings.relationshipMode || '1dir';
+
+        const relationshipSettings = {
+            rootFolder: relRoot,
+            mode: effectiveMode,
+            propertyKey: this.plugin.settings.relationshipPropertyKey || 'closeness',
+            tiers: this.plugin.settings.relationshipTiers,
+            viewStructure: effectiveViewStructure,
+        };
+        const effMaxDepth = (this.scopedFolder && normalizePath(this.scopedFolder) === normalizePath(relRoot))
+            ? Math.max(maxDepth, 6)
+            : maxDepth;
+
         this.graphData = buildVaultGraph(
             this.app, 
             this.isInspectorOpen && activeFile ? activeFile.path : null, 
             captainRules, 
             this.useCaptainColors, 
-            maxDepth, 
+            effMaxDepth, 
             this.scopedFolder,
-            glyphSettings
+            glyphSettings,
+            relationshipSettings
         );
 
         // Sort all nodes according to active timelapse mode (Vanilla, Time, Filename A-Z, File Title A-Z)
@@ -952,6 +1005,55 @@ export class BubbleGraphView extends ItemView {
             this.plugin.settings.bubbleUseCaptainColors = this.useCaptainColors;
             await this.plugin.saveSettings();
             this.applyCaptainFolderColors();
+        };
+
+        // 3. Node Image Cover (Show frontmatter image cover or glyph symbol)
+        this.imageCoverBtnEl = togglesCluster.createEl('button', {
+            cls: `pakcli-icon-btn pakcli-image-cover-btn ${this.enableNodeImageCover ? 'active' : ''}`,
+            title: 'Toggle Node Image Covers (Override node symbol with frontmatter image)'
+        });
+        this.imageCoverBtnEl.setAttribute('aria-pressed', this.enableNodeImageCover ? 'true' : 'false');
+        setIcon(this.imageCoverBtnEl, 'image');
+        this.imageCoverBtnEl.onclick = async () => {
+            this.enableNodeImageCover = !this.enableNodeImageCover;
+            if (this.imageCoverBtnEl) {
+                this.imageCoverBtnEl.toggleClass('active', this.enableNodeImageCover);
+                this.imageCoverBtnEl.setAttribute('aria-pressed', this.enableNodeImageCover ? 'true' : 'false');
+            }
+            this.plugin.settings.bubbleEnableNodeImageCover = this.enableNodeImageCover;
+            await this.plugin.saveSettings();
+            if (this.sfxManager?.isEnabled()) {
+                this.sfxManager.playLinkSwitch(this.enableNodeImageCover ? 1.0 : 0.6);
+            }
+        };
+        this.imageCoverBtnEl.oncontextmenu = (e: MouseEvent) => {
+            e.preventDefault();
+            const menu = new Menu();
+            menu.addItem((item) => {
+                item.setTitle('No border (Clean circle)')
+                    .setChecked(this.nodeImageBorder === 'noborder')
+                    .onClick(async () => {
+                        this.setNodeImageBorder('noborder');
+                        await this.plugin.saveSettings();
+                    });
+            });
+            menu.addItem((item) => {
+                item.setTitle('Border thin (1px subtle rim)')
+                    .setChecked(this.nodeImageBorder === 'thin')
+                    .onClick(async () => {
+                        this.setNodeImageBorder('thin');
+                        await this.plugin.saveSettings();
+                    });
+            });
+            menu.addItem((item) => {
+                item.setTitle('Border tebel (Bold 2.4px - Default)')
+                    .setChecked(this.nodeImageBorder === 'thick')
+                    .onClick(async () => {
+                        this.setNodeImageBorder('thick');
+                        await this.plugin.saveSettings();
+                    });
+            });
+            menu.showAtMouseEvent(e);
         };
 
         // Divider: Separator after Toggles
@@ -1583,6 +1685,16 @@ export class BubbleGraphView extends ItemView {
         const node = this.selectedNode;
         const details = this.inspectorEl.createDiv({ cls: 'pakcli-inspector-details' });
 
+        // Cover Image Preview Thumbnail
+        if (node.imageUrl) {
+            const imgWrap = details.createDiv({ cls: 'pakcli-inspector-image-wrap' });
+            imgWrap.style.cssText = 'display: flex; justify-content: center; align-items: center; margin: 8px 0 12px 0;';
+            const imgEl = imgWrap.createEl('img', { cls: 'pakcli-inspector-img' });
+            imgEl.src = node.imageUrl;
+            imgEl.alt = node.name;
+            imgEl.style.cssText = 'width: 60px; height: 60px; border-radius: 50%; object-fit: cover; border: 2px solid var(--interactive-accent, #7c3aed); box-shadow: 0 4px 12px rgba(0,0,0,0.35);';
+        }
+
         // Note Title
         const titleRow = details.createDiv({ cls: 'pakcli-inspector-row' });
         titleRow.createSpan({ text: 'Active Note:', cls: 'pakcli-row-label' });
@@ -2119,7 +2231,9 @@ export class BubbleGraphView extends ItemView {
                     hullOpacity: this.plugin.settings.bubbleHullOpacity || 0.12,
                     intraLinkOpacity: this.plugin.settings.bubbleIntraLinkOpacity || 0.2,
                     timelapseCtimeCutoff: renderCutoff,
-                    timelapseVisibleNodeIds: renderVisibleNodeIds
+                    timelapseVisibleNodeIds: renderVisibleNodeIds,
+                    enableNodeImageCover: this.enableNodeImageCover,
+                    nodeImageBorder: this.nodeImageBorder
                 };
 
                 this.renderer.render(this.transform, renderState, time);

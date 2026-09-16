@@ -192,7 +192,13 @@ export class MasterDetailSettingsTab extends PluginSettingTab {
     }
     const mobileVal = this.containerEl.querySelector(".pakcli-mobile-value");
     const mod = ECOSYSTEM_MODULES.find((m) => m.id === sectionId);
-    if (mobileVal && mod) mobileVal.setText(mod.title);
+    if (mobileVal) {
+      if (mod) {
+        mobileVal.setText(mod.title);
+      } else if (this.localHandlers.has(sectionId)) {
+        mobileVal.setText(this.localHandlers.get(sectionId)!.title);
+      }
+    }
   }
 
   getSettingDefinitions(): SettingDefinitionItem[] {
@@ -417,7 +423,9 @@ export class MasterDetailSettingsTab extends PluginSettingTab {
 
     // Mobile Toggle Bar
     const activeModObj = ECOSYSTEM_MODULES.find((m) => m.id === this.activeSectionId);
-    const activeTitle = activeModObj ? activeModObj.title : "Settings";
+    const activeTitle = activeModObj
+      ? activeModObj.title
+      : (this.localHandlers.get(this.activeSectionId)?.title || "Settings");
 
     const mobileBar = containerEl.createDiv({ cls: "pakcli-mobile-toggle-bar" });
     const mobileTitleEl = mobileBar.createDiv({ cls: "pakcli-mobile-current-title" });
@@ -524,7 +532,10 @@ export class MasterDetailSettingsTab extends PluginSettingTab {
     }
 
     const modules = ECOSYSTEM_MODULES.filter((m) => m.category === category);
+    const renderedIds = new Set<string>();
+
     modules.forEach((mod) => {
+      renderedIds.add(mod.id);
       if (this.searchQuery && !mod.title.toLowerCase().includes(this.searchQuery)) return;
 
       const hasLocalHandler = this.localHandlers.has(mod.id);
@@ -532,6 +543,15 @@ export class MasterDetailSettingsTab extends PluginSettingTab {
       const iconToUse = mod.icon || (isAvailable ? "check-circle" : "lock");
 
       this.renderNavItem(groupEl, mod.id, mod.title, iconToUse, isAvailable, layoutContainer);
+    });
+
+    // Also render any registered localHandlers for this category that were not in ECOSYSTEM_MODULES
+    this.localHandlers.forEach((handler, handlerId) => {
+      if (handler.category === category && !renderedIds.has(handlerId)) {
+        if (this.searchQuery && !handler.title.toLowerCase().includes(this.searchQuery)) return;
+        const iconToUse = handler.icon || "check-circle";
+        this.renderNavItem(groupEl, handlerId, handler.title, iconToUse, true, layoutContainer);
+      }
     });
   }
 

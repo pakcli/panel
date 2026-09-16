@@ -564,3 +564,124 @@ body.pakcli-resizing-y {
     margin-top: 4px;
   }
 }
+
+/* ── Relationship Virtual Folders in File Explorer ──────────────────────── */
+
+.pakcli-virtual-folder {
+  margin: 2px 0;
+  position: relative;
+
+  &.pakcli-virtual-nested {
+    margin: 3px 0 3px 6px;
+    border-left: 2px solid var(--tier-color, var(--interactive-accent));
+    border-radius: 4px;
+    background: rgba(var(--mono-rgb-100), 0.02);
+    transition: background-color 0.15s ease;
+
+    &:hover {
+      background: rgba(var(--mono-rgb-100), 0.04);
+    }
+  }
+
+  .pakcli-virtual-folder-title {
+    display: flex;
+    align-items: center;
+    padding: 3px 6px 3px 18px;
+    border-radius: var(--radius-s);
+    cursor: pointer;
+    user-select: none;
+    transition: background-color 0.1s ease;
+
+    &:hover {
+      background-color: var(--nav-item-background-hover, var(--background-modifier-hover));
+    }
+
+    .collapse-icon {
+      margin-right: 4px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      transition: transform 0.15s ease;
+
+      svg {
+        width: 9px;
+        height: 9px;
+        fill: currentColor;
+      }
+    }
+
+    .pakcli-virtual-folder-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      display: inline-block;
+      margin-right: 6px;
+      flex-shrink: 0;
+      box-shadow: 0 0 4px rgba(0, 0, 0, 0.2);
+    }
+
+    .nav-folder-title-content {
+      font-size: var(--nav-item-size, 13px);
+      font-weight: 500;
+      color: var(--text-normal);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .pakcli-virtual-badge {
+      font-size: 10px;
+      font-weight: 600;
+      padding: 1px 6px;
+      border-radius: 4px;
+      background: rgba(139, 92, 246, 0.18);
+      color: var(--text-accent);
+      border: 1px solid rgba(139, 92, 246, 0.35);
+      margin-left: 6px;
+      letter-spacing: 0.2px;
+      display: inline-flex;
+      align-items: center;
+      flex-shrink: 0;
+    }
+
+    .pakcli-virtual-range {
+      font-size: 10px;
+      color: var(--text-muted);
+      font-family: var(--font-monospace);
+      margin-left: 6px;
+      flex-shrink: 0;
+    }
+
+    .pakcli-virtual-count {
+      font-size: 11px;
+      color: var(--text-muted);
+      margin-left: 5px;
+      flex-shrink: 0;
+    }
+  }
+
+  &.is-collapsed {
+    .pakcli-virtual-folder-title .collapse-icon {
+      transform: rotate(-90deg);
+    }
+
+    .pakcli-virtual-folder-children {
+      display: none !important;
+    }
+  }
+
+  .pakcli-virtual-folder-children {
+    padding-left: 14px;
+    position: relative;
+    border-left: 1px solid var(--nav-indentation-guide-color, var(--background-modifier-border));
+    margin-left: 10px;
+
+    .pakcli-virtual-empty {
+      font-size: 11px;
+      color: var(--text-muted);
+      font-style: italic;
+      padding: 4px 0 4px 12px;
+    }
+  }
+}
+

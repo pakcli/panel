@@ -91,6 +91,20 @@ export const ECOSYSTEM_MODULES: BlueprintSection[] = [
     ],
   },
   {
+    id: "table-relationship",
+    category: "table",
+    title: "Relationship",
+    icon: "users",
+    storeId: "pakcli-panel",
+    repoUrl: "https://github.com/pakcli/table",
+    description: "Concentric relationship mapping (Household, Family, Close Friends, Friends, Know) rendered as colorful bubble clusters in Bubble Graph.",
+    fields: [
+      { key: "relationshipMode", type: "dropdown", name: "Organization Mode", desc: "Choose between Single Directory mode (closeness score) or Subfolders mode.", defaultVal: "1dir", options: ["1dir", "subfolders"] },
+      { key: "familyCirclesRootFolder", type: "text", name: "Root Folder Name", desc: "Vault folder for relationship notes.", defaultVal: "Relationships" },
+      { key: "relationshipPropertyKey", type: "text", name: "Closeness Property Key", desc: "Frontmatter property key for closeness score (0.00-1.00).", defaultVal: "closeness" },
+    ],
+  },
+  {
     id: "table-csv",
     category: "table",
     title: "CSV & Tablite Table Editor",

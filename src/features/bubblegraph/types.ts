@@ -16,6 +16,7 @@ export interface BubbleNode {
     outDegree: number;
     totalDegree: number;
     glyph: NodeGlyphType;
+    imageUrl?: string;
     radius: number;
     x: number;
     y: number;
