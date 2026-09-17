@@ -39,6 +39,8 @@
     height: 100%;
     overflow: hidden;
     color: var(--text-normal);
+    container-type: inline-size;
+    container-name: audioplayer;
 }
 
 /* --- Header Bar --- */
@@ -89,10 +91,12 @@
 .pakcli-audio-scroll-container {
     flex: 1;
     overflow-y: auto;
-    padding: 18px;
+    padding: 16px;
     display: flex;
     flex-direction: column;
-    gap: 16px;
+    gap: 14px;
+    min-width: 0;
+    box-sizing: border-box;
 }
 
 /* --- Cards General --- */
@@ -100,11 +104,13 @@
     background-color: var(--background-secondary);
     border: 1px solid var(--background-modifier-border);
     border-radius: var(--radius-m);
-    padding: 14px 16px;
+    padding: 14px;
     display: flex;
     flex-direction: column;
     gap: 12px;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+    min-width: 0;
+    box-sizing: border-box;
 }
 
 .pakcli-card-header {
@@ -220,8 +226,10 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 12px;
+    gap: 8px;
     padding: 6px 0;
+    width: 100%;
+    box-sizing: border-box;
 }
 
 .pakcli-btn-transport {
@@ -230,11 +238,15 @@
     color: var(--text-normal);
     border-radius: var(--radius-m);
     cursor: pointer;
-    padding: 8px 16px;
+    padding: 7px 10px;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    font-size: 0.95rem;
+    font-size: 0.92rem;
+    flex: 1 1 0;
+    min-width: 0;
+    max-width: 60px;
+    box-sizing: border-box;
     transition: all 0.15s ease;
 
     &:hover {
@@ -251,8 +263,10 @@
         background-color: var(--interactive-accent);
         color: var(--text-on-accent);
         border-color: var(--interactive-accent);
-        padding: 10px 22px;
+        padding: 8px 14px;
         font-weight: 700;
+        flex: 1.25 1 0;
+        max-width: 72px;
 
         &:hover {
             opacity: 0.92;
@@ -309,46 +323,82 @@
 
 /* --- Volume Controls Card --- */
 .pakcli-volume-card {
-    gap: 10px;
-}
-
-.pakcli-volume-row {
-    display: flex;
-    align-items: center;
     gap: 12px;
 }
 
+.pakcli-volume-row {
+    display: flex !important;
+    flex-direction: row !important;
+    align-items: center !important;
+    flex-wrap: nowrap !important;
+    gap: 6px;
+    width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+}
+
 .pakcli-vol-label {
-    width: 80px;
-    font-size: 0.82rem;
+    flex: 0 1 auto;
+    max-width: 90px;
+    min-width: 44px;
+    font-size: 0.8rem;
     font-weight: 600;
     color: var(--text-normal);
-    flex-shrink: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .pakcli-vol-slider {
-    flex: 1;
+    flex: 1 1 35px;
+    min-width: 25px;
     accent-color: var(--interactive-accent);
     cursor: pointer;
     height: 6px;
+    margin: 0;
 }
 
 .pakcli-vol-val {
     font-family: var(--font-monospace);
-    font-size: 0.8rem;
+    font-size: 0.74rem;
     color: var(--text-muted);
-    width: 36px;
+    width: 28px;
+    min-width: 28px;
     text-align: right;
+    flex-shrink: 0;
+    white-space: nowrap;
 }
 
-.pakcli-btn-mute {
-    padding: 4px 10px;
-    font-size: 0.78rem;
+.pakcli-split-btn-group {
+    display: inline-flex;
+    align-items: center;
+    flex-shrink: 0;
+
+    .pakcli-btn-mute {
+        border-top-right-radius: 0 !important;
+        border-bottom-right-radius: 0 !important;
+        border-right: none !important;
+    }
+
+    .pakcli-btn-test-sfx {
+        border-top-left-radius: 0 !important;
+        border-bottom-left-radius: 0 !important;
+    }
+}
+
+.pakcli-btn-mute,
+.pakcli-btn-test-sfx {
+    padding: 2px 6px;
+    font-size: 0.72rem;
+    line-height: 1.2;
     border-radius: var(--radius-s);
     border: 1px solid var(--background-modifier-border);
     background-color: var(--background-primary);
     color: var(--text-normal);
     cursor: pointer;
+    flex-shrink: 0;
+    white-space: nowrap;
+    box-sizing: border-box;
 
     &:hover {
         background-color: var(--background-modifier-hover);
@@ -361,19 +411,8 @@
     }
 }
 
-.pakcli-btn-test-sfx {
-    padding: 4px 10px;
-    font-size: 0.78rem;
-    border-radius: var(--radius-s);
-    border: 1px solid var(--background-modifier-border);
-    background-color: var(--background-primary);
-    color: var(--text-normal);
-    cursor: pointer;
-
-    &:hover {
-        background-color: var(--background-modifier-hover);
-        border-color: var(--interactive-accent);
-    }
+.pakcli-btn-test-sfx:hover {
+    border-color: var(--interactive-accent);
 }
 
 /* --- Up Next Queue Card --- */
@@ -550,5 +589,108 @@
     &:hover {
         color: var(--text-normal);
         background-color: var(--background-modifier-hover);
+    }
+}
+
+/* --- Responsive Rules for Narrow Panels / Sidebar Tab Dock --- */
+@container (max-width: 360px) {
+    .pakcli-audio-scroll-container {
+        padding: 10px 8px;
+        gap: 10px;
+    }
+
+    .pakcli-audio-card {
+        padding: 10px 8px;
+        gap: 10px;
+    }
+
+    .pakcli-audio-header {
+        padding: 8px 10px;
+    }
+
+    .pakcli-transport-row {
+        gap: 4px;
+    }
+
+    .pakcli-btn-transport {
+        padding: 6px 4px;
+        font-size: 0.86rem;
+    }
+
+    .pakcli-volume-row {
+        gap: 4px;
+    }
+
+    .pakcli-vol-label {
+        max-width: 68px;
+        min-width: 38px;
+        font-size: 0.74rem;
+    }
+
+    .pakcli-vol-slider {
+        min-width: 20px;
+    }
+
+    .pakcli-vol-val {
+        font-size: 0.7rem;
+        width: 26px;
+        min-width: 26px;
+    }
+
+    .pakcli-btn-mute,
+    .pakcli-btn-test-sfx {
+        padding: 2px 4px;
+        font-size: 0.68rem;
+    }
+}
+
+@media (max-width: 360px) {
+    .pakcli-audio-scroll-container {
+        padding: 10px 8px;
+        gap: 10px;
+    }
+
+    .pakcli-audio-card {
+        padding: 10px 8px;
+        gap: 10px;
+    }
+
+    .pakcli-audio-header {
+        padding: 8px 10px;
+    }
+
+    .pakcli-transport-row {
+        gap: 4px;
+    }
+
+    .pakcli-btn-transport {
+        padding: 6px 4px;
+        font-size: 0.86rem;
+    }
+
+    .pakcli-volume-row {
+        gap: 4px;
+    }
+
+    .pakcli-vol-label {
+        max-width: 68px;
+        min-width: 38px;
+        font-size: 0.74rem;
+    }
+
+    .pakcli-vol-slider {
+        min-width: 20px;
+    }
+
+    .pakcli-vol-val {
+        font-size: 0.7rem;
+        width: 26px;
+        min-width: 26px;
+    }
+
+    .pakcli-btn-mute,
+    .pakcli-btn-test-sfx {
+        padding: 2px 4px;
+        font-size: 0.68rem;
     }
 }

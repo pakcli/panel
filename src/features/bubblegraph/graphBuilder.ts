@@ -144,49 +144,139 @@ export function resolveNodeImageUrl(app: App, file: TFile): string | undefined {
 export const DARK_GRAY_COLOR = '#4a5568';
 
 /**
- * Resolves the theme-adaptive accent color for default nodes and clusters.
- * In Dark Theme: Lighter shade of the accent color for high contrast & luminosity on dark backgrounds.
- * In Light Theme: Darker shade of the accent color for rich readability on light backgrounds.
+ * Helper to normalize any color string (hex, rgb, rgba) into a standard #rrggbb hex string.
  */
-export function getDefaultNodeColor(): string {
+export function normalizeToHex(colorStr: string): string | null {
+    if (!colorStr) return null;
+    const s = colorStr.trim();
+
+    // 1. #rrggbb or #rrggbbaa
+    const hex6 = s.match(/^#([0-9a-fA-F]{6})/);
+    if (hex6) return `#${hex6[1].toLowerCase()}`;
+
+    // 2. #rgb
+    const hex3 = s.match(/^#([0-9a-fA-F]{3})$/);
+    if (hex3) {
+        const h = hex3[1].split('').map(c => c + c).join('').toLowerCase();
+        return `#${h}`;
+    }
+
+    // 3. rgb(r, g, b) or rgba(r, g, b, a)
+    const rgbMatch = s.match(/rgba?\((\d+)[,\s]+(\d+)[,\s]+(\d+)/);
+    if (rgbMatch) {
+        const r = Math.max(0, Math.min(255, parseInt(rgbMatch[1], 10)));
+        const g = Math.max(0, Math.min(255, parseInt(rgbMatch[2], 10)));
+        const b = Math.max(0, Math.min(255, parseInt(rgbMatch[3], 10)));
+        const toHex = (n: number) => n.toString(16).padStart(2, '0');
+        return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
+    }
+
+    return null;
+}
+
+/**
+ * Resolves the active accent color from Obsidian configuration and theme CSS.
+ * Returns a standard #rrggbb hex color that precisely matches Obsidian's active accent.
+ */
+export function getDefaultNodeColor(app?: App): string {
+    const targetApp: any = app || (typeof window !== 'undefined' ? (window as any).app : undefined);
+    let rawAccent = '';
+
+    // 1. Check Obsidian vault configuration (persisted when setting Accent color in Appearance settings)
+    if (targetApp?.vault?.getConfig) {
+        try {
+            const vaultAccent = targetApp.vault.getConfig('accentColor');
+            if (vaultAccent && typeof vaultAccent === 'string' && vaultAccent.trim().length > 0) {
+                const hex = normalizeToHex(vaultAccent);
+                if (hex) rawAccent = hex;
+            }
+        } catch {
+            // ignore
+        }
+    }
+
+    // 2. Check Obsidian customCss object
+    if (!rawAccent && targetApp?.customCss?.accentColor) {
+        try {
+            const customAccent = targetApp.customCss.accentColor;
+            if (customAccent && typeof customAccent === 'string' && customAccent.trim().length > 0) {
+                const hex = normalizeToHex(customAccent);
+                if (hex) rawAccent = hex;
+            }
+        } catch {
+            // ignore
+        }
+    }
+
+    // 3. Check computed CSS custom properties from document.body and :root
+    if (!rawAccent && typeof document !== 'undefined') {
+        try {
+            const bodyStyle = getComputedStyle(document.body);
+            const rootStyle = getComputedStyle(document.documentElement);
+
+            // 3a. Direct RGB variable (e.g. --color-accent-rgb: "196, 173, 122")
+            const rgbVar = bodyStyle.getPropertyValue('--color-accent-rgb').trim() ||
+                           rootStyle.getPropertyValue('--color-accent-rgb').trim() ||
+                           bodyStyle.getPropertyValue('--interactive-accent-rgb').trim() ||
+                           rootStyle.getPropertyValue('--interactive-accent-rgb').trim();
+            if (rgbVar) {
+                const parts = rgbVar.split(',').map(p => parseInt(p.trim(), 10));
+                if (parts.length >= 3 && !parts.some(isNaN)) {
+                    const toHex = (n: number) => Math.max(0, Math.min(255, n)).toString(16).padStart(2, '0');
+                    rawAccent = `#${toHex(parts[0])}${toHex(parts[1])}${toHex(parts[2])}`;
+                }
+            }
+
+            // 3b. Direct color string if already hex or rgb
+            if (!rawAccent) {
+                const direct = bodyStyle.getPropertyValue('--color-accent').trim() ||
+                               rootStyle.getPropertyValue('--color-accent').trim() ||
+                               bodyStyle.getPropertyValue('--interactive-accent').trim() ||
+                               rootStyle.getPropertyValue('--interactive-accent').trim() ||
+                               bodyStyle.getPropertyValue('--text-accent').trim();
+                if (direct) {
+                    const hex = normalizeToHex(direct);
+                    if (hex) rawAccent = hex;
+                }
+            }
+
+            // 3c. DOM Probe: evaluate variable cascade, HSL or color-mix through the browser's CSSOM
+            if (!rawAccent) {
+                const probe = document.createElement('div');
+                probe.style.cssText = 'position:absolute;left:-9999px;top:-9999px;width:1px;height:1px;visibility:hidden;pointer-events:none;color:var(--color-accent, var(--interactive-accent, #7c3aed));';
+                document.body.appendChild(probe);
+                const computedColor = getComputedStyle(probe).color;
+                document.body.removeChild(probe);
+
+                if (computedColor) {
+                    const hex = normalizeToHex(computedColor);
+                    if (hex) rawAccent = hex;
+                }
+            }
+        } catch {
+            // ignore DOM errors
+        }
+    }
+
     const isDark = typeof document !== 'undefined' ? document.body.classList.contains('theme-dark') : true;
 
-    let rawAccent = '';
-    if (typeof document !== 'undefined') {
-        const cs = getComputedStyle(document.body);
-        rawAccent = (
-            cs.getPropertyValue('--interactive-accent').trim() ||
-            cs.getPropertyValue('--text-accent').trim() ||
-            cs.getPropertyValue('--color-accent').trim()
-        );
-    }
-
+    // Fallback if no accent color was detected
     if (!rawAccent) {
-        return isDark ? '#a78bfa' : '#5b21b6';
+        return isDark ? '#c084fc' : '#7e22ce';
     }
 
+    // Adaptive contrast: Darker for light mode, lighter for dark mode
     return adjustAccentLightness(rawAccent, isDark);
 }
 
 export function adjustAccentLightness(colorStr: string, isDark: boolean): string {
-    const hexMatch = colorStr.match(/^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/);
+    const hex = normalizeToHex(colorStr);
     let r = 124, g = 58, b = 237;
 
-    if (hexMatch) {
-        let hex = hexMatch[1];
-        if (hex.length === 3) {
-            hex = hex.split('').map(c => c + c).join('');
-        }
-        r = parseInt(hex.substring(0, 2), 16);
-        g = parseInt(hex.substring(2, 4), 16);
-        b = parseInt(hex.substring(4, 6), 16);
-    } else {
-        const rgbMatch = colorStr.match(/rgba?\((\d+)[,\s]+(\d+)[,\s]+(\d+)/);
-        if (rgbMatch) {
-            r = parseInt(rgbMatch[1], 10);
-            g = parseInt(rgbMatch[2], 10);
-            b = parseInt(rgbMatch[3], 10);
-        }
+    if (hex) {
+        r = parseInt(hex.substring(1, 3), 16);
+        g = parseInt(hex.substring(3, 5), 16);
+        b = parseInt(hex.substring(5, 7), 16);
     }
 
     // Convert RGB to HSL
@@ -210,18 +300,17 @@ export function adjustAccentLightness(colorStr: string, isDark: boolean): string
         h /= 6;
     }
 
-    // Adaptive lightness:
-    // Dark theme: Lighter accent (high contrast on dark background, target ~68%-75% lightness)
-    // Light theme: Darker accent (high contrast on light background, target ~30%-38% lightness)
+    // User requirement: "make the bubble graph view darker for light mode and lighter for darkmode"
     if (isDark) {
-        l = Math.min(0.82, Math.max(l + 0.18, 0.70));
-        s = Math.min(1.0, Math.max(s, 0.65));
+        // Dark theme: Lighter & luminous accent (high contrast & vibrancy against dark background, target ~68%-76% lightness)
+        l = Math.min(0.80, Math.max(l + 0.15, 0.68));
+        s = Math.min(0.95, Math.max(s, 0.65));
     } else {
-        l = Math.max(0.24, Math.min(l - 0.20, 0.35));
-        s = Math.min(1.0, Math.max(s, 0.70));
+        // Light theme: Darker & richer accent (rich readability and strong contrast against light background, target ~35%-42% lightness)
+        l = Math.max(0.32, Math.min(l - 0.18, 0.42));
+        s = Math.min(0.95, Math.max(s, 0.65));
     }
 
-    // Convert back to RGB
     const hue2rgb = (p: number, q: number, t: number) => {
         if (t < 0) t += 1;
         if (t > 1) t -= 1;
@@ -374,14 +463,15 @@ export function getFolderColor(
     folderPath: string,
     captainRules?: FolderRule[],
     useCaptainColors: boolean = false,
-    fileConfigs?: Record<string, any>
+    fileConfigs?: Record<string, any>,
+    app?: App
 ): string {
     if (!useCaptainColors) {
-        return getDefaultNodeColor();
+        return getDefaultNodeColor(app);
     }
 
     if (!folderPath || folderPath === '/' || folderPath === '.') {
-        return getDefaultNodeColor();
+        return getDefaultNodeColor(app);
     }
 
     const norm = normalizePath(folderPath).replace(/^\/+|\/+$/g, '');
@@ -407,7 +497,7 @@ export function getFolderColor(
     }
 
     // Folders without captain rules stay default color
-    return getDefaultNodeColor();
+    return getDefaultNodeColor(app);
 }
 
 export interface BuiltGraph {
@@ -654,12 +744,12 @@ export function buildVaultGraph(
         }
 
         const relTierColor = matchedRelTier ? resolveTierColor(matchedRelTier) : undefined;
-        let color = getDefaultNodeColor();
+        let color = getDefaultNodeColor(app);
 
         if (matchedRelTier) {
             // Relationship nodes strictly keep their tier color from settings
             const exactRule = captainRules?.find(r => r.enabled !== false && compareFolderPaths(r.path, folderPath));
-            color = (exactRule && exactRule.color) ? exactRule.color : (relTierColor || getDefaultNodeColor());
+            color = (exactRule && exactRule.color) ? exactRule.color : (relTierColor || getDefaultNodeColor(app));
         } else if (useCaptainColors) {
             const matchedRule = matchFolderRule(folderPath || topLevelFolder, captainRules || [], fileConfigs);
             if (matchedRule && matchedRule.color) {
@@ -853,7 +943,7 @@ export function buildVaultGraph(
 
         const allRelNodeIds = relNodes.map(n => n.id);
         const rootDirectIds = tierDirectNodeMap.get(targetRelRoot) || [];
-        const rootColor = getDefaultNodeColor();
+        const rootColor = getDefaultNodeColor(app);
 
         const rootCluster: BubbleCluster = {
             id: targetRelRoot,
@@ -1208,7 +1298,7 @@ export function buildVaultGraph(
             directNodeIds: directIds,
             centroid: { x: 0, y: 0 },
             radius: initialRadius,
-            color: getFolderColor(folderPath, captainRules, useCaptainColors, fileConfigs),
+            color: getFolderColor(folderPath, captainRules, useCaptainColors, fileConfigs, app),
             hullPolygon: [],
             smoothedHull: [],
             boundingBox: { minX: 0, minY: 0, maxX: 0, maxY: 0 }

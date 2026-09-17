@@ -20,13 +20,22 @@ export class PlaylistManager {
     private currentTrack: AudioTrack | null = null;
     private currentIndex: number = -1;
 
+    private musicLabel: string = 'Background Audio';
+
     private stateListeners: Set<(state: AudioPlayerState) => void> = new Set();
 
-    constructor(app: App, audioEngine: AudioEngine, initialTargetFolder: string = '', initialMode: PlaybackMode = 'loop_all') {
+    constructor(
+        app: App, 
+        audioEngine: AudioEngine, 
+        initialTargetFolder: string = '', 
+        initialMode: PlaybackMode = 'loop_all',
+        initialMusicLabel: string = 'Background Audio'
+    ) {
         this.app = app;
         this.audioEngine = audioEngine;
         this.targetFolder = initialTargetFolder;
         this.playbackMode = initialMode;
+        this.musicLabel = initialMusicLabel || 'Background Audio';
 
         // Wire AudioEngine track ended event to smart queue transition
         this.audioEngine.onTrackEnded(() => {
@@ -101,6 +110,15 @@ export class PlaylistManager {
         return Array.from(folders).sort();
     }
 
+    public setMusicLabel(label: string): void {
+        this.musicLabel = label || 'Background Audio';
+        this.notifyState();
+    }
+
+    public getMusicLabel(): string {
+        return this.musicLabel;
+    }
+
     public getState(): AudioPlayerState {
         return {
             currentTrack: this.currentTrack,
@@ -111,7 +129,10 @@ export class PlaylistManager {
             masterVolume: this.audioEngine.getMasterVolume(),
             isMuted: this.audioEngine.isAudioMuted(),
             musicVolume: this.audioEngine.getMusicVolume(),
+            isMusicMuted: this.audioEngine.isAudioMusicMuted(),
+            musicLabel: this.musicLabel,
             sfxVolume: this.audioEngine.getSfxVolume(),
+            isSfxMuted: this.audioEngine.isAudioSfxMuted(),
             basePlaylist: [...this.basePlaylist],
             priorityQueue: [...this.priorityQueue],
             historyStack: [...this.historyStack],

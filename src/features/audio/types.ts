@@ -26,7 +26,10 @@ export interface AudioPlayerState {
     masterVolume: number; // 0.0 to 1.0
     isMuted: boolean;
     musicVolume: number; // 0.0 to 1.0
+    isMusicMuted: boolean;
+    musicLabel: string;
     sfxVolume: number; // 0.0 to 1.0
+    isSfxMuted: boolean;
     basePlaylist: AudioTrack[];
     priorityQueue: AudioTrack[];
     historyStack: AudioTrack[];
@@ -39,7 +42,10 @@ export interface AudioPluginSettings {
     audioMasterVolume: number;
     audioIsMuted: boolean;
     audioMusicVolume: number;
+    audioMusicMuted: boolean;
+    audioMusicLabel: string;
     audioSfxVolume: number;
+    audioSfxMuted: boolean;
     sfxSnapEnabled: boolean;
     sfxChimeEnabled: boolean;
     sfxPaperSlideEnabled: boolean;
@@ -53,7 +59,10 @@ export const DEFAULT_AUDIO_SETTINGS: AudioPluginSettings = {
     audioMasterVolume: 0.70,
     audioIsMuted: false,
     audioMusicVolume: 0.85,
+    audioMusicMuted: false,
+    audioMusicLabel: 'Background Audio',
     audioSfxVolume: 0.60,
+    audioSfxMuted: false,
     sfxSnapEnabled: true,
     sfxChimeEnabled: true,
     sfxPaperSlideEnabled: true,

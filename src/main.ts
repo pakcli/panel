@@ -160,7 +160,8 @@ export default class PakCLITablePlugin extends Plugin {
 			this.app,
 			this.audioEngine,
 			this.settings.audioTargetFolder || '',
-			this.settings.audioPlaybackMode || 'loop_all'
+			this.settings.audioPlaybackMode || 'loop_all',
+			this.settings.audioMusicLabel || 'Background Audio'
 		);
 		this.audioPlayerPopup = new AudioPlayerPopup(this, this.audioEngine, this.playlistManager);
 
@@ -4217,6 +4218,21 @@ export default class PakCLITablePlugin extends Plugin {
 						b.setButtonText('Dock as Tab Leaf')
 							.onClick(() => {
 								this.openAudioPlayerTab();
+							});
+					});
+
+				// Background Audio Label
+				new Setting(containerEl)
+					.setName('Background Audio Label')
+					.setDesc('Customize the display name for background audio/music in the volume controls and player (default: Background Audio).')
+					.addText((t) => {
+						t.setPlaceholder('Background Audio')
+							.setValue(this.settings.audioMusicLabel || 'Background Audio')
+							.onChange(async (v) => {
+								const clean = v.trim() || 'Background Audio';
+								this.settings.audioMusicLabel = clean;
+								await this.saveSettings();
+								this.playlistManager?.setMusicLabel(clean);
 							});
 					});
 

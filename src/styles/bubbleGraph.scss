@@ -17,43 +17,6 @@
     background-color: var(--background-primary);
     color: var(--text-normal);
     user-select: none;
-
-    /* Base fallback variables for toggle buttons */
-    --pakcli-toggle-off-bg: #ffffff;
-    --pakcli-toggle-off-border: #3c1448;
-    --pakcli-toggle-off-color: #4a1555;
-    --pakcli-toggle-off-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
-
-    --pakcli-toggle-on-bg: #c8b2da;
-    --pakcli-toggle-on-border: #3c1448;
-    --pakcli-toggle-on-color: #24052f;
-    --pakcli-toggle-on-shadow: inset 1.5px 2.5px 4px rgba(35, 8, 45, 0.65), inset 0 1.5px 2px rgba(0, 0, 0, 0.5), inset -1px -1px 2px rgba(255, 255, 255, 0.35);
-}
-
-.theme-light .pakcli-bubble-graph-container,
-.theme-light.pakcli-bubble-graph-container {
-    --pakcli-toggle-off-bg: #ffffff;
-    --pakcli-toggle-off-border: #3c1448;
-    --pakcli-toggle-off-color: #4a1555;
-    --pakcli-toggle-off-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
-
-    --pakcli-toggle-on-bg: #c8b2da;
-    --pakcli-toggle-on-border: #3c1448;
-    --pakcli-toggle-on-color: #24052f;
-    --pakcli-toggle-on-shadow: inset 1.5px 2.5px 4px rgba(35, 8, 45, 0.65), inset 0 1.5px 2px rgba(0, 0, 0, 0.5), inset -1px -1px 2px rgba(255, 255, 255, 0.35);
-}
-
-.theme-dark .pakcli-bubble-graph-container,
-.theme-dark.pakcli-bubble-graph-container {
-    --pakcli-toggle-off-bg: rgba(255, 255, 255, 0.05);
-    --pakcli-toggle-off-border: rgba(255, 255, 255, 0.20);
-    --pakcli-toggle-off-color: var(--text-muted, #9ca3af);
-    --pakcli-toggle-off-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
-
-    --pakcli-toggle-on-bg: rgba(168, 85, 247, 0.28);
-    --pakcli-toggle-on-border: var(--interactive-accent, #a855f7);
-    --pakcli-toggle-on-color: #faf5ff;
-    --pakcli-toggle-on-shadow: inset 1.5px 2.5px 5px rgba(0, 0, 0, 0.85), inset 0 1.5px 2px rgba(0, 0, 0, 0.95), inset -1px -1px 2px rgba(255, 255, 255, 0.15);
 }
 
 /* 1. Header Toolbar (2-Row Layout) */
@@ -78,13 +41,28 @@
     align-items: center;
     justify-content: space-between;
     gap: 12px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: thin;
+    white-space: nowrap;
+    box-sizing: border-box;
+    padding-bottom: 3px;
+
+    &::-webkit-scrollbar {
+        height: 3px;
+    }
+    &::-webkit-scrollbar-thumb {
+        background: var(--background-modifier-border);
+        border-radius: 2px;
+    }
 }
 
 .pakcli-header-row-left {
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 8px;
     flex-shrink: 0;
+    min-width: max-content;
 }
 
 .pakcli-header-quick-toggles {
@@ -94,20 +72,14 @@
     flex-shrink: 0;
 }
 
-.pakcli-header-row-center {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex: 1;
-    min-width: 0;
-}
-
 .pakcli-header-row-right {
     display: flex;
     align-items: center;
     justify-content: flex-end;
-    gap: 8px;
+    gap: 12px;
     flex-shrink: 0;
+    min-width: max-content;
+    margin-left: auto;
 }
 
 .pakcli-header-row-2 {
@@ -160,6 +132,7 @@
 .pakcli-scope-bar {
     display: flex;
     align-items: center;
+    flex-shrink: 0;
 }
 
 .pakcli-scope-badge {
@@ -206,11 +179,7 @@
     display: inline-flex;
     align-items: center;
     gap: 4px;
-    background: var(--interactive-accent);
-    color: var(--text-on-accent);
-    border: none;
     padding: 3px 8px;
-    border-radius: var(--radius-s);
     font-size: 11px;
     font-weight: 600;
     cursor: pointer;
@@ -550,13 +519,9 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    background: transparent;
-    border: none;
-    color: var(--text-muted);
     padding: 0;
-    width: 18px;
-    height: 18px;
-    border-radius: var(--radius-s);
+    width: 20px;
+    height: 20px;
     cursor: pointer;
     transition: all 0.15s ease;
     box-sizing: border-box;
@@ -570,7 +535,6 @@
 
     &:hover {
         color: var(--text-accent);
-        background: var(--background-modifier-hover);
         transform: rotate(-45deg);
     }
 
@@ -701,25 +665,14 @@
 }
 
 .pakcli-icon-btn {
-    background: transparent;
-    border: 1px solid transparent;
-    color: var(--text-muted);
-    padding: 5px;
-    border-radius: var(--radius-s);
     cursor: pointer;
-    display: flex;
+    display: inline-flex;
     align-items: center;
     justify-content: center;
 
-    &:hover {
-        background: var(--background-modifier-hover);
-        color: var(--text-normal);
-        border-color: var(--background-modifier-border);
-    }
-
     svg {
-        width: 16px;
-        height: 16px;
+        width: 15px;
+        height: 15px;
     }
 }
 
@@ -742,11 +695,10 @@
 }
 
 /* ========================================================================= */
-/* Comprehensive Button System: ON (Mendelep Pressed) vs OFF (Seperti Biasa) */
+/* Buttons: Rely on Native Obsidian & Theme Styles                          */
 /* ========================================================================= */
 
 .pakcli-bubble-graph-container {
-    /* All toggle and segmented selection buttons */
     button.pakcli-tab-btn,
     button.pakcli-depth-btn,
     button.pakcli-lines-toggle-btn,
@@ -758,73 +710,46 @@
     button.pakcli-top-settings-btn,
     button.pakcli-floating-tools-btn,
     button.pakcli-footer-toggle-btn,
-    button.pakcli-fullscreen-btn {
-        border-radius: 6px !important;
+    button.pakcli-fullscreen-btn,
+    button.pakcli-image-cover-btn,
+    button.pakcli-rel-allscope-btn,
+    button.pakcli-icon-btn,
+    button.pakcli-always-fit-btn,
+    button.pakcli-reset-view-btn,
+    button.pakcli-level-reset-btn {
         cursor: pointer;
-        display: inline-flex !important;
-        align-items: center !important;
-        justify-content: center !important;
-        transition: background-color 0.12s ease, box-shadow 0.12s ease, transform 0.12s ease, border-color 0.12s ease !important;
-        outline: none !important;
-        user-select: none !important;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        user-select: none;
+        box-sizing: border-box;
+        vertical-align: middle;
+        white-space: nowrap;
 
-        /* OFF STATE: "Seperti Biasa" (Flat/Raised, White in Light Theme) */
-        &:not(.active):not([aria-pressed="true"]) {
-            background-color: var(--pakcli-toggle-off-bg) !important;
-            border: 1.5px solid var(--pakcli-toggle-off-border) !important;
-            color: var(--pakcli-toggle-off-color) !important;
-            box-shadow: var(--pakcli-toggle-off-shadow) !important;
-            transform: none !important;
-            font-weight: 500 !important;
-
-            svg {
-                stroke: currentColor !important;
-                color: currentColor !important;
-                stroke-width: 1.8px !important;
-            }
-
-            &:hover {
-                background-color: var(--background-modifier-hover, rgba(255, 255, 255, 0.85)) !important;
-                box-shadow: 0 2px 4px rgba(0, 0, 0, 0.12) !important;
-            }
-
-            &:active {
-                transform: translate(0.5px, 0.5px) !important;
-            }
-        }
-
-        /* ON STATE: "Mendelep Pressed" with Inset Shadow (Like Picture 2) */
-        &.active,
-        &[aria-pressed="true"] {
-            background-color: var(--pakcli-toggle-on-bg) !important;
-            border: 2px solid var(--pakcli-toggle-on-border) !important;
-            color: var(--pakcli-toggle-on-color) !important;
-            box-shadow: var(--pakcli-toggle-on-shadow) !important;
-            transform: translate(0.5px, 1px) !important;
-            font-weight: 700 !important;
-
-            svg {
-                stroke: currentColor !important;
-                color: currentColor !important;
-                stroke-width: 2.3px !important;
-            }
-
-            &:hover {
-                filter: brightness(0.95);
-            }
+        svg {
+            stroke: currentColor;
+            width: 14px;
+            height: 14px;
         }
     }
 
-    button.pakcli-tab-btn {
-        font-size: 11px !important;
-        padding: 4px 10px !important;
-        height: 26px !important;
+    button.pakcli-tab-btn,
+    button.pakcli-reset-view-btn {
+        font-size: 11px;
+        padding: 3px 10px;
+        height: 26px;
     }
 
     button.pakcli-depth-btn {
-        font-size: 10px !important;
-        padding: 3px 8px !important;
-        height: 25px !important;
+        font-size: 10px;
+        padding: 2px 8px;
+        height: 25px;
+    }
+
+    button.pakcli-always-fit-btn {
+        font-size: 11px;
+        padding: 2px 9px;
+        height: 26px;
     }
 
     button.pakcli-lines-toggle-btn,
@@ -835,48 +760,53 @@
     button.pakcli-top-settings-btn,
     button.pakcli-floating-tools-btn,
     button.pakcli-footer-toggle-btn,
-    button.pakcli-fullscreen-btn {
-        width: 28px !important;
-        height: 28px !important;
-        padding: 4px !important;
+    button.pakcli-fullscreen-btn,
+    button.pakcli-image-cover-btn,
+    button.pakcli-rel-allscope-btn,
+    button.pakcli-sfx-toggle-btn,
+    button.pakcli-icon-btn {
+        width: 28px;
+        height: 28px;
+        padding: 4px;
+    }
+
+    /* Standard Action Icon Buttons in Floating Tools (Fit, Refresh, Reset, Zoom In/Out) */
+    .pakcli-canvas-floating-tools button.pakcli-icon-btn {
+        width: 26px;
+        height: 26px;
+        padding: 3px;
 
         svg {
-            width: 15px !important;
-            height: 15px !important;
+            width: 14px;
+            height: 14px;
         }
     }
 
-    /* Standard Action Icon Buttons (Fit, Refresh, Reset) */
-    button.pakcli-icon-btn:not(.pakcli-lines-toggle-btn):not(.pakcli-text-toggle-btn):not(.pakcli-captain-colors-btn):not(.pakcli-inspector-toggle-btn):not(.pakcli-wand-btn):not(.pakcli-top-settings-btn):not(.pakcli-floating-tools-btn):not(.pakcli-footer-toggle-btn):not(.pakcli-fullscreen-btn) {
-        border-radius: 6px !important;
-        background-color: var(--pakcli-toggle-off-bg) !important;
-        border: 1.5px solid var(--pakcli-toggle-off-border) !important;
-        color: var(--pakcli-toggle-off-color) !important;
-        box-shadow: var(--pakcli-toggle-off-shadow) !important;
-        width: 28px !important;
-        height: 28px !important;
-        padding: 4px !important;
-        display: inline-flex !important;
-        align-items: center !important;
-        justify-content: center !important;
-        cursor: pointer;
-        transition: all 0.12s ease;
+    /* Mendelep (Sunken/Pressed-in) state for active toggle and radio buttons */
+    button.pakcli-tab-btn,
+    button.pakcli-depth-btn,
+    button.pakcli-always-fit-btn,
+    button.pakcli-lines-toggle-btn,
+    button.pakcli-text-toggle-btn,
+    button.pakcli-captain-colors-btn,
+    button.pakcli-sfx-toggle-btn,
+    button.pakcli-inspector-toggle-btn,
+    button.pakcli-wand-btn,
+    button.pakcli-top-settings-btn,
+    button.pakcli-floating-tools-btn,
+    button.pakcli-footer-toggle-btn,
+    button.pakcli-fullscreen-btn,
+    button.pakcli-image-cover-btn,
+    button.pakcli-rel-allscope-btn {
+        transition: transform 0.12s ease, box-shadow 0.12s ease, background-color 0.12s ease;
 
-        svg {
-            width: 15px !important;
-            height: 15px !important;
-            stroke: currentColor !important;
-        }
-
-        &:hover {
-            background-color: var(--background-modifier-hover, rgba(255, 255, 255, 0.85)) !important;
-            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.12) !important;
-        }
-
-        &:active {
-            transform: translate(0.5px, 1px) !important;
-            box-shadow: var(--pakcli-toggle-on-shadow) !important;
-            background-color: var(--pakcli-toggle-on-bg) !important;
+        &.active,
+        &.is-active,
+        &[aria-pressed="true"] {
+            transform: translate(1px, 1.5px) !important;
+            box-shadow: inset 1.5px 1.5px 2.5px rgba(0, 0, 0, 0.4), inset -0.5px -0.5px 1px rgba(255, 255, 255, 0.2) !important;
+            background-color: var(--background-modifier-active-hover, rgba(0, 0, 0, 0.08)) !important;
+            font-weight: 600;
         }
     }
 }
@@ -893,7 +823,6 @@
     flex: 1;
     position: relative;
     overflow: hidden;
-    background: radial-gradient(circle at center, var(--background-primary) 0%, var(--background-secondary) 100%);
 }
 
 .pakcli-canvas-floating-tools {
@@ -933,67 +862,21 @@
     }
 
     button.pakcli-icon-btn {
-        width: 26px !important;
-        height: 26px !important;
-        padding: 3px !important;
-        border-radius: var(--radius-s) !important;
+        width: 26px;
+        height: 26px;
+        padding: 3px;
 
         svg {
-            width: 14px !important;
-            height: 14px !important;
+            width: 14px;
+            height: 14px;
         }
     }
 
     .pakcli-always-fit-group {
         display: inline-flex;
         align-items: center;
-        background: var(--background-modifier-form-field);
-        border-radius: var(--radius-s);
-        padding: 2px;
-        gap: 2px;
-        border: 1px solid var(--background-modifier-border);
-        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
-        height: 26px;
+        gap: 6px;
         box-sizing: border-box;
-    }
-
-    button.pakcli-always-fit-btn {
-        background: transparent !important;
-        border: none !important;
-        box-shadow: none !important;
-        transform: none !important;
-        color: var(--text-muted) !important;
-        font-size: 11px !important;
-        font-weight: 500 !important;
-        line-height: 20px !important;
-        padding: 0 9px !important;
-        height: 20px !important;
-        width: auto !important;
-        min-width: 38px !important;
-        border-radius: calc(var(--radius-s) - 2px) !important;
-        cursor: pointer !important;
-        transition: all 0.15s ease !important;
-        white-space: nowrap !important;
-        display: inline-flex !important;
-        align-items: center !important;
-        justify-content: center !important;
-        user-select: none !important;
-        outline: none !important;
-
-        &:hover {
-            color: var(--text-normal) !important;
-            background: var(--background-modifier-hover, rgba(255, 255, 255, 0.08)) !important;
-        }
-
-        &.active,
-        &[aria-pressed="true"] {
-            background-color: var(--pakcli-toggle-on-bg, var(--interactive-accent)) !important;
-            color: var(--pakcli-toggle-on-color, var(--text-on-accent)) !important;
-            box-shadow: var(--pakcli-toggle-on-shadow, 0 1px 2px rgba(0, 0, 0, 0.15)) !important;
-            font-weight: 700 !important;
-            border: none !important;
-            transform: none !important;
-        }
     }
 
     &.collapsed {

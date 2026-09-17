@@ -213,11 +213,19 @@ export function renderAudioPlayerContent(ctx: AudioPlayerRenderContext): () => v
 
     // Music Volume
     const musicVolRow = volumeCard.createDiv({ cls: 'pakcli-volume-row' });
-    musicVolRow.createSpan({ text: '🎵 Music:', cls: 'pakcli-vol-label' });
+    const musicLabelEl = musicVolRow.createSpan({ text: '🎵 Background Audio:', cls: 'pakcli-vol-label' });
     const musicSlider = musicVolRow.createEl('input', { type: 'range', cls: 'pakcli-vol-slider' });
     musicSlider.min = '0';
     musicSlider.max = '100';
     const musicValEl = musicVolRow.createSpan({ cls: 'pakcli-vol-val', text: '85%' });
+
+    const musicMuteBtn = musicVolRow.createEl('button', { cls: 'pakcli-btn-mute', text: '🔈 Mute' });
+    musicMuteBtn.onclick = () => {
+        const isMuted = audioEngine.toggleMusicMute();
+        audioEngine.playClickSnap();
+        musicMuteBtn.setText(isMuted ? '🔇 Unmute' : '🔈 Mute');
+        musicMuteBtn.toggleClass('is-muted', isMuted);
+    };
 
     musicSlider.oninput = () => {
         const val = parseInt(musicSlider.value, 10);
@@ -233,8 +241,22 @@ export function renderAudioPlayerContent(ctx: AudioPlayerRenderContext): () => v
     sfxSlider.max = '100';
     const sfxValEl = sfxVolRow.createSpan({ cls: 'pakcli-vol-val', text: '60%' });
 
-    const testClicksBtn = sfxVolRow.createEl('button', { cls: 'pakcli-btn-test-sfx', text: 'Test Clicks' });
+    const sfxSplitGroup = sfxVolRow.createDiv({ cls: 'pakcli-split-btn-group' });
+    const sfxMuteBtn = sfxSplitGroup.createEl('button', { cls: 'pakcli-btn-mute pakcli-btn-sfx-mute', text: '🔈 Mute' });
+    sfxMuteBtn.onclick = () => {
+        const isMuted = audioEngine.toggleSfxMute();
+        audioEngine.playClickSnap();
+        sfxMuteBtn.setText(isMuted ? '🔇 Unmute' : '🔈 Mute');
+        sfxMuteBtn.toggleClass('is-muted', isMuted);
+    };
+
+    const testClicksBtn = sfxSplitGroup.createEl('button', { cls: 'pakcli-btn-test-sfx', text: 'Test Click' });
     testClicksBtn.onclick = () => {
+        if (audioEngine.isAudioSfxMuted()) {
+            audioEngine.setSfxMuted(false);
+            sfxMuteBtn.setText('🔈 Mute');
+            sfxMuteBtn.toggleClass('is-muted', false);
+        }
         audioEngine.playClickSnap();
         window.setTimeout(() => audioEngine.playToggleChime(true), 120);
     };
@@ -298,11 +320,19 @@ export function renderAudioPlayerContent(ctx: AudioPlayerRenderContext): () => v
         muteBtn.setText(state.isMuted ? '🔇 Unmute' : '🔈 Mute');
         muteBtn.toggleClass('is-muted', state.isMuted);
 
+        const musicLabel = state.musicLabel || 'Background Audio';
+        musicLabelEl.setText(`🎵 ${musicLabel}:`);
+        musicLabelEl.title = musicLabel;
+
         musicSlider.value = Math.round(state.musicVolume * 100).toString();
         musicValEl.setText(`${musicSlider.value}%`);
+        musicMuteBtn.setText(state.isMusicMuted ? '🔇 Unmute' : '🔈 Mute');
+        musicMuteBtn.toggleClass('is-muted', state.isMusicMuted);
 
         sfxSlider.value = Math.round(state.sfxVolume * 100).toString();
         sfxValEl.setText(`${sfxSlider.value}%`);
+        sfxMuteBtn.setText(state.isSfxMuted ? '🔇 Unmute' : '🔈 Mute');
+        sfxMuteBtn.toggleClass('is-muted', state.isSfxMuted);
 
         // Queue List
         const totalQueue = state.priorityQueue.length;

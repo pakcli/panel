@@ -177,9 +177,10 @@ export class BubbleGraphView extends ItemView {
         this.isInspectorOpen = this.plugin.settings.bubbleInspectorOpen !== false;
         this.isHeaderSettingsOpen = this.plugin.settings.bubbleHeaderSettingsOpen !== false;
         this.isFloatingToolsOpen = this.plugin.settings.bubbleFloatingToolsOpen !== false;
-        this.isFooterOpen = this.plugin.settings.bubbleFooterOpen !== false;
-        this.autoFitMode = this.plugin.settings.bubbleAutoFitMode || (this.plugin.settings.bubbleAlwaysFit ? 'fit' : 'off');
-        this.enableNodeImageCover = this.plugin.settings.bubbleEnableNodeImageCover !== false;
+        const savedAutoFit = this.plugin.settings.bubbleAutoFitMode;
+        this.autoFitMode = (savedAutoFit === 'center') ? 'center' : 'fit';
+        this.plugin.settings.bubbleAutoFitMode = this.autoFitMode;
+        this.plugin.settings.bubbleAlwaysFit = true;
         this.nodeImageBorder = this.plugin.settings.bubbleNodeImageBorder || 'thick';
         this.relationshipAllScopeState = Boolean(this.plugin.settings.bubbleRelationshipAllScopeState);
         this.useCaptainColors = Boolean(this.plugin.settings.bubbleUseCaptainColors);
@@ -349,7 +350,7 @@ export class BubbleGraphView extends ItemView {
         this.isHeaderSettingsOpen = DEFAULT_BUBBLE_GRAPH_SETTINGS.bubbleHeaderSettingsOpen !== false;
         this.isFloatingToolsOpen = DEFAULT_BUBBLE_GRAPH_SETTINGS.bubbleFloatingToolsOpen !== false;
         this.isFooterOpen = DEFAULT_BUBBLE_GRAPH_SETTINGS.bubbleFooterOpen !== false;
-        this.autoFitMode = DEFAULT_BUBBLE_GRAPH_SETTINGS.bubbleAutoFitMode ?? 'off';
+        this.autoFitMode = DEFAULT_BUBBLE_GRAPH_SETTINGS.bubbleAutoFitMode ?? 'fit';
         this.timelapseMode = (DEFAULT_BUBBLE_GRAPH_SETTINGS.bubbleTimelapseMode || 'vanilla') as 'vanilla' | 'time' | 'filename' | 'title';
         this.isSimulationLocked = false;
 
@@ -370,7 +371,7 @@ export class BubbleGraphView extends ItemView {
         this.plugin.settings.bubbleFloatingToolsOpen = this.isFloatingToolsOpen;
         this.plugin.settings.bubbleFooterOpen = this.isFooterOpen;
         this.plugin.settings.bubbleAutoFitMode = this.autoFitMode;
-        this.plugin.settings.bubbleAlwaysFit = this.autoFitMode !== 'off';
+        this.plugin.settings.bubbleAlwaysFit = true;
         this.plugin.settings.bubbleTimelapseMode = this.timelapseMode;
         this.plugin.settings.bubbleEnableSfx = DEFAULT_BUBBLE_GRAPH_SETTINGS.bubbleEnableSfx;
         this.plugin.settings.bubbleSfxVolume = DEFAULT_BUBBLE_GRAPH_SETTINGS.bubbleSfxVolume;
@@ -390,34 +391,28 @@ export class BubbleGraphView extends ItemView {
 
         // 3. Update UI states
         if (this.linesToggleBtnEl) {
-            this.linesToggleBtnEl.toggleClass('active', this.showLines);
-            this.linesToggleBtnEl.setAttribute('aria-pressed', this.showLines ? 'true' : 'false');
+            this.setBtnActive(this.linesToggleBtnEl, this.showLines);
         }
         if (this.textToggleBtnEl) {
-            this.textToggleBtnEl.toggleClass('active', this.showLabels);
-            this.textToggleBtnEl.setAttribute('aria-pressed', this.showLabels ? 'true' : 'false');
+            this.setBtnActive(this.textToggleBtnEl, this.showLabels);
         }
         if (this.customFormatInputEl) {
             this.customFormatInputEl.value = this.customLabelFormats;
         }
         this.updateLabelModeUI();
         if (this.captainColorsBtnEl) {
-            this.captainColorsBtnEl.toggleClass('active', this.useCaptainColors);
-            this.captainColorsBtnEl.setAttribute('aria-pressed', this.useCaptainColors ? 'true' : 'false');
+            this.setBtnActive(this.captainColorsBtnEl, this.useCaptainColors);
         }
         if (this.imageCoverBtnEl) {
-            this.imageCoverBtnEl.toggleClass('active', this.enableNodeImageCover);
-            this.imageCoverBtnEl.setAttribute('aria-pressed', this.enableNodeImageCover ? 'true' : 'false');
+            this.setBtnActive(this.imageCoverBtnEl, this.enableNodeImageCover);
         }
         this.relationshipAllScopeState = DEFAULT_BUBBLE_GRAPH_SETTINGS.bubbleRelationshipAllScopeState ?? false;
         this.plugin.settings.bubbleRelationshipAllScopeState = this.relationshipAllScopeState;
         if (this.relAllScopeBtnEl) {
-            this.relAllScopeBtnEl.toggleClass('active', this.relationshipAllScopeState);
-            this.relAllScopeBtnEl.setAttribute('aria-pressed', this.relationshipAllScopeState ? 'true' : 'false');
+            this.setBtnActive(this.relAllScopeBtnEl, this.relationshipAllScopeState);
         }
         if (this.sfxToggleBtnEl) {
-            this.sfxToggleBtnEl.toggleClass('active', DEFAULT_BUBBLE_GRAPH_SETTINGS.bubbleEnableSfx);
-            this.sfxToggleBtnEl.setAttribute('aria-pressed', DEFAULT_BUBBLE_GRAPH_SETTINGS.bubbleEnableSfx ? 'true' : 'false');
+            this.setBtnActive(this.sfxToggleBtnEl, DEFAULT_BUBBLE_GRAPH_SETTINGS.bubbleEnableSfx);
             setIcon(this.sfxToggleBtnEl, DEFAULT_BUBBLE_GRAPH_SETTINGS.bubbleEnableSfx ? 'volume-2' : 'volume-x');
         }
         if (this.volumeSliderEl) {
@@ -450,8 +445,7 @@ export class BubbleGraphView extends ItemView {
             this.inspectorEl.toggleClass('collapsed', !this.isInspectorOpen);
         }
         if (this.inspectorBtnEl) {
-            this.inspectorBtnEl.toggleClass('active', this.isInspectorOpen);
-            this.inspectorBtnEl.setAttribute('aria-pressed', this.isInspectorOpen ? 'true' : 'false');
+            this.setBtnActive(this.inspectorBtnEl, this.isInspectorOpen);
             this.inspectorBtnEl.setAttribute('title', this.isInspectorOpen ? 'Hide Inspector Sidepanel' : 'Show Inspector Sidepanel');
         }
         if (this.headerEl) {
@@ -464,16 +458,14 @@ export class BubbleGraphView extends ItemView {
             this.row2El.toggleClass('collapsed', !this.isHeaderSettingsOpen);
         }
         if (this.topSettingsToggleBtnEl) {
-            this.topSettingsToggleBtnEl.toggleClass('active', this.isHeaderSettingsOpen);
-            this.topSettingsToggleBtnEl.setAttribute('aria-pressed', this.isHeaderSettingsOpen ? 'true' : 'false');
+            this.setBtnActive(this.topSettingsToggleBtnEl, this.isHeaderSettingsOpen);
             this.topSettingsToggleBtnEl.setAttribute('title', this.isHeaderSettingsOpen ? 'Hide Settings' : 'Show Settings');
         }
         if (this.floatingToolsEl) {
             this.floatingToolsEl.toggleClass('collapsed', !this.isFloatingToolsOpen);
         }
         if (this.floatingToolsToggleBtnEl) {
-            this.floatingToolsToggleBtnEl.toggleClass('active', this.isFloatingToolsOpen);
-            this.floatingToolsToggleBtnEl.setAttribute('aria-pressed', this.isFloatingToolsOpen ? 'true' : 'false');
+            this.setBtnActive(this.floatingToolsToggleBtnEl, this.isFloatingToolsOpen);
             this.floatingToolsToggleBtnEl.setAttribute('title', this.isFloatingToolsOpen ? 'Hide Floating Search & Tools' : 'Show Floating Search & Tools');
         }
         this.updateAutoFitUI();
@@ -481,8 +473,7 @@ export class BubbleGraphView extends ItemView {
             this.timelineEl.toggleClass('collapsed', !this.isFooterOpen);
         }
         if (this.footerToggleBtnEl) {
-            this.footerToggleBtnEl.toggleClass('active', this.isFooterOpen);
-            this.footerToggleBtnEl.setAttribute('aria-pressed', this.isFooterOpen ? 'true' : 'false');
+            this.setBtnActive(this.footerToggleBtnEl, this.isFooterOpen);
             this.footerToggleBtnEl.setAttribute('title', this.isFooterOpen ? 'Hide Footer Timeline Scrubber' : 'Show Footer Timeline Scrubber');
         }
         if (this.timelapseModeSelectEl) {
@@ -638,10 +629,10 @@ export class BubbleGraphView extends ItemView {
                 if (matchedRule && matchedRule.color) {
                     node.color = matchedRule.color;
                 } else {
-                    node.color = getFolderColor(node.folderPath || node.topLevelFolder, captainRules, true, fileConfigs);
+                    node.color = getFolderColor(node.folderPath || node.topLevelFolder, captainRules, true, fileConfigs, this.app);
                 }
             } else {
-                node.color = getDefaultNodeColor();
+                node.color = getDefaultNodeColor(this.app);
             }
         }
         for (const cluster of this.graphData.clusters) {
@@ -652,15 +643,15 @@ export class BubbleGraphView extends ItemView {
             if (cluster.isRelTier) {
                 if (isRootRel) {
                     // Outermost Relationships container cluster is ALWAYS default theme color
-                    cluster.color = getDefaultNodeColor();
+                    cluster.color = getDefaultNodeColor(this.app);
                 } else {
                     // Sub-tier bubbles (Household, Family, Close Friends, Friends, Know, Bad) ALWAYS keep their tier color
-                    cluster.color = cluster.tierColor || getDefaultNodeColor();
+                    cluster.color = cluster.tierColor || getDefaultNodeColor(this.app);
                 }
             } else if (this.useCaptainColors) {
-                cluster.color = getFolderColor(cluster.id, captainRules, true, fileConfigs);
+                cluster.color = getFolderColor(cluster.id, captainRules, true, fileConfigs, this.app);
             } else {
-                cluster.color = getDefaultNodeColor();
+                cluster.color = getDefaultNodeColor(this.app);
             }
         }
     }
@@ -720,18 +711,24 @@ export class BubbleGraphView extends ItemView {
         this.drawHeatmap();
     }
 
+    private setBtnActive(btn: HTMLElement | null | undefined, active: boolean): void {
+        if (!btn) return;
+        btn.toggleClass('active', active);
+        btn.toggleClass('is-active', active);
+        btn.toggleClass('mod-cta', active);
+        btn.setAttribute('aria-pressed', active ? 'true' : 'false');
+    }
+
     public async setSimulationLocked(locked: boolean): Promise<void> {
         this.isSimulationLocked = locked;
         this.plugin.settings.bubbleSimulationLocked = locked;
         await this.plugin.saveSettings();
 
         if (this.simFreeBtnEl) {
-            this.simFreeBtnEl.toggleClass('active', !locked);
-            this.simFreeBtnEl.setAttribute('aria-pressed', !locked ? 'true' : 'false');
+            this.setBtnActive(this.simFreeBtnEl, !locked);
         }
         if (this.simLockBtnEl) {
-            this.simLockBtnEl.toggleClass('active', locked);
-            this.simLockBtnEl.setAttribute('aria-pressed', locked ? 'true' : 'false');
+            this.setBtnActive(this.simLockBtnEl, locked);
         }
 
         if (this.simulation) {
@@ -789,15 +786,14 @@ export class BubbleGraphView extends ItemView {
 
         // 1. Toggle Top Settings Bar (Gear)
         this.topSettingsToggleBtnEl = quickToggles.createEl('button', {
-            cls: `pakcli-icon-btn pakcli-top-settings-btn ${this.isHeaderSettingsOpen ? 'active' : ''}`,
+            cls: `clickable-icon pakcli-icon-btn pakcli-top-settings-btn ${this.isHeaderSettingsOpen ? 'is-active mod-cta' : ''}`,
             title: this.isHeaderSettingsOpen ? 'Hide Settings' : 'Show Settings'
         });
         this.topSettingsToggleBtnEl.setAttribute('aria-pressed', this.isHeaderSettingsOpen ? 'true' : 'false');
         setIcon(this.topSettingsToggleBtnEl, 'settings');
         this.topSettingsToggleBtnEl.onclick = async () => {
             this.isHeaderSettingsOpen = !this.isHeaderSettingsOpen;
-            this.topSettingsToggleBtnEl.toggleClass('active', this.isHeaderSettingsOpen);
-            this.topSettingsToggleBtnEl.setAttribute('aria-pressed', this.isHeaderSettingsOpen ? 'true' : 'false');
+            this.setBtnActive(this.topSettingsToggleBtnEl, this.isHeaderSettingsOpen);
             this.topSettingsToggleBtnEl.setAttribute('title', this.isHeaderSettingsOpen ? 'Hide Settings' : 'Show Settings');
             this.headerEl.toggleClass('settings-collapsed', !this.isHeaderSettingsOpen);
             if (this.row2El) {
@@ -815,15 +811,14 @@ export class BubbleGraphView extends ItemView {
 
         // 2. Toggle Floating Canvas Tools (Search & Actions)
         this.floatingToolsToggleBtnEl = quickToggles.createEl('button', {
-            cls: `pakcli-icon-btn pakcli-floating-tools-btn ${this.isFloatingToolsOpen ? 'active' : ''}`,
+            cls: `clickable-icon pakcli-icon-btn pakcli-floating-tools-btn ${this.isFloatingToolsOpen ? 'is-active mod-cta' : ''}`,
             title: this.isFloatingToolsOpen ? 'Hide Floating Search & Tools' : 'Show Floating Search & Tools'
         });
         this.floatingToolsToggleBtnEl.setAttribute('aria-pressed', this.isFloatingToolsOpen ? 'true' : 'false');
         setIcon(this.floatingToolsToggleBtnEl, 'search');
         this.floatingToolsToggleBtnEl.onclick = async () => {
             this.isFloatingToolsOpen = !this.isFloatingToolsOpen;
-            this.floatingToolsToggleBtnEl.toggleClass('active', this.isFloatingToolsOpen);
-            this.floatingToolsToggleBtnEl.setAttribute('aria-pressed', this.isFloatingToolsOpen ? 'true' : 'false');
+            this.setBtnActive(this.floatingToolsToggleBtnEl, this.isFloatingToolsOpen);
             this.floatingToolsToggleBtnEl.setAttribute('title', this.isFloatingToolsOpen ? 'Hide Floating Search & Tools' : 'Show Floating Search & Tools');
             if (this.floatingToolsEl) {
                 this.floatingToolsEl.toggleClass('collapsed', !this.isFloatingToolsOpen);
@@ -837,15 +832,14 @@ export class BubbleGraphView extends ItemView {
 
         // 3. Toggle Footer Timeline Scrubber
         this.footerToggleBtnEl = quickToggles.createEl('button', {
-            cls: `pakcli-icon-btn pakcli-footer-toggle-btn ${this.isFooterOpen ? 'active' : ''}`,
+            cls: `clickable-icon pakcli-icon-btn pakcli-footer-toggle-btn ${this.isFooterOpen ? 'is-active mod-cta' : ''}`,
             title: this.isFooterOpen ? 'Hide Footer Timeline Scrubber' : 'Show Footer Timeline Scrubber'
         });
         this.footerToggleBtnEl.setAttribute('aria-pressed', this.isFooterOpen ? 'true' : 'false');
         setIcon(this.footerToggleBtnEl, 'panel-bottom');
         this.footerToggleBtnEl.onclick = async () => {
             this.isFooterOpen = !this.isFooterOpen;
-            this.footerToggleBtnEl.toggleClass('active', this.isFooterOpen);
-            this.footerToggleBtnEl.setAttribute('aria-pressed', this.isFooterOpen ? 'true' : 'false');
+            this.setBtnActive(this.footerToggleBtnEl, this.isFooterOpen);
             this.footerToggleBtnEl.setAttribute('title', this.isFooterOpen ? 'Hide Footer Timeline Scrubber' : 'Show Footer Timeline Scrubber');
             if (this.timelineEl) {
                 this.timelineEl.toggleClass('collapsed', !this.isFooterOpen);
@@ -860,7 +854,7 @@ export class BubbleGraphView extends ItemView {
 
         // 4. Toggle Info (Sidepanel Inspector)
         this.inspectorBtnEl = quickToggles.createEl('button', {
-            cls: `pakcli-icon-btn pakcli-inspector-toggle-btn ${this.isInspectorOpen ? 'active' : ''}`,
+            cls: `clickable-icon pakcli-icon-btn pakcli-inspector-toggle-btn ${this.isInspectorOpen ? 'is-active mod-cta' : ''}`,
             title: this.isInspectorOpen ? 'Hide Inspector Sidepanel' : 'Show Inspector Sidepanel'
         });
         this.inspectorBtnEl.setAttribute('aria-pressed', this.isInspectorOpen ? 'true' : 'false');
@@ -870,8 +864,7 @@ export class BubbleGraphView extends ItemView {
             if (this.inspectorEl) {
                 this.inspectorEl.toggleClass('collapsed', !this.isInspectorOpen);
             }
-            this.inspectorBtnEl.toggleClass('active', this.isInspectorOpen);
-            this.inspectorBtnEl.setAttribute('aria-pressed', this.isInspectorOpen ? 'true' : 'false');
+            this.setBtnActive(this.inspectorBtnEl, this.isInspectorOpen);
             this.inspectorBtnEl.setAttribute('title', this.isInspectorOpen ? 'Hide Inspector Sidepanel' : 'Show Inspector Sidepanel');
             this.plugin.settings.bubbleInspectorOpen = this.isInspectorOpen;
             await this.plugin.saveSettings();
@@ -900,7 +893,7 @@ export class BubbleGraphView extends ItemView {
 
         // 5. Toggle Fullscreen (Clean 2-mode: "this" <-> "grand full screen")
         this.fullscreenBtnEl = quickToggles.createEl('button', {
-            cls: `pakcli-icon-btn pakcli-fullscreen-btn ${this.isFullscreen ? 'active' : ''}`,
+            cls: `clickable-icon pakcli-icon-btn pakcli-fullscreen-btn ${this.isFullscreen ? 'is-active mod-cta' : ''}`,
             title: this.isFullscreen ? 'Exit Fullscreen (Kembali ke Normal View)' : 'Grand Fullscreen (Layar Penuh)'
         });
         this.fullscreenBtnEl.setAttribute('aria-pressed', this.isFullscreen ? 'true' : 'false');
@@ -954,16 +947,23 @@ export class BubbleGraphView extends ItemView {
             menu.showAtMouseEvent(e);
         };
 
+        // Breadcrumbs Scope Navigation (Left beside Quick Toggles)
+        this.scopeBarEl = row1Left.createDiv({ cls: 'pakcli-scope-bar' });
+        this.updateScopeBar();
+
+        // Right: Mode Tabs + Simulation Lock / Free Toggle
+        const row1Right = row1.createDiv({ cls: 'pakcli-header-row-right' });
+
         // Mode Tabs: [Graph View] [★ Bubble View]
-        const tabsWrap = row1Left.createDiv({ cls: 'pakcli-mode-tabs' });
+        const tabsWrap = row1Right.createDiv({ cls: 'pakcli-mode-tabs' });
         const defaultTab = tabsWrap.createEl('button', {
             text: 'Graph View',
-            cls: `pakcli-tab-btn ${this.layoutMode === 'default' ? 'active' : ''}`
+            cls: `pakcli-tab-btn ${this.layoutMode === 'default' ? 'active is-active mod-cta' : ''}`
         });
         defaultTab.setAttribute('aria-pressed', this.layoutMode === 'default' ? 'true' : 'false');
         const bubbleTab = tabsWrap.createEl('button', {
             text: '★ Bubble View',
-            cls: `pakcli-tab-btn ${this.layoutMode === 'bubble' ? 'active' : ''}`
+            cls: `pakcli-tab-btn ${this.layoutMode === 'bubble' ? 'active is-active mod-cta' : ''}`
         });
         bubbleTab.setAttribute('aria-pressed', this.layoutMode === 'bubble' ? 'true' : 'false');
 
@@ -975,31 +975,21 @@ export class BubbleGraphView extends ItemView {
 
         defaultTab.onclick = () => {
             this.layoutMode = 'default';
-            defaultTab.addClass('active');
-            defaultTab.setAttribute('aria-pressed', 'true');
-            bubbleTab.removeClass('active');
-            bubbleTab.setAttribute('aria-pressed', 'false');
+            this.setBtnActive(defaultTab, true);
+            this.setBtnActive(bubbleTab, false);
             this.simulation.setOptions({ layoutMode: 'default' });
             updateDepthVisibility();
         };
 
         bubbleTab.onclick = () => {
             this.layoutMode = 'bubble';
-            bubbleTab.addClass('active');
-            bubbleTab.setAttribute('aria-pressed', 'true');
-            defaultTab.removeClass('active');
-            defaultTab.setAttribute('aria-pressed', 'false');
+            this.setBtnActive(bubbleTab, true);
+            this.setBtnActive(defaultTab, false);
             this.simulation.setOptions({ layoutMode: 'bubble' });
             updateDepthVisibility();
         };
 
-        // Center: Breadcrumbs Scope Navigation
-        const row1Center = row1.createDiv({ cls: 'pakcli-header-row-center' });
-        this.scopeBarEl = row1Center.createDiv({ cls: 'pakcli-scope-bar' });
-        this.updateScopeBar();
-
-        // Right: Simulation Lock / Free Toggle
-        const row1Right = row1.createDiv({ cls: 'pakcli-header-row-right' });
+        // Simulation Lock / Free Toggle
         const simLockGroup = row1Right.createDiv({ cls: 'pakcli-depth-group pakcli-sim-lock-group' });
         this.depthGroupEl = simLockGroup;
         this.simLockGroupEl = simLockGroup;
@@ -1008,14 +998,14 @@ export class BubbleGraphView extends ItemView {
 
         this.simFreeBtnEl = simLockWrap.createEl('button', {
             text: '🔓 Free',
-            cls: `pakcli-depth-btn ${!this.isSimulationLocked ? 'active' : ''}`,
+            cls: `pakcli-depth-btn ${!this.isSimulationLocked ? 'active is-active mod-cta' : ''}`,
             title: 'Simulation Free: Drag any node or bubble freely'
         });
         this.simFreeBtnEl.setAttribute('aria-pressed', !this.isSimulationLocked ? 'true' : 'false');
 
         this.simLockBtnEl = simLockWrap.createEl('button', {
             text: '🔒 Lock',
-            cls: `pakcli-depth-btn ${this.isSimulationLocked ? 'active' : ''}`,
+            cls: `pakcli-depth-btn ${this.isSimulationLocked ? 'active is-active mod-cta' : ''}`,
             title: 'Simulation Locked: Freeze movement, disable dragging & timelapse'
         });
         this.simLockBtnEl.setAttribute('aria-pressed', this.isSimulationLocked ? 'true' : 'false');
@@ -1026,6 +1016,14 @@ export class BubbleGraphView extends ItemView {
         this.simLockBtnEl.onclick = async () => {
             await this.setSimulationLocked(true);
         };
+
+        // Reset View Settings Button (beside Simulation Lock/Free)
+        const resetViewBtn = row1Right.createEl('button', {
+            cls: 'pakcli-tab-btn pakcli-reset-view-btn',
+            text: 'Reset View',
+            title: 'Reset View Settings to Default'
+        });
+        resetViewBtn.onclick = () => this.resetViewSettings();
 
         // ==========================================
         // ROW 2: Collapsible Settings Controls Row
@@ -1043,15 +1041,14 @@ export class BubbleGraphView extends ItemView {
 
         // 1. Link line column (Show/Hide Lines)
         this.linesToggleBtnEl = togglesCluster.createEl('button', {
-            cls: `pakcli-icon-btn pakcli-lines-toggle-btn ${this.showLines ? 'active' : ''}`,
+            cls: `clickable-icon pakcli-icon-btn pakcli-lines-toggle-btn ${this.showLines ? 'is-active mod-cta' : ''}`,
             title: 'Toggle Lines (Show/Hide)'
         });
         this.linesToggleBtnEl.setAttribute('aria-pressed', this.showLines ? 'true' : 'false');
         setIcon(this.linesToggleBtnEl, 'link');
         this.linesToggleBtnEl.onclick = async () => {
             this.showLines = !this.showLines;
-            this.linesToggleBtnEl.toggleClass('active', this.showLines);
-            this.linesToggleBtnEl.setAttribute('aria-pressed', this.showLines ? 'true' : 'false');
+            this.setBtnActive(this.linesToggleBtnEl, this.showLines);
             this.plugin.settings.bubbleShowLines = this.showLines;
             await this.plugin.saveSettings();
             if (this.sfxManager?.isEnabled()) {
@@ -1061,15 +1058,14 @@ export class BubbleGraphView extends ItemView {
 
         // 2. The folder colour (Captain Folder Colors)
         this.captainColorsBtnEl = togglesCluster.createEl('button', {
-            cls: `pakcli-icon-btn pakcli-captain-colors-btn ${this.useCaptainColors ? 'active' : ''}`,
+            cls: `clickable-icon pakcli-icon-btn pakcli-captain-colors-btn ${this.useCaptainColors ? 'is-active mod-cta' : ''}`,
             title: 'Toggle Captain Folder Colors (show custom colors on Captain Folders)'
         });
         this.captainColorsBtnEl.setAttribute('aria-pressed', this.useCaptainColors ? 'true' : 'false');
         setIcon(this.captainColorsBtnEl, 'anchor');
         this.captainColorsBtnEl.onclick = async () => {
             this.useCaptainColors = !this.useCaptainColors;
-            this.captainColorsBtnEl.toggleClass('active', this.useCaptainColors);
-            this.captainColorsBtnEl.setAttribute('aria-pressed', this.useCaptainColors ? 'true' : 'false');
+            this.setBtnActive(this.captainColorsBtnEl, this.useCaptainColors);
             this.plugin.settings.bubbleUseCaptainColors = this.useCaptainColors;
             await this.plugin.saveSettings();
             this.applyCaptainFolderColors();
@@ -1077,7 +1073,7 @@ export class BubbleGraphView extends ItemView {
 
         // 3. Node Image Cover (Show frontmatter image cover or glyph symbol)
         this.imageCoverBtnEl = togglesCluster.createEl('button', {
-            cls: `pakcli-icon-btn pakcli-image-cover-btn ${this.enableNodeImageCover ? 'active' : ''}`,
+            cls: `clickable-icon pakcli-icon-btn pakcli-image-cover-btn ${this.enableNodeImageCover ? 'is-active mod-cta' : ''}`,
             title: 'Toggle Node Image Covers (Override node symbol with frontmatter image)'
         });
         this.imageCoverBtnEl.setAttribute('aria-pressed', this.enableNodeImageCover ? 'true' : 'false');
@@ -1085,8 +1081,7 @@ export class BubbleGraphView extends ItemView {
         this.imageCoverBtnEl.onclick = async () => {
             this.enableNodeImageCover = !this.enableNodeImageCover;
             if (this.imageCoverBtnEl) {
-                this.imageCoverBtnEl.toggleClass('active', this.enableNodeImageCover);
-                this.imageCoverBtnEl.setAttribute('aria-pressed', this.enableNodeImageCover ? 'true' : 'false');
+                this.setBtnActive(this.imageCoverBtnEl, this.enableNodeImageCover);
             }
             this.plugin.settings.bubbleEnableNodeImageCover = this.enableNodeImageCover;
             await this.plugin.saveSettings();
@@ -1126,7 +1121,7 @@ export class BubbleGraphView extends ItemView {
 
         // 4. All Scope State Toggle (Virtual Scope Only vs All Scope State for Concentric Relationship Rings)
         this.relAllScopeBtnEl = togglesCluster.createEl('button', {
-            cls: `pakcli-icon-btn pakcli-rel-allscope-btn ${this.relationshipAllScopeState ? 'active' : ''}`,
+            cls: `clickable-icon pakcli-icon-btn pakcli-rel-allscope-btn ${this.relationshipAllScopeState ? 'is-active mod-cta' : ''}`,
             title: this.relationshipAllScopeState 
                 ? 'All Scope State: Concentric relationship rings shown across all vault scopes (Click to switch to Virtual Scope only)' 
                 : 'Virtual Scope State: Concentric relationship rings only shown inside virtual scope (Click to enable in All Scope States)'
@@ -1136,8 +1131,7 @@ export class BubbleGraphView extends ItemView {
         this.relAllScopeBtnEl.onclick = async () => {
             this.relationshipAllScopeState = !this.relationshipAllScopeState;
             if (this.relAllScopeBtnEl) {
-                this.relAllScopeBtnEl.toggleClass('active', this.relationshipAllScopeState);
-                this.relAllScopeBtnEl.setAttribute('aria-pressed', this.relationshipAllScopeState ? 'true' : 'false');
+                this.setBtnActive(this.relAllScopeBtnEl, this.relationshipAllScopeState);
                 this.relAllScopeBtnEl.setAttribute('title', this.relationshipAllScopeState 
                     ? 'All Scope State: Concentric relationship rings shown across all vault scopes (Click to switch to Virtual Scope only)' 
                     : 'Virtual Scope State: Concentric relationship rings only shown inside virtual scope (Click to enable in All Scope States)');
@@ -1398,7 +1392,7 @@ export class BubbleGraphView extends ItemView {
         // 6. Toggle Speaker (Sound FX Mute / Unmute)
         const sfxCluster = textGroup.createDiv({ cls: 'pakcli-layer-toggles-cluster' });
         this.sfxToggleBtnEl = sfxCluster.createEl('button', {
-            cls: `pakcli-icon-btn pakcli-sfx-toggle-btn ${this.sfxManager.isEnabled() ? 'active' : ''}`,
+            cls: `clickable-icon pakcli-icon-btn pakcli-sfx-toggle-btn ${this.sfxManager.isEnabled() ? 'is-active mod-cta' : ''}`,
             title: 'Toggle Graph Sound FX (Mute / Unmute)'
         });
         this.sfxToggleBtnEl.setAttribute('aria-pressed', this.sfxManager.isEnabled() ? 'true' : 'false');
@@ -1406,8 +1400,7 @@ export class BubbleGraphView extends ItemView {
         this.sfxToggleBtnEl.onclick = async () => {
             const newState = !this.sfxManager.isEnabled();
             this.sfxManager.setEnabled(newState);
-            this.sfxToggleBtnEl.toggleClass('active', newState);
-            this.sfxToggleBtnEl.setAttribute('aria-pressed', newState ? 'true' : 'false');
+            this.setBtnActive(this.sfxToggleBtnEl, newState);
             setIcon(this.sfxToggleBtnEl, newState ? 'volume-2' : 'volume-x');
             this.plugin.settings.bubbleEnableSfx = newState;
             await this.plugin.saveSettings();
@@ -1502,73 +1495,55 @@ export class BubbleGraphView extends ItemView {
 
         // 2. Zoom In & Zoom Out Buttons
         const zoomInBtn = floatingTools.createEl('button', {
-            cls: 'pakcli-icon-btn pakcli-zoom-in-btn',
+            cls: 'clickable-icon pakcli-icon-btn pakcli-zoom-in-btn',
             title: 'Zoom In (+)'
         });
         setIcon(zoomInBtn, 'zoom-in');
         zoomInBtn.onclick = () => this.zoomIn();
 
         const zoomOutBtn = floatingTools.createEl('button', {
-            cls: 'pakcli-icon-btn pakcli-zoom-out-btn',
+            cls: 'clickable-icon pakcli-icon-btn pakcli-zoom-out-btn',
             title: 'Zoom Out (-)'
         });
         setIcon(zoomOutBtn, 'zoom-out');
         zoomOutBtn.onclick = () => this.zoomOut();
 
-        // 3. Fit to View Button (One-shot snap)
-        const fitBtn = floatingTools.createEl('button', {
-            cls: 'pakcli-icon-btn pakcli-fit-btn',
-            title: 'Fit to View (Center & Zoom once)'
-        });
-        setIcon(fitBtn, 'crosshair');
-        fitBtn.onclick = () => {
-            this.fitToView(true);
-            if (this.sfxManager?.isEnabled()) {
-                this.sfxManager.playLinkSwitch(0.6);
-            }
-        };
-
-        // 3. Always Auto-tracking Radio Group: [ Fit | Center ]
+        // 3. Always Auto-tracking Radio Group: [ Fit & Center | Center ]
         const radioGroup = floatingTools.createDiv({
             cls: 'pakcli-always-fit-group',
-            title: "Always Auto-tracking: [Fit = Zoom & Center | Center = Center only, won't zoom]"
+            title: "Always Auto-tracking: [Fit & Center = Zoom & Center | Center = Center only, won't zoom]"
         });
 
+        const isFit = this.autoFitMode === 'fit';
+        const isCenter = this.autoFitMode === 'center';
+
         this.fitModeBtnEl = radioGroup.createEl('button', {
-            cls: `pakcli-always-fit-btn ${this.autoFitMode === 'fit' ? 'active' : ''}`,
-            text: 'Fit',
-            title: 'Always Fit: Continuously fit zoom & center'
+            cls: `pakcli-tab-btn pakcli-always-fit-btn ${isFit ? 'active is-active mod-cta' : ''}`,
+            text: 'Fit & Center',
+            title: 'Always Fit & Center: Continuously fit zoom & center'
         });
-        this.fitModeBtnEl.setAttribute('aria-pressed', this.autoFitMode === 'fit' ? 'true' : 'false');
+        this.fitModeBtnEl.setAttribute('aria-pressed', isFit ? 'true' : 'false');
         this.fitModeBtnEl.onclick = () => {
             this.setAutoFitMode('fit');
         };
 
         this.centerModeBtnEl = radioGroup.createEl('button', {
-            cls: `pakcli-always-fit-btn ${this.autoFitMode === 'center' ? 'active' : ''}`,
+            cls: `pakcli-tab-btn pakcli-always-fit-btn ${isCenter ? 'active is-active mod-cta' : ''}`,
             text: 'Center',
             title: "Always Center: Continuously center without changing zoom"
         });
-        this.centerModeBtnEl.setAttribute('aria-pressed', this.autoFitMode === 'center' ? 'true' : 'false');
+        this.centerModeBtnEl.setAttribute('aria-pressed', isCenter ? 'true' : 'false');
         this.centerModeBtnEl.onclick = () => {
             this.setAutoFitMode('center');
         };
 
         // 4. Refresh Graph Button
         const refreshBtn = floatingTools.createEl('button', {
-            cls: 'pakcli-icon-btn pakcli-refresh-btn',
+            cls: 'clickable-icon pakcli-icon-btn pakcli-refresh-btn',
             title: 'Refresh Graph'
         });
         setIcon(refreshBtn, 'refresh-cw');
         refreshBtn.onclick = () => this.reloadGraphData();
-
-        // 5. Reset View Graph Settings Button
-        const resetSettingsBtn = floatingTools.createEl('button', {
-            cls: 'pakcli-icon-btn pakcli-reset-settings-btn',
-            title: 'Reset View Settings to Default'
-        });
-        setIcon(resetSettingsBtn, 'rotate-ccw');
-        resetSettingsBtn.onclick = () => this.resetViewSettings();
     }
 
     private toggleTimelapse(): void {
@@ -1718,16 +1693,6 @@ export class BubbleGraphView extends ItemView {
             const rootBadge = wrap.createDiv({ cls: 'pakcli-scope-badge root', title: 'Showing all notes in vault' });
             setIcon(rootBadge.createSpan({ cls: 'pakcli-scope-icon' }), 'globe');
             rootBadge.createSpan({ text: 'All Notes', cls: 'pakcli-scope-text' });
-
-            const relRoot = this.plugin.settings.familyCirclesRootFolder || 'Relationships';
-            const jumpRelBtn = wrap.createEl('button', {
-                cls: 'pakcli-scope-virtual-jump-btn',
-                title: `Switch scope to Virtual Relationship Folder (${relRoot})`
-            });
-            jumpRelBtn.style.cssText = 'display: inline-flex; align-items: center; gap: 4px; font-size: 10px; padding: 2px 8px; margin-left: 6px; border-radius: 12px; background: var(--background-secondary); border: 1px solid var(--background-modifier-border); color: var(--text-muted); cursor: pointer;';
-            setIcon(jumpRelBtn, 'disc');
-            jumpRelBtn.createSpan({ text: `${relRoot} Scope` });
-            jumpRelBtn.onclick = () => this.scopeToFolder(relRoot);
             return;
         }
 
@@ -1736,7 +1701,7 @@ export class BubbleGraphView extends ItemView {
 
         // 1. "⬅ Out" Button (Keluar folder ini / ke parent)
         const outBtn = wrap.createEl('button', {
-            cls: 'pakcli-scope-out-btn',
+            cls: 'pakcli-scope-out-btn mod-cta',
             title: 'Out this folder (Keluar ke parent folder)'
         });
         setIcon(outBtn, 'arrow-up-left');
@@ -2647,12 +2612,11 @@ export class BubbleGraphView extends ItemView {
         }
     }
 
-    public setAutoFitMode(mode: 'off' | 'fit' | 'center'): void {
-        // Toggle off if clicking the currently active mode
-        this.autoFitMode = (this.autoFitMode === mode) ? 'off' : mode;
+    public setAutoFitMode(mode: 'fit' | 'center'): void {
+        this.autoFitMode = mode;
         this.updateAutoFitUI();
         this.plugin.settings.bubbleAutoFitMode = this.autoFitMode;
-        this.plugin.settings.bubbleAlwaysFit = this.autoFitMode !== 'off';
+        this.plugin.settings.bubbleAlwaysFit = true;
         this.plugin.saveSettings();
 
         if (this.sfxManager?.isEnabled()) {
@@ -2667,20 +2631,17 @@ export class BubbleGraphView extends ItemView {
     }
 
     private updateAutoFitUI(): void {
+        const isFit = this.autoFitMode === 'fit';
         if (this.fitModeBtnEl) {
-            const isFit = this.autoFitMode === 'fit';
-            this.fitModeBtnEl.toggleClass('active', isFit);
-            this.fitModeBtnEl.setAttribute('aria-pressed', isFit ? 'true' : 'false');
+            this.setBtnActive(this.fitModeBtnEl, isFit);
             this.fitModeBtnEl.setAttribute('title', isFit
-                ? 'Always Fit: ACTIVE (Continuously fits zoom & center) - Click to turn OFF'
-                : 'Always Fit: Continuously fit zoom & center');
+                ? 'Always Fit & Center: ACTIVE (Continuously fits zoom & center)'
+                : 'Always Fit & Center: Continuously fit zoom & center');
         }
         if (this.centerModeBtnEl) {
-            const isCenter = this.autoFitMode === 'center';
-            this.centerModeBtnEl.toggleClass('active', isCenter);
-            this.centerModeBtnEl.setAttribute('aria-pressed', isCenter ? 'true' : 'false');
-            this.centerModeBtnEl.setAttribute('title', isCenter
-                ? "Always Center: ACTIVE (Continuously centers, won't zoom) - Click to turn OFF"
+            this.setBtnActive(this.centerModeBtnEl, !isFit);
+            this.centerModeBtnEl.setAttribute('title', !isFit
+                ? "Always Center: ACTIVE (Continuously centers, won't zoom)"
                 : "Always Center: Continuously center without changing zoom");
         }
     }
@@ -2690,8 +2651,7 @@ export class BubbleGraphView extends ItemView {
             this.sfxManager.setEnabled(enabled);
         }
         if (this.sfxToggleBtnEl) {
-            this.sfxToggleBtnEl.toggleClass('active', enabled);
-            this.sfxToggleBtnEl.setAttribute('aria-pressed', enabled ? 'true' : 'false');
+            this.setBtnActive(this.sfxToggleBtnEl, enabled);
             setIcon(this.sfxToggleBtnEl, enabled ? 'volume-2' : 'volume-x');
         }
     }
@@ -2865,10 +2825,7 @@ export class BubbleGraphView extends ItemView {
         ctx.scale(dpr, dpr);
         ctx.clearRect(0, 0, rect.width, rect.height);
 
-        const computed = getComputedStyle(this.containerEl);
-        const accent = computed.getPropertyValue('--interactive-accent').trim() || 
-                       computed.getPropertyValue('--color-accent').trim() || 
-                       '#7c3aed';
+        const accent = getDefaultNodeColor(this.app);
 
         // Pitch for |||| tick marks: 2px bar + 1px gap = 3px pitch
         const tickW = 2;
@@ -2966,8 +2923,7 @@ export class BubbleGraphView extends ItemView {
 
     private updateFullscreenUI(): void {
         if (!this.fullscreenBtnEl) return;
-        this.fullscreenBtnEl.toggleClass('active', this.isFullscreen);
-        this.fullscreenBtnEl.setAttribute('aria-pressed', this.isFullscreen ? 'true' : 'false');
+        this.setBtnActive(this.fullscreenBtnEl, this.isFullscreen);
         this.fullscreenBtnEl.setAttribute('title', this.isFullscreen ? 'Exit Fullscreen (Kembali ke Normal View)' : 'Grand Fullscreen (Layar Penuh)');
         setIcon(this.fullscreenBtnEl, this.isFullscreen ? 'minimize' : 'maximize');
     }

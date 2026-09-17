@@ -18,7 +18,9 @@ export class AudioEngine {
     private masterVolume: number = 0.70;
     private isMuted: boolean = false;
     private musicVolume: number = 0.85;
+    private isMusicMuted: boolean = false;
     private sfxVolume: number = 0.60;
+    private isSfxMuted: boolean = false;
 
     // SFX Throttles to avoid acoustic clutter
     private lastSnapTime: number = 0;
@@ -37,7 +39,9 @@ export class AudioEngine {
             if (settings.audioMasterVolume !== undefined) this.masterVolume = settings.audioMasterVolume;
             if (settings.audioIsMuted !== undefined) this.isMuted = settings.audioIsMuted;
             if (settings.audioMusicVolume !== undefined) this.musicVolume = settings.audioMusicVolume;
+            if (settings.audioMusicMuted !== undefined) this.isMusicMuted = settings.audioMusicMuted;
             if (settings.audioSfxVolume !== undefined) this.sfxVolume = settings.audioSfxVolume;
+            if (settings.audioSfxMuted !== undefined) this.isSfxMuted = settings.audioSfxMuted;
         }
 
         this.audioEl = new Audio();
@@ -67,11 +71,13 @@ export class AudioEngine {
 
                 // 3. Music Gain Node
                 this.musicGain = this.ctx.createGain();
-                this.musicGain.gain.setValueAtTime(this.musicVolume, this.ctx.currentTime);
+                const effMusicGain = this.isMusicMuted ? 0 : this.musicVolume;
+                this.musicGain.gain.setValueAtTime(effMusicGain, this.ctx.currentTime);
 
                 // 4. SFX Gain Node
                 this.sfxGain = this.ctx.createGain();
-                this.sfxGain.gain.setValueAtTime(this.sfxVolume, this.ctx.currentTime);
+                const effSfxGain = this.isSfxMuted ? 0 : this.sfxVolume;
+                this.sfxGain.gain.setValueAtTime(effSfxGain, this.ctx.currentTime);
 
                 // Wire up SFX and Music to Master
                 this.sfxGain.connect(this.masterGain);
@@ -102,7 +108,7 @@ export class AudioEngine {
     }
 
     private syncElementVolumeFallback(): void {
-        const effVol = this.isMuted ? 0 : Math.max(0, Math.min(1, this.masterVolume * this.musicVolume));
+        const effVol = (this.isMuted || this.isMusicMuted) ? 0 : Math.max(0, Math.min(1, this.masterVolume * this.musicVolume));
         this.audioEl.volume = effVol;
     }
 
@@ -227,7 +233,8 @@ export class AudioEngine {
     public setMusicVolume(vol: number): void {
         this.musicVolume = Math.max(0, Math.min(1, vol));
         if (this.musicGain && this.ctx) {
-            this.musicGain.gain.setTargetAtTime(this.musicVolume, this.ctx.currentTime, 0.015);
+            const target = this.isMusicMuted ? 0 : this.musicVolume;
+            this.musicGain.gain.setTargetAtTime(target, this.ctx.currentTime, 0.015);
         }
         this.syncElementVolumeFallback();
     }
@@ -236,15 +243,51 @@ export class AudioEngine {
         return this.musicVolume;
     }
 
+    public setMusicMuted(muted: boolean): void {
+        this.isMusicMuted = muted;
+        if (this.musicGain && this.ctx) {
+            const target = this.isMusicMuted ? 0 : this.musicVolume;
+            this.musicGain.gain.setTargetAtTime(target, this.ctx.currentTime, 0.015);
+        }
+        this.syncElementVolumeFallback();
+    }
+
+    public isAudioMusicMuted(): boolean {
+        return this.isMusicMuted;
+    }
+
+    public toggleMusicMute(): boolean {
+        this.setMusicMuted(!this.isMusicMuted);
+        return this.isMusicMuted;
+    }
+
     public setSfxVolume(vol: number): void {
         this.sfxVolume = Math.max(0, Math.min(1, vol));
         if (this.sfxGain && this.ctx) {
-            this.sfxGain.gain.setTargetAtTime(this.sfxVolume, this.ctx.currentTime, 0.015);
+            const target = this.isSfxMuted ? 0 : this.sfxVolume;
+            this.sfxGain.gain.setTargetAtTime(target, this.ctx.currentTime, 0.015);
         }
     }
 
     public getSfxVolume(): number {
         return this.sfxVolume;
+    }
+
+    public setSfxMuted(muted: boolean): void {
+        this.isSfxMuted = muted;
+        if (this.sfxGain && this.ctx) {
+            const target = this.isSfxMuted ? 0 : this.sfxVolume;
+            this.sfxGain.gain.setTargetAtTime(target, this.ctx.currentTime, 0.015);
+        }
+    }
+
+    public isAudioSfxMuted(): boolean {
+        return this.isSfxMuted;
+    }
+
+    public toggleSfxMute(): boolean {
+        this.setSfxMuted(!this.isSfxMuted);
+        return this.isSfxMuted;
     }
 
     // --- Tactile Micro-SFX Synthesizers ---
@@ -267,7 +310,7 @@ export class AudioEngine {
      * Sharp, tactile microswitch click (downward pitch sweep + leaf spring ping)
      */
     public playClickSnap(): void {
-        if (this.isMuted || this.sfxVolume <= 0 || !this.initContext() || !this.ctx || !this.sfxGain) return;
+        if (this.isMuted || this.isSfxMuted || this.sfxVolume <= 0 || !this.initContext() || !this.ctx || !this.sfxGain) return;
         const now = performance.now();
         if (now - this.lastSnapTime < 25) return;
         this.lastSnapTime = now;
@@ -298,7 +341,7 @@ export class AudioEngine {
      * Ascending chime on switch turn on, descending chime on switch turn off
      */
     public playToggleChime(isAscending: boolean): void {
-        if (this.isMuted || this.sfxVolume <= 0 || !this.initContext() || !this.ctx || !this.sfxGain) return;
+        if (this.isMuted || this.isSfxMuted || this.sfxVolume <= 0 || !this.initContext() || !this.ctx || !this.sfxGain) return;
         const now = performance.now();
         if (now - this.lastChimeTime < 40) return;
         this.lastChimeTime = now;
@@ -342,7 +385,7 @@ export class AudioEngine {
      * Delicate, organic paper sliding into a pocket
      */
     public playPaperSlide(): void {
-        if (this.isMuted || this.sfxVolume <= 0 || !this.initContext() || !this.ctx || !this.sfxGain) return;
+        if (this.isMuted || this.isSfxMuted || this.sfxVolume <= 0 || !this.initContext() || !this.ctx || !this.sfxGain) return;
         const now = performance.now();
         if (now - this.lastPaperSlideTime < 80) return;
         this.lastPaperSlideTime = now;
@@ -386,7 +429,7 @@ export class AudioEngine {
      * Satisfying textured paper crumple / trash scrunch
      */
     public playPaperScrunch(): void {
-        if (this.isMuted || this.sfxVolume <= 0 || !this.initContext() || !this.ctx || !this.sfxGain) return;
+        if (this.isMuted || this.isSfxMuted || this.sfxVolume <= 0 || !this.initContext() || !this.ctx || !this.sfxGain) return;
         const now = performance.now();
         if (now - this.lastPaperScrunchTime < 100) return;
         this.lastPaperScrunchTime = now;

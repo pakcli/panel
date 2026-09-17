@@ -1,7 +1,7 @@
 import { normalizePath } from 'obsidian';
 import { BubbleNode, BubbleEdge, BubbleCluster } from './types';
 import { createSmoothHullPath } from './hullGenerator';
-import { getNodeEffectiveTime } from './graphBuilder';
+import { getNodeEffectiveTime, getDefaultNodeColor } from './graphBuilder';
 
 export interface ViewportTransform {
     panX: number;
@@ -136,7 +136,8 @@ export class CanvasRenderer {
         const offsetX = (width / 2 + transform.panX) % gridSize;
         const offsetY = (height / 2 + transform.panY) % gridSize;
 
-        ctx.fillStyle = 'rgba(150, 160, 180, 0.04)';
+        const isDark = typeof document !== 'undefined' ? document.body.classList.contains('theme-dark') : true;
+        ctx.fillStyle = isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.06)';
         for (let x = offsetX; x < width; x += gridSize) {
             for (let y = offsetY; y < height; y += gridSize) {
                 ctx.fillRect(x - 0.75, y - 0.75, 1.5, 1.5);
@@ -187,7 +188,7 @@ export class CanvasRenderer {
                 ctx.globalAlpha = 0.2;
             }
 
-            const baseColor = cluster.color || '#4a5568';
+            const baseColor = cluster.color || getDefaultNodeColor();
             const directChildren = state.clusters.filter(c => c.parentClusterId === cluster.id && c.radius > 0);
 
             if (cluster.depth === 1) {
@@ -572,7 +573,7 @@ export class CanvasRenderer {
         const effRadius = isNodeActive ? Math.max(node.radius, 6.5) : node.radius;
         ctx.beginPath();
         ctx.arc(node.x, node.y, effRadius, 0, Math.PI * 2);
-        const nodeColor = isNodeActive ? '#00f2ff' : (node.color || '#4a5568');
+        const nodeColor = isNodeActive ? '#00f2ff' : (node.color || getDefaultNodeColor());
         ctx.fillStyle = nodeColor;
         if (isNodeActive) {
             ctx.shadowColor = '#00f2ff';
@@ -822,15 +823,32 @@ export class CanvasRenderer {
         ctx.restore();
     }
 
-    private hexToRgba(hex: string, alpha: number): string {
-        let clean = hex.replace('#', '');
-        if (clean.length === 3) {
-            clean = clean.split('').map(c => c + c).join('');
+    private hexToRgba(colorStr: string, alpha: number): string {
+        if (!colorStr) return `rgba(124, 58, 237, ${alpha})`;
+
+        // Direct rgb or rgba string support: rgb(r, g, b) or rgba(r, g, b, a)
+        const rgbMatch = colorStr.match(/rgba?\((\d+)[,\s]+(\d+)[,\s]+(\d+)/);
+        if (rgbMatch) {
+            return `rgba(${rgbMatch[1]}, ${rgbMatch[2]}, ${rgbMatch[3]}, ${alpha})`;
         }
-        const num = parseInt(clean, 16);
-        const r = (num >> 16) & 255;
-        const g = (num >> 8) & 255;
-        const b = num & 255;
-        return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+
+        // Hex string support: #rgb or #rrggbb
+        if (colorStr.startsWith('#')) {
+            let clean = colorStr.replace('#', '');
+            if (clean.length === 3) {
+                clean = clean.split('').map(c => c + c).join('');
+            }
+            if (clean.length >= 6) {
+                const num = parseInt(clean.substring(0, 6), 16);
+                if (!isNaN(num)) {
+                    const r = (num >> 16) & 255;
+                    const g = (num >> 8) & 255;
+                    const b = num & 255;
+                    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+                }
+            }
+        }
+
+        return `rgba(124, 58, 237, ${alpha})`;
     }
 }
