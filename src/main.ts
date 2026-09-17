@@ -1,5 +1,5 @@
 import { Plugin, Notice, Setting, PluginSettingTab, ButtonComponent, TFile, TFolder, TextComponent, setIcon, normalizePath } from 'obsidian';
-import { PakCLITableSettings, DEFAULT_TABLE_SETTINGS, DEFAULT_BUBBLE_GRAPH_SETTINGS, RelationshipTierConfig, DEFAULT_RELATIONSHIP_TIERS, RelationshipFolderEntry, RelationshipViewStructure, RelationshipSortOrder } from './settings';
+import { PakCLITableSettings, DEFAULT_TABLE_SETTINGS, DEFAULT_BUBBLE_GRAPH_SETTINGS, RelationshipTierConfig, DEFAULT_RELATIONSHIP_TIERS, RelationshipFolderEntry, RelationshipViewStructure, RelationshipSortOrder, DictionaryFolderEntry, DictionarySubfolderMode } from './settings';
 import { handleArtifactRename, moveArtifactsBetweenFolders } from './features/sqlseal/utils/views';
 import { SplitViewManager } from './features/explorer/splitViewManager';
 import { ExplorerSectionId, EXPLORER_SECTIONS_INFO, DEFAULT_EXPLORER_SECTION_ORDER } from './features/explorer/types';
@@ -2982,20 +2982,137 @@ export default class PakCLITablePlugin extends Plugin {
 							});
 					});
 
-				new Setting(containerEl)
-					.setName('Target Dictionary Folder')
-					.setDesc('Folder path to index when Scope Mode is set to "Specific Folder".')
-					.addText((text) => {
-						text.setPlaceholder('Dictionary')
-							.setValue(this.settings.dictionaryFolderPath || 'Dictionary')
-							.onChange(async (val) => {
-								this.settings.dictionaryFolderPath = val.trim() || 'Dictionary';
-								await this.saveSettings();
-								if (this.dictionaryExplorerManager) {
-									this.dictionaryExplorerManager.refreshVirtualFolders();
-								}
-							});
+				// Multi-row Target Dictionary Folders Manager
+				const dictFoldersBox = containerEl.createDiv();
+				dictFoldersBox.style.cssText = 'background: var(--background-secondary); border: 1px solid var(--background-modifier-border); border-radius: 8px; padding: 16px; margin: 16px 0;';
+
+				const renderDictFoldersManager = () => {
+					dictFoldersBox.empty();
+
+					let folders: DictionaryFolderEntry[] = this.settings.dictionaryFolders || [];
+					if (folders.length === 0) {
+						folders = [{
+							id: `dict_${Date.now()}`,
+							path: this.settings.dictionaryFolderPath || 'Dictionary',
+							subfolderMode: 'own_az'
+						}];
+						this.settings.dictionaryFolders = folders;
+						this.saveSettings();
+					}
+
+					// Header
+					const headerRow = dictFoldersBox.createDiv();
+					headerRow.style.cssText = 'display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; flex-wrap: wrap; gap: 8px;';
+
+					const titleDiv = headerRow.createDiv();
+					const titleEl = titleDiv.createEl('h4', { text: '📁 Target Dictionary Folders' });
+					titleEl.style.cssText = 'margin: 0; font-size: 14px;';
+					const subDescEl = titleDiv.createEl('p', {
+						text: 'Configure target folders and their subfolder handling for A–Z indexing and virtual folders.'
 					});
+					subDescEl.style.cssText = 'margin: 3px 0 0 0; font-size: 11.5px; color: var(--text-muted);';
+
+					// "+ Add Folder" button
+					const addFolderBtn = headerRow.createEl('button', { text: '+ Add Folder' });
+					addFolderBtn.style.cssText = 'font-size: 12px; padding: 4px 12px; font-weight: 600; cursor: pointer;';
+					addFolderBtn.onclick = async () => {
+						const newEntry: DictionaryFolderEntry = {
+							id: `dict_${Date.now()}`,
+							path: 'Dictionary',
+							subfolderMode: 'own_az'
+						};
+						folders.push(newEntry);
+						this.settings.dictionaryFolders = folders;
+						if (folders.length > 0) {
+							this.settings.dictionaryFolderPath = folders[0].path;
+						}
+						await this.saveSettings();
+						renderDictFoldersManager();
+						if (this.dictionaryExplorerManager) {
+							this.dictionaryExplorerManager.refreshVirtualFolders();
+						}
+					};
+
+					// Table or list of rows
+					const rowsContainer = dictFoldersBox.createDiv();
+					rowsContainer.style.cssText = 'display: flex; flex-direction: column; gap: 8px; margin-top: 10px;';
+
+					folders.forEach((entry, idx) => {
+						const rowEl = rowsContainer.createDiv();
+						rowEl.style.cssText = 'display: flex; align-items: center; gap: 8px; padding: 8px 10px; background: var(--background-primary); border: 1px solid var(--background-modifier-border); border-radius: 6px; flex-wrap: wrap;';
+
+						// Row icon
+						const iconEl = rowEl.createSpan({ text: '📂' });
+						iconEl.style.cssText = 'flex-shrink: 0; font-size: 13px;';
+
+						// Path Input
+						const pathInputWrap = rowEl.createDiv();
+						pathInputWrap.style.cssText = 'flex: 1 1 200px; min-width: 150px;';
+						const pathInput = pathInputWrap.createEl('input', {
+							type: 'text',
+							value: entry.path,
+							placeholder: 'Vault folder path (e.g. Dictionary)'
+						});
+						pathInput.style.cssText = 'width: 100%; font-size: 12px; padding: 4px 8px; border-radius: 4px;';
+						pathInput.onchange = async () => {
+							entry.path = normalizePath(pathInput.value.trim() || 'Dictionary');
+							if (idx === 0) {
+								this.settings.dictionaryFolderPath = entry.path;
+							}
+							await this.saveSettings();
+							if (this.dictionaryExplorerManager) {
+								this.dictionaryExplorerManager.refreshVirtualFolders();
+							}
+						};
+
+						// Subfolder Mode Dropdown
+						const modeWrap = rowEl.createDiv();
+						modeWrap.style.cssText = 'flex: 0 1 220px;';
+						const modeSelect = modeWrap.createEl('select');
+						modeSelect.style.cssText = 'width: 100%; font-size: 12px; padding: 4px 8px; border-radius: 4px; cursor: pointer;';
+
+						modeSelect.createEl('option', { value: 'exclude', text: 'Exclude Subfolders' });
+						modeSelect.createEl('option', { value: 'include', text: 'Include Subfolders (Merged A–Z)' });
+						modeSelect.createEl('option', { value: 'own_az', text: 'Include Subfolders (Own A–Z)' });
+
+						modeSelect.value = entry.subfolderMode || 'own_az';
+
+						modeSelect.onchange = async () => {
+							entry.subfolderMode = modeSelect.value as DictionarySubfolderMode;
+							await this.saveSettings();
+							if (this.dictionaryExplorerManager) {
+								this.dictionaryExplorerManager.refreshVirtualFolders();
+							}
+						};
+
+						// Remove button
+						const removeBtn = rowEl.createEl('button', { text: '✕' });
+						removeBtn.title = 'Remove this dictionary folder';
+						removeBtn.style.cssText = 'padding: 4px 8px; font-size: 12px; color: var(--text-error); cursor: pointer; flex-shrink: 0;';
+						removeBtn.onclick = async () => {
+							folders.splice(idx, 1);
+							this.settings.dictionaryFolders = folders;
+							if (folders.length > 0) {
+								this.settings.dictionaryFolderPath = folders[0].path;
+							}
+							await this.saveSettings();
+							renderDictFoldersManager();
+							if (this.dictionaryExplorerManager) {
+								this.dictionaryExplorerManager.refreshVirtualFolders();
+							}
+						};
+					});
+
+					// Explanation helper footer
+					const helpFooter = dictFoldersBox.createDiv();
+					helpFooter.style.cssText = 'margin-top: 10px; font-size: 11px; color: var(--text-faint); line-height: 1.4;';
+					helpFooter.innerHTML = '<strong>Subfolder Modes:</strong><br>' +
+						'• <b>Exclude Subfolders</b>: Only notes directly in this folder are placed in virtual A–Z; subfolders remain untouched.<br>' +
+						'• <b>Include Subfolders (Merged A–Z)</b>: Notes in all subfolders are merged into the main A–Z index.<br>' +
+						'• <b>Include Subfolders (Own A–Z)</b>: Direct notes get A–Z folders, and each subfolder generates its own separate A–Z folders.';
+				};
+
+				renderDictFoldersManager();
 
 				new Setting(containerEl)
 					.setName('Virtual A–Z Folders in File Explorer')

@@ -1,5 +1,6 @@
-import { App, Modal, TFile, TFolder, setIcon, Menu, moment } from 'obsidian';
+import { App, Modal, TFile, TFolder, setIcon, Menu, moment, normalizePath } from 'obsidian';
 import type PakCLITablePlugin from '../../main';
+import { DictionaryFolderEntry } from '../explorer/types';
 
 export class DictionaryPopupModal extends Modal {
   private plugin: PakCLITablePlugin;
@@ -41,44 +42,81 @@ export class DictionaryPopupModal extends Modal {
     contentEl.empty();
   }
 
-  /** Gets the target folder based on current scope */
-  private getTargetFolder(): TFolder | null {
+  /** Gets folder scopes based on current scope */
+  private getTargetFolderScopes(): { folder: TFolder; subfolderMode: 'exclude' | 'include' | 'own_az' }[] {
     if (this.currentScope === 'active') {
       const activeFile = this.app.workspace.getActiveFile();
       if (activeFile && activeFile.parent) {
-        return activeFile.parent;
+        return [{ folder: activeFile.parent, subfolderMode: 'include' }];
       }
-      // Fallback: root or first vault folder
-      return this.app.vault.getRoot();
+      // Fallback: root
+      return [{ folder: this.app.vault.getRoot(), subfolderMode: 'include' }];
     } else {
-      const path = (this.plugin.settings.dictionaryFolderPath || 'Dictionary').trim();
-      const abstract = this.app.vault.getAbstractFileByPath(path);
-      if (abstract instanceof TFolder) {
-        return abstract;
+      const entries: DictionaryFolderEntry[] = this.plugin.dictionaryExplorerManager
+        ? this.plugin.dictionaryExplorerManager.getDictionaryFolderEntries()
+        : (this.plugin.settings.dictionaryFolders && this.plugin.settings.dictionaryFolders.length > 0
+            ? this.plugin.settings.dictionaryFolders
+            : [{ id: 'default', path: this.plugin.settings.dictionaryFolderPath || 'Dictionary', subfolderMode: 'own_az' }]);
+
+      const scopes: { folder: TFolder; subfolderMode: 'exclude' | 'include' | 'own_az' }[] = [];
+      for (const entry of entries) {
+        const norm = normalizePath(entry.path);
+        const abstract = this.app.vault.getAbstractFileByPath(norm);
+        if (abstract instanceof TFolder) {
+          scopes.push({ folder: abstract, subfolderMode: entry.subfolderMode || 'own_az' });
+        }
       }
-      return null;
+      return scopes;
     }
   }
 
-  /** Gets all markdown files in the target scope */
+  /** Gets the primary target folder for single-folder compatibility */
+  private getTargetFolder(): TFolder | null {
+    const scopes = this.getTargetFolderScopes();
+    return scopes.length > 0 ? scopes[0].folder : null;
+  }
+
+  /** Gets all markdown files across all target scopes respecting subfolderMode */
   private getScopeFiles(): TFile[] {
-    const folder = this.getTargetFolder();
-    if (!folder) return [];
+    const scopes = this.getTargetFolderScopes();
+    if (scopes.length === 0) return [];
 
     const files: TFile[] = [];
-    const collect = (f: TFolder) => {
-      for (const child of f.children) {
-        if (child instanceof TFile && child.extension === 'md') {
-          // Skip index files if desired or include them
-          if (!child.name.toLowerCase().startsWith('index')) {
-            files.push(child);
+    const seenPaths = new Set<string>();
+
+    for (const scope of scopes) {
+      if (scope.subfolderMode === 'exclude') {
+        // Direct files only
+        for (const child of scope.folder.children) {
+          if (child instanceof TFile && child.extension === 'md') {
+            if (!child.name.toLowerCase().startsWith('index')) {
+              if (!seenPaths.has(child.path)) {
+                seenPaths.add(child.path);
+                files.push(child);
+              }
+            }
           }
-        } else if (child instanceof TFolder) {
-          collect(child);
         }
+      } else {
+        // 'include' or 'own_az': recursively collect
+        const collect = (f: TFolder) => {
+          for (const child of f.children) {
+            if (child instanceof TFile && child.extension === 'md') {
+              if (!child.name.toLowerCase().startsWith('index')) {
+                if (!seenPaths.has(child.path)) {
+                  seenPaths.add(child.path);
+                  files.push(child);
+                }
+              }
+            } else if (child instanceof TFolder) {
+              collect(child);
+            }
+          }
+        };
+        collect(scope.folder);
       }
-    };
-    collect(folder);
+    }
+
     return files.sort((a, b) => a.basename.localeCompare(b.basename, undefined, { sensitivity: 'base' }));
   }
 
@@ -113,17 +151,35 @@ export class DictionaryPopupModal extends Modal {
 
     // Scope Selector Pill in Header
     const scopeWrapper = titleRow.createDiv({ cls: 'pakcli-dict-scope-wrapper' });
-    const targetFolder = this.getTargetFolder();
-    const folderName = targetFolder ? (targetFolder.path === '/' ? 'Vault Root' : targetFolder.path) : (this.plugin.settings.dictionaryFolderPath || 'Dictionary (Not Found)');
+    const scopes = this.getTargetFolderScopes();
+    let folderLabel = 'Dictionary (Not Found)';
+    let tooltipText = '';
+
+    if (this.currentScope === 'active') {
+      const activeFile = this.app.workspace.getActiveFile();
+      folderLabel = activeFile?.parent ? (activeFile.parent.path === '/' ? 'Vault Root' : activeFile.parent.path) : 'Vault Root';
+      tooltipText = `Active Folder: ${folderLabel}. Click to switch to Specific Folder(s).`;
+    } else {
+      if (scopes.length === 1) {
+        folderLabel = scopes[0].folder.path === '/' ? 'Vault Root' : scopes[0].folder.path;
+        tooltipText = `Target: ${folderLabel} (${scopes[0].subfolderMode}). Click to switch to Active Folder.`;
+      } else if (scopes.length > 1) {
+        folderLabel = `${scopes.length} Folders`;
+        tooltipText = `Targets:\n${scopes.map(s => `• ${s.folder.path} [${s.subfolderMode}]`).join('\n')}\nClick to switch to Active Folder.`;
+      } else {
+        folderLabel = this.plugin.settings.dictionaryFolderPath || 'Dictionary (Not Found)';
+        tooltipText = `Target: ${folderLabel}. Click to switch to Active Folder.`;
+      }
+    }
 
     const scopeBtn = scopeWrapper.createEl('button', {
       cls: `pakcli-dict-scope-btn ${this.currentScope === 'active' ? 'is-active-scope' : ''}`,
-      attr: { 'aria-label': 'Click to toggle between Specific Folder & Active Folder' },
+      attr: { 'aria-label': tooltipText },
     });
     const scopeIcon = scopeBtn.createSpan({ cls: 'pakcli-dict-scope-icon' });
     setIcon(scopeIcon, this.currentScope === 'active' ? 'folder-clock' : 'folder');
     scopeBtn.createSpan({
-      text: this.currentScope === 'active' ? `Active: ${folderName}` : `Folder: ${folderName}`,
+      text: this.currentScope === 'active' ? `Active: ${folderLabel}` : `Folder: ${folderLabel}`,
       cls: 'pakcli-dict-scope-text',
     });
 
@@ -275,9 +331,11 @@ export class DictionaryPopupModal extends Modal {
     if (allScopeFiles.length === 0) {
       const empty = container.createDiv({ cls: 'pakcli-dict-empty-state' });
       setIcon(empty.createDiv({ cls: 'pakcli-dict-empty-icon' }), 'book-open');
+      const scopes = this.getTargetFolderScopes();
+      const scopeDesc = scopes.length > 0 ? scopes.map(s => s.folder.path).join(', ') : (this.plugin.settings.dictionaryFolderPath || 'target folders');
       empty.createDiv({
         cls: 'pakcli-dict-empty-title',
-        text: `No dictionary notes found in ${this.getTargetFolder()?.path || 'target folder'}.`,
+        text: `No dictionary notes found in ${scopeDesc}.`,
       });
       empty.createDiv({
         cls: 'pakcli-dict-empty-sub',

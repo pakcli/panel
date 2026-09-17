@@ -96,10 +96,20 @@ export interface ExplorerSettings {
   enableDictionaryMode?: boolean;
   dictionaryScope?: 'specific' | 'active';
   dictionaryFolderPath?: string;
+  dictionaryFolders?: DictionaryFolderEntry[];
   dictionaryPinnedTerms?: string[];
   dictionaryActiveLetter?: string | null;
   dictionaryDisplayMode?: 'list' | 'grouped';
   enableDictionaryVirtualFolders?: boolean;
+}
+
+export type DictionarySubfolderMode = 'exclude' | 'include' | 'own_az';
+
+export interface DictionaryFolderEntry {
+  id: string;
+  path: string;
+  subfolderMode: DictionarySubfolderMode;
+  label?: string;
 }
 
 export const DEFAULT_EXPLORER_SETTINGS: ExplorerSettings = {
@@ -133,6 +143,9 @@ export const DEFAULT_EXPLORER_SETTINGS: ExplorerSettings = {
   enableDictionaryMode: true,
   dictionaryScope: 'specific',
   dictionaryFolderPath: 'Dictionary',
+  dictionaryFolders: [
+    { id: 'dict_default', path: 'Digital Library/Dictionary', subfolderMode: 'own_az' }
+  ],
   dictionaryPinnedTerms: [],
   dictionaryActiveLetter: null,
   dictionaryDisplayMode: 'list',

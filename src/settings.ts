@@ -4,8 +4,8 @@ export type { CalcPreset };
 export { DEFAULT_CALC_PRESETS };
 import { BasesLeafletViewSettings } from './features/leaflet/types';
 import { CodeblockLanguageRule } from './features/codeblock/scaler';
-import { ExplorerSettings, DEFAULT_EXPLORER_SETTINGS, ExplorerSectionId } from './features/explorer/types';
-export type { ExplorerSectionId, ExplorerSettings };
+import { ExplorerSettings, DEFAULT_EXPLORER_SETTINGS, ExplorerSectionId, DictionaryFolderEntry, DictionarySubfolderMode } from './features/explorer/types';
+export type { ExplorerSectionId, ExplorerSettings, DictionaryFolderEntry, DictionarySubfolderMode };
 
 export type BubbleGraphIntegrationMode = 'deactivate' | 'replace' | 'second';
 export type BubbleNodeGlyphOption = 'no-dot' | 'dot' | 'plus' | 'minus' | 'i' | 'square' | 'ring' | 'star';
