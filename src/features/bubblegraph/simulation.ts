@@ -80,7 +80,7 @@ export function computeNodesRequiredRadius(nodes: BubbleNode[], denseScale: numb
 
     // If dense, apply multiplier (from settings or default DENSE_BUBBLE_MULTIPLIER)
     if (isDense) {
-        r = Math.round(r * denseScale);
+        r = Math.max(5, Math.round(r * denseScale));
     }
 
     return r;
@@ -94,7 +94,7 @@ export function computeLeafClusterRadius(nodeCount: number, depth: number = 2, d
     const base = Math.sqrt(nodeCount) * 7.0 + (depth === 1 ? 7 : 5);
     let r = Math.max(13, Math.round(base));
     if (nodeCount >= 4) {
-        r = Math.round(r * denseScale);
+        r = Math.max(5, Math.round(r * denseScale));
     }
     return r;
 }
@@ -190,7 +190,8 @@ export function computeAllClusterRadii(
         const packDensity = isScopedRoot ? 0.48 : (isParentDense ? 0.54 : 0.60);
         let packingR = Math.ceil(Math.sqrt(totalArea / (Math.PI * packDensity)) + (isScopedRoot ? 14 : (isParentDense ? 8 : 4)));
         const directExtra = directArea > 0 ? Math.ceil(Math.sqrt(directArea / Math.PI) * (isScopedRoot ? 0.8 : (isParentDense ? 0.6 : 0.4))) : 0;
-        let finalR = Math.max(14, baseR, packingR, maxSubRadius + directExtra + (isScopedRoot ? 14 : (isParentDense ? 8 : 4)));
+        const minClusterR = Math.max(5, Math.round(14 * Math.min(1.0, denseScale)));
+        let finalR = Math.max(minClusterR, baseR, packingR, maxSubRadius + directExtra + (isScopedRoot ? 14 : (isParentDense ? 8 : 4)));
 
         c.baseRadius = finalR;
         c.radius = finalR;

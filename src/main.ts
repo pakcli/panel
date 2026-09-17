@@ -938,9 +938,9 @@ export default class PakCLITablePlugin extends Plugin {
 
 				new Setting(containerEl)
 					.setName('Dense Bubble Size Scale')
-					.setDesc('Scale multiplier for crowded/dense bubbles (with 4+ notes or hub nodes) to provide comfortable breathing room. Range: 1.0 (no extra padding) to 1.50 (+125% area). Default: 1.15.')
+					.setDesc('Scale multiplier for crowded/dense bubbles (with 4+ notes or hub nodes) to provide comfortable breathing room. Range: 0.01 (ultra-compact) to 10.0 (wide expansive breathing room). Default: 1.15.')
 					.addSlider((s) => {
-						s.setLimits(1.0, 1.5, 0.05)
+						s.setLimits(0.01, 10.0, 0.01)
 							.setValue(this.settings.bubbleDenseScale ?? 1.15)
 							.setDynamicTooltip()
 							.onChange(async (v) => {
@@ -949,7 +949,7 @@ export default class PakCLITablePlugin extends Plugin {
 								const leaves = this.app.workspace.getLeavesOfType(BUBBLE_GRAPH_VIEW_TYPE);
 								leaves.forEach((leaf) => {
 									if (leaf.view instanceof BubbleGraphView) {
-										leaf.view.reloadGraphData();
+										leaf.view.setDenseScale(v, false);
 									}
 								});
 							});

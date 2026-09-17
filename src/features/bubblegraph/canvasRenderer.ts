@@ -236,8 +236,13 @@ export class CanvasRenderer {
 
             if (state.showLabels && isFolderModeAllowed) {
                 const clusterParts = cluster.id ? cluster.id.split('/').filter(Boolean) : [];
-                const clusterLevel = Math.min(4, Math.max(1, clusterParts.length));
-                const isFolderLevelAllowed = clusterLevel >= effectiveMinLevel && clusterLevel <= effectiveMaxLevel;
+                let clusterLevel = Math.min(4, Math.max(1, clusterParts.length));
+                if (state.scopedFolder && cluster.id && (cluster.id === state.scopedFolder || cluster.id.startsWith(state.scopedFolder + '/'))) {
+                    const subParts = cluster.id === state.scopedFolder ? [] : cluster.id.slice(state.scopedFolder.length + 1).split('/').filter(Boolean);
+                    clusterLevel = Math.min(4, Math.max(1, 1 + subParts.length));
+                }
+                const isFolderLevelAllowed = (clusterLevel >= userMin && clusterLevel <= userMax) || 
+                                             (clusterLevel >= effectiveMinLevel && clusterLevel <= effectiveMaxLevel);
 
                 if (isHovered || isFolderLevelAllowed) {
                     if (cluster.depth === 1) {
@@ -271,19 +276,21 @@ export class CanvasRenderer {
         const box = cluster.boundingBox;
 
         const labelText = `📁 ${cluster.name} (${visibleCount})`;
-        ctx.font = '600 11px Inter, system-ui, sans-serif';
+        const baseSize = state.labelFontSize || 11;
+        const fontSize = baseSize;
+        ctx.font = `600 ${fontSize}px Inter, system-ui, sans-serif`;
         const textWidth = ctx.measureText(labelText).width;
-        const tabWidth = textWidth + 18;
-        const tabHeight = 22;
+        const tabWidth = textWidth + Math.round(fontSize * 1.3 + 4);
+        const tabHeight = Math.round(fontSize * 1.5 + 6);
 
         const tabX = cluster.centroid.x - tabWidth / 2;
         const topY = (box && isFinite(box.minY) && box.minY !== 0) ? box.minY : (cluster.centroid.y - cluster.radius);
-        const tabY = topY - 12;
+        const tabY = topY - tabHeight / 2 - 2;
 
         ctx.save();
         // Pill background
         ctx.beginPath();
-        ctx.roundRect(tabX, tabY, tabWidth, tabHeight, 6);
+        ctx.roundRect(tabX, tabY, tabWidth, tabHeight, Math.max(4, Math.round(fontSize * 0.45)));
         ctx.fillStyle = isHovered ? 'rgba(15, 23, 42, 0.95)' : 'rgba(15, 23, 42, 0.82)';
         ctx.fill();
 
@@ -294,7 +301,7 @@ export class CanvasRenderer {
         // Label Text
         ctx.fillStyle = isHovered ? '#ffffff' : '#cbd5e1';
         ctx.textBaseline = 'middle';
-        ctx.fillText(labelText, tabX + 9, tabY + tabHeight / 2);
+        ctx.fillText(labelText, tabX + Math.round(fontSize * 0.65 + 2), tabY + tabHeight / 2);
 
         ctx.restore();
     }
@@ -316,17 +323,19 @@ export class CanvasRenderer {
 
         const ctx = this.ctx;
         const labelText = `${cluster.name} (${visibleCount})`;
-        ctx.font = '500 9.5px Inter, system-ui, sans-serif';
+        const baseSize = state.labelFontSize || 11;
+        const fontSize = Math.max(7, Math.round((baseSize * 0.88) * 10) / 10);
+        ctx.font = `500 ${fontSize}px Inter, system-ui, sans-serif`;
         const textWidth = ctx.measureText(labelText).width;
-        const tabWidth = textWidth + 12;
-        const tabHeight = 17;
+        const tabWidth = textWidth + Math.round(fontSize * 1.1 + 4);
+        const tabHeight = Math.round(fontSize * 1.4 + 4);
 
         const tabX = cluster.centroid.x - tabWidth / 2;
-        const tabY = cluster.centroid.y - cluster.radius - 8;
+        const tabY = cluster.centroid.y - cluster.radius - tabHeight / 2 - 2;
 
         ctx.save();
         ctx.beginPath();
-        ctx.roundRect(tabX, tabY, tabWidth, tabHeight, 4);
+        ctx.roundRect(tabX, tabY, tabWidth, tabHeight, Math.max(3, Math.round(fontSize * 0.35)));
         ctx.fillStyle = isHovered ? 'rgba(15, 23, 42, 0.95)' : 'rgba(15, 23, 42, 0.78)';
         ctx.fill();
 
@@ -336,7 +345,7 @@ export class CanvasRenderer {
 
         ctx.fillStyle = isHovered ? '#ffffff' : '#94a3b8';
         ctx.textBaseline = 'middle';
-        ctx.fillText(labelText, tabX + 6, tabY + tabHeight / 2);
+        ctx.fillText(labelText, tabX + Math.round(fontSize * 0.55 + 2), tabY + tabHeight / 2);
         ctx.restore();
     }
 
@@ -462,8 +471,13 @@ export class CanvasRenderer {
             // Level 3 = Files inside subfolders (nodeParts.length === 2)
             // Level 4 = Files inside Level 3+ deep subfolders (nodeParts.length >= 3)
             const nodeParts = node.folderPath ? node.folderPath.split('/').filter(Boolean) : [];
-            const nodeLevel = Math.min(4, 1 + nodeParts.length);
-            const isLevelAllowed = nodeLevel >= effectiveMinLevel && nodeLevel <= effectiveMaxLevel;
+            let nodeLevel = Math.min(4, 1 + nodeParts.length);
+            if (state.scopedFolder && node.folderPath && (node.folderPath === state.scopedFolder || node.folderPath.startsWith(state.scopedFolder + '/'))) {
+                const subParts = node.folderPath === state.scopedFolder ? [] : node.folderPath.slice(state.scopedFolder.length + 1).split('/').filter(Boolean);
+                nodeLevel = Math.min(4, Math.max(1, 1 + subParts.length));
+            }
+            const isLevelAllowed = (nodeLevel >= userMin && nodeLevel <= userMax) || 
+                                   (nodeLevel >= effectiveMinLevel && nodeLevel <= effectiveMaxLevel);
 
             const ext = (node.extension || 'md').toLowerCase();
             const isNodeFormatAllowed = state.labelMode !== 'hide' && (!state.labelMode || state.labelMode === 'all' || state.labelMode === 'text' ||

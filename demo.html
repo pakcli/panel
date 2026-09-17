@@ -1,0 +1,1557 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Obsidian BubbleGraph - Git Snapshot Evolution (1 Hero + 6 Mutating Files)</title>
+  <style>
+    /* ========================================================================= */
+    /* Obsidian & PakCLI Theme System Variables                                  */
+    /* ========================================================================= */
+    :root {
+      --background-primary: #1e1e2e;
+      --background-secondary: #181825;
+      --background-modifier-border: rgba(255, 255, 255, 0.10);
+      --background-modifier-border-focus: rgba(255, 255, 255, 0.16);
+      --background-modifier-hover: rgba(255, 255, 255, 0.08);
+      --background-modifier-form-field: rgba(0, 0, 0, 0.28);
+      --interactive-accent: #a855f7;
+      --interactive-accent-rgb: 168, 85, 247;
+      --text-normal: #cdd6f4;
+      --text-muted: #9399b2;
+      --text-faint: #6c7086;
+      --text-accent: #cba6f7;
+      --text-on-accent: #11111b;
+      --radius-s: 4px;
+      --radius-m: 8px;
+      --radius-l: 12px;
+      --font-monospace: "JetBrains Mono", Consolas, "Courier New", monospace;
+
+      /* PakCLI Button System */
+      --pakcli-toggle-off-bg: rgba(255, 255, 255, 0.05);
+      --pakcli-toggle-off-border: rgba(255, 255, 255, 0.18);
+      --pakcli-toggle-off-color: var(--text-muted);
+      --pakcli-toggle-off-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+
+      --pakcli-toggle-on-bg: rgba(168, 85, 247, 0.28);
+      --pakcli-toggle-on-border: var(--interactive-accent);
+      --pakcli-toggle-on-color: #faf5ff;
+      --pakcli-toggle-on-shadow: inset 1.5px 2.5px 5px rgba(0, 0, 0, 0.85), inset 0 1.5px 2px rgba(0, 0, 0, 0.95);
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      user-select: none;
+      font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    }
+
+    body {
+      background-color: var(--background-primary);
+      color: var(--text-normal);
+      width: 100vw;
+      height: 100vh;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* 1. Header Toolbar (PakCLI 2-Row Layout) */
+    .pakcli-bubble-header {
+      display: flex;
+      flex-direction: column;
+      padding: 7px 16px;
+      background-color: var(--background-secondary);
+      border-bottom: 1px solid var(--background-modifier-border);
+      gap: 6px;
+      z-index: 20;
+    }
+
+    .pakcli-header-row {
+      display: flex;
+      align-items: center;
+      width: 100%;
+    }
+
+    .pakcli-header-row-1 {
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .pakcli-header-row-left {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .app-title-badge {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.2px;
+      color: #fff;
+    }
+
+    .git-tag {
+      font-size: 10px;
+      font-weight: 700;
+      background: rgba(168, 85, 247, 0.2);
+      border: 1px solid var(--interactive-accent);
+      color: var(--text-accent);
+      padding: 2px 7px;
+      border-radius: 4px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .pakcli-scope-bar {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 11px;
+      background: rgba(0, 0, 0, 0.2);
+      padding: 3px 10px;
+      border-radius: var(--radius-s);
+      border: 1px solid var(--background-modifier-border);
+      color: var(--text-muted);
+    }
+
+    .pakcli-scope-bar span.active {
+      color: var(--text-accent);
+      font-weight: 600;
+    }
+
+    .pakcli-header-row-right {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .pakcli-btn {
+      height: 26px;
+      padding: 0 10px;
+      border-radius: 6px;
+      font-size: 11px;
+      font-weight: 500;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 5px;
+      background-color: var(--pakcli-toggle-off-bg);
+      border: 1.5px solid var(--pakcli-toggle-off-border);
+      color: var(--pakcli-toggle-off-color);
+      box-shadow: var(--pakcli-toggle-off-shadow);
+      transition: all 0.12s ease;
+      outline: none;
+    }
+
+    .pakcli-btn:hover {
+      background-color: var(--background-modifier-hover);
+      color: var(--text-normal);
+    }
+
+    .pakcli-btn.active {
+      background-color: var(--pakcli-toggle-on-bg);
+      border-color: var(--pakcli-toggle-on-border);
+      color: var(--pakcli-toggle-on-color);
+      box-shadow: var(--pakcli-toggle-on-shadow);
+      font-weight: 700;
+    }
+
+    .pakcli-header-row-2 {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding-top: 5px;
+      border-top: 1px solid rgba(255, 255, 255, 0.05);
+      font-size: 11px;
+    }
+
+    .pakcli-depth-group {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .pakcli-depth-label {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--text-muted);
+    }
+
+    .pakcli-depth-buttons {
+      display: flex;
+      gap: 3px;
+    }
+
+    .pakcli-depth-btn {
+      height: 22px;
+      padding: 0 7px;
+      border-radius: 4px;
+      font-size: 10px;
+      border: 1px solid var(--pakcli-toggle-off-border);
+      background: var(--pakcli-toggle-off-bg);
+      color: var(--pakcli-toggle-off-color);
+      cursor: pointer;
+    }
+
+    .pakcli-depth-btn.active {
+      background: var(--interactive-accent);
+      color: #fff;
+      border-color: var(--interactive-accent);
+      font-weight: 700;
+    }
+
+    .pakcli-row2-divider {
+      width: 1px;
+      height: 14px;
+      background: var(--background-modifier-border);
+    }
+
+    /* 2. Workspace: Canvas + Inspector Sidebar */
+    .pakcli-bubble-workspace {
+      display: flex;
+      flex: 1;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .pakcli-bubble-canvas-wrap {
+      flex: 1;
+      position: relative;
+      overflow: hidden;
+      background: radial-gradient(circle at center, #1b1d28 0%, #11121a 100%);
+    }
+
+    canvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    /* Inspector Sidebar: Locked to Hero Note */
+    .pakcli-bubble-inspector {
+      width: 330px;
+      background: var(--background-secondary);
+      border-left: 1px solid var(--background-modifier-border);
+      display: flex;
+      flex-direction: column;
+      padding: 16px;
+      overflow-y: auto;
+      z-index: 10;
+    }
+
+    .pakcli-inspector-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 14px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid var(--background-modifier-border);
+    }
+
+    .pakcli-inspector-title {
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+      color: var(--text-normal);
+      text-transform: uppercase;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .hero-pin-badge {
+      font-size: 9px;
+      background: #00f2ff;
+      color: #0b0f19;
+      font-weight: 800;
+      padding: 1px 5px;
+      border-radius: 3px;
+      letter-spacing: 0.5px;
+    }
+
+    .pakcli-inspector-details {
+      display: flex;
+      flex-direction: column;
+      gap: 11px;
+    }
+
+    .pakcli-inspector-row {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .pakcli-row-label {
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--text-muted);
+      font-weight: 600;
+    }
+
+    .pakcli-row-value {
+      font-size: 12px;
+      color: var(--text-normal);
+    }
+
+    .pakcli-row-value.primary {
+      font-size: 13.5px;
+      font-weight: 700;
+      color: #38bdf8;
+    }
+
+    .pakcli-row-value.highlight {
+      color: #34d399;
+      font-weight: 600;
+    }
+
+    .pakcli-inspector-scope-banner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 6px 10px;
+      margin-bottom: 12px;
+      border-radius: var(--radius-s);
+      background: rgba(56, 189, 248, 0.1);
+      border: 1px solid rgba(56, 189, 248, 0.3);
+      font-size: 11px;
+      font-weight: 600;
+      color: #38bdf8;
+    }
+
+    .pakcli-inspector-section {
+      margin-top: 5px;
+    }
+
+    .pakcli-inspector-section h4 {
+      font-size: 10px;
+      margin: 0 0 6px 0;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .pakcli-link-list {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .pakcli-link-item {
+      font-size: 11px;
+      color: var(--text-normal);
+      padding: 3px 6px;
+      border-radius: var(--radius-s);
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid rgba(255, 255, 255, 0.05);
+    }
+
+    /* Floating Commit Pill on Canvas */
+    .canvas-commit-badge {
+      position: absolute;
+      top: 14px;
+      left: 14px;
+      background: rgba(24, 24, 37, 0.90);
+      border: 1px solid var(--background-modifier-border);
+      border-radius: 8px;
+      padding: 10px 14px;
+      backdrop-filter: blur(12px);
+      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.4);
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+      width: 350px;
+      pointer-events: none;
+    }
+
+    .canvas-commit-badge .badge-meta {
+      display: flex;
+      justify-content: space-between;
+      font-size: 10px;
+      font-weight: 700;
+      color: var(--text-accent);
+    }
+
+    .canvas-commit-badge .badge-hash {
+      font-family: var(--font-monospace);
+      color: var(--text-muted);
+    }
+
+    .canvas-commit-badge .badge-title {
+      font-size: 12px;
+      font-weight: 700;
+      color: #fff;
+    }
+
+    .canvas-commit-badge .badge-hero-action {
+      font-size: 11px;
+      color: #38bdf8;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+
+    .canvas-commit-badge .badge-ambient-action {
+      font-size: 10.5px;
+      color: #e2e8f0;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 4px;
+      padding: 4px 8px;
+      line-height: 1.35;
+    }
+
+    /* 3. Bottom Timelapse Minimap Bar (10 Commits) */
+    .pakcli-timelapse-bar {
+      display: flex;
+      align-items: center;
+      padding: 8px 16px;
+      background-color: var(--background-secondary);
+      border-top: 1px solid var(--background-modifier-border);
+      gap: 12px;
+      z-index: 20;
+    }
+
+    .pakcli-timeline-controls {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-shrink: 0;
+    }
+
+    .pakcli-timeline-btn {
+      background: var(--background-modifier-form-field);
+      border: 1px solid var(--background-modifier-border);
+      color: var(--text-normal);
+      padding: 4px 9px;
+      border-radius: var(--radius-s);
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+      transition: all 0.15s ease;
+    }
+
+    .pakcli-timeline-btn:hover {
+      background: var(--background-modifier-hover);
+      border-color: var(--interactive-accent);
+    }
+
+    .pakcli-timeline-btn.play-btn {
+      color: var(--text-accent);
+      border-color: rgba(168, 85, 247, 0.4);
+    }
+
+    .pakcli-timeline-btn.play-btn.active {
+      background: var(--interactive-accent);
+      color: #fff;
+    }
+
+    .pakcli-timeline-track-wrap {
+      flex: 1;
+      height: 28px;
+      display: flex;
+      align-items: center;
+      position: relative;
+    }
+
+    .step-track-points {
+      width: 100%;
+      display: flex;
+      justify-content: space-between;
+      position: relative;
+      z-index: 3;
+    }
+
+    .step-line-bg {
+      position: absolute;
+      left: 14px;
+      right: 14px;
+      top: 50%;
+      height: 3px;
+      background: var(--background-modifier-border);
+      transform: translateY(-50%);
+      z-index: 1;
+    }
+
+    .step-line-fill {
+      position: absolute;
+      left: 14px;
+      top: 50%;
+      height: 3px;
+      background: var(--interactive-accent);
+      transform: translateY(-50%);
+      z-index: 2;
+      transition: width 0.3s ease;
+      box-shadow: 0 0 10px rgba(168, 85, 247, 0.7);
+    }
+
+    .step-pill {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      padding: 3px 8px;
+      border-radius: 12px;
+      background: var(--background-secondary);
+      border: 1.5px solid var(--background-modifier-border);
+      font-size: 9.5px;
+      font-weight: 600;
+      color: var(--text-muted);
+      cursor: pointer;
+      transition: all 0.2s;
+      white-space: nowrap;
+    }
+
+    .step-pill.active {
+      border-color: var(--interactive-accent);
+      background: rgba(168, 85, 247, 0.2);
+      color: #fff;
+      box-shadow: 0 0 10px rgba(168, 85, 247, 0.4);
+      transform: translateY(-1px);
+    }
+
+    .step-pill-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--text-faint);
+    }
+
+    .step-pill.active .step-pill-dot {
+      background: var(--interactive-accent);
+      box-shadow: 0 0 6px var(--interactive-accent);
+    }
+
+    .pakcli-timeline-date-badge {
+      font-size: 11px;
+      font-weight: 600;
+      font-family: var(--font-monospace);
+      color: var(--text-accent);
+      background: var(--background-primary);
+      border: 1px solid var(--interactive-accent);
+      border-radius: var(--radius-s);
+      padding: 3px 9px;
+      white-space: nowrap;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- 1. Header Toolbar (Row 1 & Row 2) -->
+  <div class="pakcli-bubble-header">
+    <div class="pakcli-header-row pakcli-header-row-1">
+      <div class="pakcli-header-row-left">
+        <div class="app-title-badge">
+          <span>🔮 BubbleGraph</span>
+          <span class="git-tag">Git Timeline • 1 Hero + 6 Mutating Files</span>
+        </div>
+        <div class="pakcli-scope-bar">
+          <span>📁 Vault</span>
+          <span>/</span>
+          <span id="scopeBreadcrumbFolder">00 - Inbox</span>
+          <span id="scopeBreadcrumbSubSep" style="display:none">/</span>
+          <span class="active" id="scopeBreadcrumbSub" style="display:none">Docs (Depth 2)</span>
+        </div>
+      </div>
+
+      <div class="pakcli-header-row-right">
+        <button class="pakcli-btn active" id="toggleLinesBtn">Lines On</button>
+        <button class="pakcli-btn active" id="toggleLabelsBtn">Labels On</button>
+        <button class="pakcli-btn active" id="toggleInspectorBtn">ℹ️ Inspector</button>
+      </div>
+    </div>
+
+    <div class="pakcli-header-row-2">
+      <div class="pakcli-depth-group">
+        <span class="pakcli-depth-label">Depth</span>
+        <div class="pakcli-depth-buttons">
+          <button class="pakcli-depth-btn">1</button>
+          <button class="pakcli-depth-btn active" id="depthBtnIndicator">1 (Inbox)</button>
+          <button class="pakcli-depth-btn">3</button>
+          <button class="pakcli-depth-btn">All</button>
+        </div>
+      </div>
+
+      <div class="pakcli-row2-divider"></div>
+
+      <div style="color: var(--text-muted); font-size: 10px;">
+        1 Pinned Active Hero (Aura Glow) • 6 Independent Ambient Files (Spawn / Edit / Move / Rename / Delete)
+      </div>
+
+      <div style="margin-left: auto; color: var(--text-faint); font-size: 10px;">
+        Press Space to Play/Pause • Arrows to Scrub
+      </div>
+    </div>
+  </div>
+
+  <!-- 2. Workspace: Canvas + Inspector Sidebar -->
+  <div class="pakcli-bubble-workspace">
+    <div class="pakcli-bubble-canvas-wrap">
+      <canvas id="graphCanvas"></canvas>
+
+      <!-- Floating Commit Card -->
+      <div class="canvas-commit-badge" id="commitOverlay">
+        <div class="badge-meta">
+          <span id="badgeStep">COMMIT 0 OF 9</span>
+          <span class="badge-hash" id="badgeHash">#10a7b4f</span>
+        </div>
+        <div class="badge-title" id="badgeTitle">State 0: Untitled Note Born</div>
+        <div class="badge-hero-action" id="badgeHeroAction">★ Hero: 'Untitled.md' created in 00 - Inbox</div>
+        <div class="badge-ambient-action" id="badgeAmbientAction">Ambient: Only initial files present in Inbox.</div>
+      </div>
+    </div>
+
+    <!-- PakCLI Inspector Sidebar: LOCKED PERMANENTLY TO THE HERO NOTE -->
+    <div class="pakcli-bubble-inspector" id="inspectorSidebar">
+      <div class="pakcli-inspector-header">
+        <span class="pakcli-inspector-title">
+          <span>ℹ️ INSPECTOR</span>
+          <span class="hero-pin-badge">PINNED HERO</span>
+        </span>
+      </div>
+
+      <div class="pakcli-inspector-scope-banner" id="insScopeBanner">
+        <span id="insScopeText">📍 Scoped: 00 - Inbox</span>
+        <span style="font-size: 10px; color: #38bdf8" id="insScopeDepth">Depth 1</span>
+      </div>
+
+      <div class="pakcli-inspector-details">
+        <div class="pakcli-inspector-row">
+          <span class="pakcli-row-label">Tracked Hero Note:</span>
+          <strong class="pakcli-row-value primary" id="insName">📄 Untitled.md</strong>
+        </div>
+
+        <div class="pakcli-inspector-row">
+          <span class="pakcli-row-label">Folder Hierarchy:</span>
+          <span class="pakcli-row-value" id="insFolder">📁 00 - Inbox</span>
+        </div>
+
+        <div class="pakcli-inspector-row">
+          <span class="pakcli-row-label">Current Hero Status:</span>
+          <span class="pakcli-row-value highlight" id="insStatusEvent">✨ Note Created (Fresh Draft)</span>
+        </div>
+
+        <div class="pakcli-inspector-row">
+          <span class="pakcli-row-label">Degree Centrality:</span>
+          <span class="pakcli-row-value" id="insDegree">0 connections</span>
+        </div>
+
+        <div class="pakcli-inspector-row">
+          <span class="pakcli-row-label">Content Mass:</span>
+          <span class="pakcli-row-value" id="insSize">Draft (~110 words)</span>
+        </div>
+
+        <div class="pakcli-inspector-section">
+          <h4>Hero Connections (<span id="insConnCount">0</span>):</h4>
+          <div class="pakcli-link-list" id="insConnList">
+            <span style="color:var(--text-faint); font-size:11px;">Isolated note</span>
+          </div>
+        </div>
+
+        <div class="pakcli-inspector-section" style="border-top:1px solid var(--background-modifier-border); padding-top:8px; margin-top:8px;">
+          <h4>Vault Ambient Activity (Commit):</h4>
+          <div id="insVaultStatus" style="font-size:11px; color:var(--text-muted); line-height:1.4;">
+            Only initial files present in Inbox.
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 3. Bottom Timelapse Minimap Bar (10 Commits) -->
+  <div class="pakcli-timelapse-bar">
+    <div class="pakcli-timeline-controls">
+      <button class="pakcli-timeline-btn" id="btnPrev">◀ Prev</button>
+      <button class="pakcli-timeline-btn play-btn active" id="btnPlay">❚❚ Pause</button>
+      <button class="pakcli-timeline-btn" id="btnNext">Next ▶</button>
+    </div>
+
+    <div class="pakcli-timeline-track-wrap">
+      <div class="step-line-bg"></div>
+      <div class="step-line-fill" id="trackProgress" style="width: 0%;"></div>
+
+      <div class="step-track-points">
+        <div class="step-pill active" data-step="0"><span class="step-pill-dot"></span>C0: Untitled</div>
+        <div class="step-pill" data-step="1"><span class="step-pill-dot"></span>C1: +idea & +todos</div>
+        <div class="step-pill" data-step="2"><span class="step-pill-dot"></span>C2: Bloom Docs</div>
+        <div class="step-pill" data-step="3"><span class="step-pill-dot"></span>C3: Hero Move</div>
+        <div class="step-pill" data-step="4"><span class="step-pill-dot"></span>C4: Hero Rename</div>
+        <div class="step-pill" data-step="5"><span class="step-pill-dot"></span>C5: +api_routes</div>
+        <div class="step-pill" data-step="6"><span class="step-pill-dot"></span>C6: Move & Del Scratch</div>
+        <div class="step-pill" data-step="7"><span class="step-pill-dot"></span>C7: Rename Spec & Edit Routes</div>
+        <div class="step-pill" data-step="8"><span class="step-pill-dot"></span>C8: Hero Edit & Del Log</div>
+        <div class="step-pill" data-step="9"><span class="step-pill-dot"></span>C9: +schema.base</div>
+      </div>
+    </div>
+
+    <div class="pakcli-timeline-date-badge" id="commitBadge">
+      git:#10a7b4f
+    </div>
+  </div>
+
+  <script>
+    const canvas = document.getElementById('graphCanvas');
+    const ctx = canvas.getContext('2d');
+
+    let width = canvas.width = canvas.parentElement.clientWidth;
+    let height = canvas.height = canvas.parentElement.clientHeight;
+
+    window.addEventListener('resize', () => {
+      width = canvas.width = canvas.parentElement.clientWidth;
+      height = canvas.height = canvas.parentElement.clientHeight;
+      layoutClusters();
+    });
+
+    // ── Clusters Hierarchy (Parent Level 1 + Nested Subfolder Level 2) ──────────
+    let clusters = {};
+    function layoutClusters() {
+      const alphaCentroidX = width * 0.68;
+      const alphaCentroidY = height * 0.46;
+
+      clusters = {
+        inbox: {
+          id: "00 - Inbox",
+          name: "00 - Inbox",
+          depth: 1,
+          x: width * 0.25,
+          y: height * 0.46,
+          radius: 145,
+          color: "#4a5568"
+        },
+        alpha: {
+          id: "01 - Project Alpha",
+          name: "01 - Project Alpha",
+          depth: 1,
+          x: alphaCentroidX,
+          y: alphaCentroidY,
+          radius: 225,
+          color: "#a855f7"
+        },
+        alphaDocs: {
+          id: "01 - Project Alpha/Docs",
+          name: "Docs",
+          depth: 2,
+          x: alphaCentroidX - 55,
+          y: alphaCentroidY + 35,
+          targetRadius: 0,
+          currentRadius: 0,
+          color: "#38bdf8",
+          parentKey: "alpha"
+        }
+      };
+    }
+    layoutClusters();
+
+    // ── Nodes: 1 Hero (Permanently Highlighted) + 6 Independent Ambient Files ─
+    const nodes = {
+      // ★ 1. THE HERO (Always Highlighted with Cyan Pulse Aura + Tracked in Inspector)
+      hero: {
+        id: 'hero',
+        name: 'Untitled.md',
+        glyph: 'dot',
+        cluster: 'inbox',
+        ox: 25, oy: -15,
+        radius: 12,
+        targetRadius: 12,
+        color: '#38bdf8',
+        visible: true,
+        scale: 1.0,
+        ripple: 0,
+        isHero: true, // ONLY THIS ONE IS HERO
+        folder: '00 - Inbox'
+      },
+
+      // Ambient 1: quick_idea.md (Born C1 in Inbox, moves C6 to Docs, renames C7 to spec.md, edits C8)
+      amb_1: {
+        id: 'amb_1',
+        name: 'quick_idea.md',
+        glyph: 'dot',
+        cluster: 'inbox',
+        ox: -25, oy: 45,
+        radius: 10,
+        targetRadius: 10,
+        color: '#64748b',
+        visible: false, // born C1
+        scale: 0.01,
+        ripple: 0,
+        isHero: false
+      },
+
+      // Ambient 2: scratchpad.md (Starts in Inbox, edits C1, DELETED AT C6!)
+      amb_2: {
+        id: 'amb_2',
+        name: 'scratchpad.md',
+        glyph: 'dot',
+        cluster: 'inbox',
+        ox: -35, oy: -15,
+        radius: 10,
+        targetRadius: 10,
+        color: '#64748b',
+        visible: true,
+        scale: 1.0,
+        ripple: 0,
+        isHero: false
+      },
+
+      // Ambient 3: todos.md (Born C1 in Inbox, edits C3, edits C5, DELETED AT C8!)
+      amb_3: {
+        id: 'amb_3',
+        name: 'todos.md',
+        glyph: 'dot',
+        cluster: 'inbox',
+        ox: 40, oy: 35,
+        radius: 11,
+        targetRadius: 11,
+        color: '#64748b',
+        visible: false, // born C1
+        scale: 0.01,
+        ripple: 0,
+        isHero: false
+      },
+
+      // Ambient 4: index.md (In Alpha, stable folder captain with glyph 'i', edits at C2 & C9)
+      amb_4: {
+        id: 'amb_4',
+        name: 'index.md',
+        glyph: 'i',
+        cluster: 'alpha',
+        ox: -75, oy: -55,
+        radius: 14,
+        targetRadius: 14,
+        color: '#a855f7',
+        visible: true,
+        scale: 1.0,
+        ripple: 0,
+        isHero: false
+      },
+
+      // Ambient 5: api_routes.md (Born C5 in Alpha, edits C7, edits C8)
+      amb_5: {
+        id: 'amb_5',
+        name: 'api_routes.md',
+        glyph: 'dot',
+        cluster: 'alpha',
+        ox: 80, oy: 40,
+        radius: 12,
+        targetRadius: 12,
+        color: '#a855f7',
+        visible: false, // born C5
+        scale: 0.01,
+        ripple: 0,
+        isHero: false
+      },
+
+      // Ambient 6: schema.base (Born C9 in Alpha as database table file with glyph Ring)
+      amb_6: {
+        id: 'amb_6',
+        name: 'schema.base',
+        glyph: 'ring',
+        cluster: 'alpha',
+        ox: 60, oy: -60,
+        radius: 15,
+        targetRadius: 15,
+        color: '#a855f7',
+        visible: false, // born C9
+        scale: 0.01,
+        ripple: 0,
+        isHero: false
+      }
+    };
+
+    // Initialize physical coordinates
+    for (const [key, n] of Object.entries(nodes)) {
+      const c = clusters[n.cluster];
+      n.x = c.x + n.ox;
+      n.y = c.y + n.oy;
+      n.vx = 0;
+      n.vy = 0;
+    }
+
+    // ── 10 Commits with 1 Highlighted Hero & 6 Ambient Mutating Files ──────────
+    const commits = [
+      {
+        idx: 0,
+        hash: '10a7b4f',
+        title: 'Commit 0: Untitled Note Created in Inbox',
+        heroAction: "★ Hero: 'Untitled.md' created in 00 - Inbox (fresh draft)",
+        ambientAction: "Ambient: 2 initial files in vault ('scratchpad.md' in Inbox, 'index.md' in Alpha).",
+        statusEvent: '✨ Hero Created (Fresh Draft)',
+        scopeText: '00 - Inbox',
+        mutations: () => {
+          // Hero
+          nodes.hero.name = 'Untitled.md';
+          nodes.hero.cluster = 'inbox';
+          nodes.hero.targetRadius = 12;
+          nodes.hero.glyph = 'dot';
+          nodes.hero.folder = '00 - Inbox';
+
+          // Ambient files
+          nodes.amb_1.visible = false; // quick_idea not born yet
+          nodes.amb_2.visible = true;  // scratchpad is alive
+          nodes.amb_2.targetRadius = 10;
+          nodes.amb_3.visible = false; // todos not born yet
+          nodes.amb_4.visible = true;  // index.md alive
+          nodes.amb_4.targetRadius = 14;
+          nodes.amb_5.visible = false; // api_routes not born
+          nodes.amb_6.visible = false; // schema.base not born
+          clusters.alphaDocs.targetRadius = 0;
+        },
+        inspector: {
+          name: '📄 Untitled.md',
+          folder: '📁 00 - Inbox',
+          degree: '0 connections',
+          size: 'Draft (~110 words)',
+          conns: []
+        }
+      },
+      {
+        idx: 1,
+        hash: '2c9e88a',
+        title: 'Commit 1: Ambient Creations (+quick_idea & +todos) & Edit',
+        heroAction: "★ Hero: Remains in Inbox, links to new sibling note.",
+        ambientAction: "Ambient: Born 'quick_idea.md' & 'todos.md' in Inbox; 'scratchpad.md' edited (+200w).",
+        statusEvent: '👁️ Observing Vault Growth',
+        scopeText: '00 - Inbox',
+        mutations: () => {
+          // Ambient 1 born
+          nodes.amb_1.visible = true;
+          nodes.amb_1.cluster = 'inbox';
+          nodes.amb_1.name = 'quick_idea.md';
+          nodes.amb_1.ox = -25;
+          nodes.amb_1.oy = 45;
+          // Ambient 3 born
+          nodes.amb_3.visible = true;
+          nodes.amb_3.cluster = 'inbox';
+          nodes.amb_3.targetRadius = 11;
+          // Ambient 2 edited (grows)
+          nodes.amb_2.targetRadius = 13;
+        },
+        inspector: {
+          name: '📄 Untitled.md',
+          folder: '📁 00 - Inbox',
+          degree: '1 connection (sibling)',
+          size: 'Draft (~150 words)',
+          conns: ['• quick_idea.md (Sibling)']
+        }
+      },
+      {
+        idx: 2,
+        hash: '3f77b10',
+        title: 'Commit 2: Subfolder "Docs" Bloomed in Project Alpha',
+        heroAction: "★ Hero: Stays in Inbox, preparing for project restructuring.",
+        ambientAction: "Ambient: 'Docs' subfolder blooms in Alpha; 'index.md' edited (+overview table).",
+        statusEvent: '🌱 Subfolder Bloomed (Depth 2)',
+        scopeText: '01 - Project Alpha / Docs',
+        mutations: () => {
+          clusters.alphaDocs.targetRadius = 78;
+          // Ambient 4 edited (index.md grows)
+          nodes.amb_4.targetRadius = 16;
+        },
+        inspector: {
+          name: '📄 Untitled.md',
+          folder: '📁 00 - Inbox',
+          degree: '1 connection',
+          size: 'Draft (~190 words)',
+          conns: ['• quick_idea.md (Sibling)']
+        }
+      },
+      {
+        idx: 3,
+        hash: '4a1b919',
+        title: 'Commit 3: Hero Move - Untitled.md Migrates to Docs',
+        heroAction: "★ Hero: Moves across Venn Bridge into 'Project Alpha/Docs' subfolder.",
+        ambientAction: "Ambient: 'todos.md' in Inbox edited (+150w checklists); other files stable.",
+        statusEvent: '🚚 Directory Migration (Venn Pull)',
+        scopeText: '01 - Project Alpha / Docs',
+        mutations: () => {
+          nodes.hero.cluster = 'alphaDocs';
+          nodes.hero.folder = '01 - Project Alpha / Docs';
+          nodes.hero.ripple = 1.0;
+          // Ambient 3 edited
+          nodes.amb_3.targetRadius = 14;
+        },
+        inspector: {
+          name: '📄 Untitled.md',
+          folder: '📁 01 - Project Alpha / Docs',
+          degree: '1 connection (Parent Root)',
+          size: 'Draft (~240 words)',
+          conns: ['• index.md (Parent Root)']
+        }
+      },
+      {
+        idx: 4,
+        hash: '5e4d29b',
+        title: 'Commit 4: Hero Rename - Untitled.md ➔ architecture.md',
+        heroAction: "★ Hero: Renamed to 'architecture.md', transforms glyph to Hub (+).",
+        ambientAction: "Ambient: 'quick_idea.md' in Inbox edited (+research links); Inbox activity high.",
+        statusEvent: '🏷️ Hero Renamed (architecture.md)',
+        scopeText: '01 - Project Alpha / Docs',
+        mutations: () => {
+          nodes.hero.name = 'architecture.md';
+          nodes.hero.glyph = 'hub';
+          nodes.hero.targetRadius = 15;
+          nodes.hero.ripple = 1.0;
+          // Ambient 1 edited
+          nodes.amb_1.targetRadius = 12;
+        },
+        inspector: {
+          name: '📄 architecture.md',
+          folder: '📁 01 - Project Alpha / Docs',
+          degree: '2 connections',
+          size: 'Document (~650 words)',
+          conns: ['• index.md (Parent)', '• quick_idea.md (Venn Bridge)']
+        }
+      },
+      {
+        idx: 5,
+        hash: '6a0f12c',
+        title: 'Commit 5: Ambient Creation (+api_routes.md) & Todos Edit',
+        heroAction: "★ Hero: Links automatically to newly created ambient note 'api_routes.md'.",
+        ambientAction: "Ambient: Born 'api_routes.md' in Alpha root; 'todos.md' in Inbox edited (+300w).",
+        statusEvent: '🔗 Linked to New Ambient Note',
+        scopeText: '01 - Project Alpha / Docs',
+        mutations: () => {
+          // Ambient 5 born
+          nodes.amb_5.visible = true;
+          nodes.amb_5.scale = 0.1;
+          nodes.amb_5.ripple = 1.0;
+          // Ambient 3 edited
+          nodes.amb_3.targetRadius = 16;
+        },
+        inspector: {
+          name: '📄 architecture.md',
+          folder: '📁 01 - Project Alpha / Docs',
+          degree: '3 connections',
+          size: 'Document (~800 words)',
+          conns: ['• index.md (Parent)', '• api_routes.md (Alpha Root)', '• quick_idea.md (Inbox)']
+        }
+      },
+      {
+        idx: 6,
+        hash: '7b8893d',
+        title: 'Commit 6: Ambient Move (quick_idea) & Ambient Delete (scratchpad)',
+        heroAction: "★ Hero: Welcomes 'quick_idea.md' as companion sibling into Docs subfolder.",
+        ambientAction: "Ambient: 'quick_idea.md' MOVED to Docs; 'scratchpad.md' DELETED (fade out).",
+        statusEvent: '👥 Companion Sibling Joined Docs',
+        scopeText: '01 - Project Alpha / Docs',
+        mutations: () => {
+          // Ambient 1 moves to Docs
+          nodes.amb_1.cluster = 'alphaDocs';
+          nodes.amb_1.ox = 15;
+          nodes.amb_1.oy = 15;
+          nodes.amb_1.ripple = 1.0;
+          // Ambient 2 DELETED!
+          nodes.amb_2.visible = false;
+        },
+        inspector: {
+          name: '📄 architecture.md',
+          folder: '📁 01 - Project Alpha / Docs',
+          degree: '3 connections',
+          size: 'Document (~950 words)',
+          conns: ['• quick_idea.md (Subfolder Sibling)', '• api_routes.md', '• index.md']
+        }
+      },
+      {
+        idx: 7,
+        hash: '8f102ca',
+        title: 'Commit 7: Ambient Rename (quick_idea ➔ spec.md) & Routes Edit',
+        heroAction: "★ Hero: Maintains steady position alongside newly renamed spec document.",
+        ambientAction: "Ambient: 'quick_idea.md' RENAMED to 'spec.md'; 'api_routes.md' EDITED (+500w).",
+        statusEvent: '📐 Partner Note Matured',
+        scopeText: '01 - Project Alpha / Docs',
+        mutations: () => {
+          // Ambient 1 renamed
+          nodes.amb_1.name = 'spec.md';
+          nodes.amb_1.targetRadius = 13;
+          nodes.amb_1.ripple = 1.0;
+          // Ambient 5 edited (grows)
+          nodes.amb_5.targetRadius = 15;
+        },
+        inspector: {
+          name: '📄 architecture.md',
+          folder: '📁 01 - Project Alpha / Docs',
+          degree: '3 connections',
+          size: 'Document (~1,100 words)',
+          conns: ['• spec.md (Subfolder Sibling)', '• api_routes.md', '• index.md']
+        }
+      },
+      {
+        idx: 8,
+        hash: '9c37a11',
+        title: 'Commit 8: Major Hero Edit (+3,400w) & Ambient Delete (todos.md)',
+        heroAction: "★ Hero: Massive content expansion (+3,400w)! Radius expands from 15px to 26px.",
+        ambientAction: "Ambient: 'todos.md' in Inbox completed and DELETED (clearing inbox).",
+        statusEvent: '🔥 Heavy Hero Edit (+3,400w)',
+        scopeText: '01 - Project Alpha / Docs',
+        mutations: () => {
+          // Hero heavy edit
+          nodes.hero.targetRadius = 26;
+          nodes.hero.ripple = 1.0;
+          clusters.alphaDocs.targetRadius = 88;
+          // Ambient 3 DELETED!
+          nodes.amb_3.visible = false;
+        },
+        inspector: {
+          name: '📄 architecture.md',
+          folder: '📁 01 - Project Alpha / Docs',
+          degree: '3 connections',
+          size: 'Heavy Pillar Note (~4,500 words)',
+          conns: ['• spec.md (Subfolder Sibling)', '• api_routes.md', '• index.md']
+        }
+      },
+      {
+        idx: 9,
+        hash: '0d44e51',
+        title: 'Commit 9: Ambient Creation (+schema.base) & Index Edit',
+        heroAction: "★ Hero: Links to newly spawned schema.base database table.",
+        ambientAction: "Ambient: Born 'schema.base' in Alpha (Ring glyph); 'index.md' updated (+meta).",
+        statusEvent: '🏛️ Ecosystem Completed',
+        scopeText: '01 - Project Alpha / Docs',
+        mutations: () => {
+          // Ambient 6 born
+          nodes.amb_6.visible = true;
+          nodes.amb_6.scale = 0.1;
+          nodes.amb_6.ripple = 1.0;
+          // Ambient 4 edited
+          nodes.amb_4.targetRadius = 16;
+        },
+        inspector: {
+          name: '📄 architecture.md',
+          folder: '📁 01 - Project Alpha / Docs',
+          degree: '4 connections',
+          size: 'Heavy Pillar Note (~4,650 words)',
+          conns: ['• spec.md (Subfolder Sibling)', '• api_routes.md', '• schema.base (Database)', '• index.md']
+        }
+      }
+    ];
+
+    let currentCommit = 0;
+    let isPlaying = true;
+    let stepTimer = 0;
+    const COMMIT_DURATION = 360; // ~6s
+    let animTime = 0;
+
+    function setCommit(idx) {
+      currentCommit = (idx + commits.length) % commits.length;
+      stepTimer = 0;
+
+      // Re-apply sequentially up to currentCommit
+      layoutClusters();
+      for (let i = 0; i <= currentCommit; i++) {
+        commits[i].mutations();
+      }
+
+      updateHUD();
+    }
+
+    function updateHUD() {
+      const c = commits[currentCommit];
+      document.getElementById('badgeStep').textContent = `COMMIT ${c.idx} OF 9`;
+      document.getElementById('badgeHash').textContent = `#${c.hash}`;
+      document.getElementById('badgeTitle').textContent = c.title;
+      document.getElementById('badgeHeroAction').textContent = c.heroAction;
+      document.getElementById('badgeAmbientAction').textContent = c.ambientAction;
+      document.getElementById('commitBadge').textContent = `git:#${c.hash}`;
+
+      // Always display the HERO in the Inspector
+      document.getElementById('insName').textContent = c.inspector.name;
+      document.getElementById('insFolder').textContent = c.inspector.folder;
+      document.getElementById('insStatusEvent').textContent = c.statusEvent;
+      document.getElementById('insDegree').textContent = c.inspector.degree;
+      document.getElementById('insSize').textContent = c.inspector.size;
+      document.getElementById('insVaultStatus').textContent = c.ambientAction;
+
+      // Scope Banner
+      document.getElementById('insScopeText').textContent = `📍 Scoped: ${c.scopeText}`;
+      document.getElementById('scopeBreadcrumbFolder').textContent = c.scopeText.split('/')[0].trim();
+      const hasSub = c.scopeText.includes('/');
+      document.getElementById('scopeBreadcrumbSubSep').style.display = hasSub ? 'inline' : 'none';
+      document.getElementById('scopeBreadcrumbSub').style.display = hasSub ? 'inline' : 'none';
+      if (hasSub) {
+        document.getElementById('scopeBreadcrumbSub').textContent = c.scopeText.split('/')[1].trim();
+      }
+
+      // Hero connection list
+      const listEl = document.getElementById('insConnList');
+      listEl.innerHTML = '';
+      document.getElementById('insConnCount').textContent = c.inspector.conns.length;
+      if (c.inspector.conns.length === 0) {
+        listEl.innerHTML = '<span style="color:var(--text-faint); font-size:11px;">Isolated note</span>';
+      } else {
+        c.inspector.conns.forEach(item => {
+          const div = document.createElement('div');
+          div.className = 'pakcli-link-item';
+          div.textContent = item;
+          listEl.appendChild(div);
+        });
+      }
+
+      // Progress bar
+      const progressPct = (currentCommit / (commits.length - 1)) * 100;
+      document.getElementById('trackProgress').style.width = `${progressPct}%`;
+
+      document.querySelectorAll('.step-pill').forEach((pill, i) => {
+        pill.classList.toggle('active', i === currentCommit);
+      });
+    }
+
+    // ── Render & Physics Loop ──────────────────────────────────────────────────
+    function render() {
+      animTime += 16;
+
+      if (isPlaying) {
+        stepTimer++;
+        if (stepTimer >= COMMIT_DURATION) {
+          setCommit(currentCommit + 1);
+        }
+      }
+
+      ctx.clearRect(0, 0, width, height);
+
+      // Subfolder radius animation
+      const sub = clusters.alphaDocs;
+      sub.currentRadius += (sub.targetRadius - sub.currentRadius) * 0.08;
+
+      // 1. Draw Depth 1 Parent Clusters (Hulls)
+      [clusters.inbox, clusters.alpha].forEach(c => {
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(c.x, c.y, c.radius, 0, Math.PI * 2);
+        ctx.fillStyle = hexToRgba(c.color, 0.09);
+        ctx.fill();
+
+        ctx.strokeStyle = hexToRgba(c.color, 0.35);
+        ctx.lineWidth = 1.4;
+        ctx.stroke();
+
+        drawClusterFolderTab(c);
+        ctx.restore();
+      });
+
+      // 2. Draw Depth 2 Nested Subfolder Bubble (Docs inside Alpha)
+      if (sub.currentRadius > 8) {
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(sub.x, sub.y, sub.currentRadius, 0, Math.PI * 2);
+
+        ctx.fillStyle = hexToRgba(sub.color, 0.16);
+        ctx.fill();
+
+        ctx.shadowColor = sub.color;
+        ctx.shadowBlur = 12;
+        ctx.strokeStyle = hexToRgba(sub.color, 0.75);
+        ctx.lineWidth = 1.8;
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+
+        drawSubClusterFolderTab(sub);
+        ctx.restore();
+      }
+
+      // 3. Draw Edges
+      drawEdges();
+
+      // 4. Update and Draw Nodes
+      for (const [key, n] of Object.entries(nodes)) {
+        if (!n.visible && n.scale <= 0.02) continue;
+
+        // Animate birth or deletion fade
+        if (n.visible && n.scale < 1.0) {
+          n.scale += (1.0 - n.scale) * 0.12;
+        } else if (!n.visible && n.scale > 0.01) {
+          n.scale += (0.0 - n.scale) * 0.12;
+        }
+
+        const c = clusters[n.cluster];
+        let targetX = c.x + n.ox;
+        let targetY = c.y + n.oy;
+
+        // Gentle spring
+        n.vx += (targetX - n.x) * 0.04;
+        n.vy += (targetY - n.y) * 0.04;
+        n.vx *= 0.82;
+        n.vy *= 0.82;
+        n.x += n.vx;
+        n.y += n.vy;
+
+        // Smooth radius lerp
+        n.radius += (n.targetRadius - n.radius) * 0.08;
+
+        // Draw Ripple
+        if (n.ripple > 0.01) {
+          const rippleR = (n.radius * n.scale) + (1.0 - n.ripple) * 34;
+          ctx.beginPath();
+          ctx.arc(n.x, n.y, rippleR, 0, Math.PI * 2);
+          ctx.strokeStyle = n.isHero ? '#00f2ff' : n.color;
+          ctx.lineWidth = 2 * n.ripple;
+          ctx.globalAlpha = n.ripple * 0.85;
+          ctx.stroke();
+          ctx.globalAlpha = 1.0;
+          n.ripple *= 0.94;
+        }
+
+        // Draw node: n.isHero is true ONLY for the single hero!
+        drawNode(n.x, n.y, n.radius * n.scale, n.color, n.name, n.glyph, n.isHero);
+      }
+
+      requestAnimationFrame(render);
+    }
+
+    // ── Draw Cluster Folder Tab ────────────────────────────────────────────────
+    function drawClusterFolderTab(cluster) {
+      const labelText = `📁 ${cluster.name}`;
+      ctx.font = '600 11px Inter, system-ui, sans-serif';
+      const textWidth = ctx.measureText(labelText).width;
+      const tabWidth = textWidth + 18;
+      const tabHeight = 22;
+      const tabX = cluster.x - tabWidth / 2;
+      const tabY = cluster.y - cluster.radius - 11;
+
+      ctx.save();
+      ctx.beginPath();
+      ctx.roundRect(tabX, tabY, tabWidth, tabHeight, 6);
+      ctx.fillStyle = 'rgba(24, 24, 37, 0.92)';
+      ctx.fill();
+
+      ctx.strokeStyle = hexToRgba(cluster.color, 0.45);
+      ctx.lineWidth = 1.2;
+      ctx.stroke();
+
+      ctx.fillStyle = '#ffffff';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(labelText, tabX + 9, tabY + tabHeight / 2);
+      ctx.restore();
+    }
+
+    // ── Draw SubCluster Tab Pill ───────────────────────────────────────────────
+    function drawSubClusterFolderTab(subcluster) {
+      const labelText = `📁 ${subcluster.name}`;
+      ctx.font = '500 9.5px Inter, system-ui, sans-serif';
+      const textWidth = ctx.measureText(labelText).width;
+      const tabWidth = textWidth + 14;
+      const tabHeight = 18;
+      const tabX = subcluster.x - tabWidth / 2;
+      const tabY = subcluster.y - subcluster.currentRadius - 9;
+
+      ctx.save();
+      ctx.beginPath();
+      ctx.roundRect(tabX, tabY, tabWidth, tabHeight, 4);
+      ctx.fillStyle = 'rgba(15, 23, 42, 0.94)';
+      ctx.fill();
+
+      ctx.strokeStyle = subcluster.color;
+      ctx.lineWidth = 1.3;
+      ctx.stroke();
+
+      ctx.fillStyle = '#ffffff';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(labelText, tabX + 7, tabY + tabHeight / 2);
+      ctx.restore();
+    }
+
+    // ── Draw Dynamic Edges (Intra & Venn Bridge) ───────────────────────────────
+    function drawEdges() {
+      // Intra links inside Alpha
+      if (nodes.amb_4.visible && nodes.hero.visible && nodes.hero.cluster === 'alphaDocs') {
+        drawEdge(nodes.amb_4, nodes.hero, '#a855f7', 0.4);
+      }
+      if (nodes.hero.visible && nodes.amb_1.visible && nodes.amb_1.cluster === 'alphaDocs') {
+        drawEdge(nodes.hero, nodes.amb_1, '#38bdf8', 0.6);
+      }
+      if (nodes.amb_5.visible && nodes.hero.visible) {
+        drawEdge(nodes.amb_5, nodes.hero, '#a855f7', 0.4);
+      }
+      if (nodes.amb_6.visible && nodes.hero.visible) {
+        drawEdge(nodes.amb_6, nodes.hero, '#a855f7', 0.4);
+      }
+
+      // Inter-Folder Venn Bridge (Inbox to Alpha when hero or ambient links cross clusters)
+      if (currentCommit >= 1 && currentCommit <= 5 && nodes.amb_1.cluster === 'inbox' && nodes.hero.cluster === 'alphaDocs') {
+        ctx.save();
+        ctx.shadowColor = '#00f2ff';
+        ctx.shadowBlur = 10;
+        ctx.strokeStyle = 'rgba(0, 242, 255, 0.45)';
+        ctx.lineWidth = 1.4;
+        ctx.beginPath();
+        ctx.moveTo(nodes.amb_1.x, nodes.amb_1.y);
+        ctx.lineTo(nodes.hero.x, nodes.hero.y);
+        ctx.stroke();
+
+        // Marching Flow Particle
+        const progress = (animTime % 1400) / 1400;
+        const px = nodes.amb_1.x + (nodes.hero.x - nodes.amb_1.x) * progress;
+        const py = nodes.amb_1.y + (nodes.hero.y - nodes.amb_1.y) * progress;
+        ctx.beginPath();
+        ctx.arc(px, py, 3, 0, Math.PI * 2);
+        ctx.fillStyle = '#ffffff';
+        ctx.shadowColor = '#00f2ff';
+        ctx.shadowBlur = 14;
+        ctx.fill();
+        ctx.restore();
+      }
+    }
+
+    function drawEdge(src, tgt, color, alpha) {
+      if (!src || !tgt || !src.visible || !tgt.visible) return;
+      ctx.save();
+      ctx.strokeStyle = hexToRgba(color, alpha);
+      ctx.lineWidth = 1.0;
+      ctx.beginPath();
+      ctx.moveTo(src.x, src.y);
+      ctx.lineTo(tgt.x, tgt.y);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    // ── Draw Node Glyphs ───────────────────────────────────────────────────────
+    function drawNode(x, y, radius, color, label, glyph, isHero = false) {
+      if (radius <= 0.5) return;
+      ctx.save();
+
+      // ★ ACTIVE CYAN PULSE AURA: EXCLUSIVE TO HERO!
+      if (isHero) {
+        const pulse = (animTime % 1500) / 1500;
+        const waveR = radius + pulse * 14;
+        const waveAlpha = (1 - pulse) * 0.7;
+
+        ctx.beginPath();
+        ctx.arc(x, y, waveR, 0, Math.PI * 2);
+        ctx.strokeStyle = `rgba(0, 242, 255, ${waveAlpha})`;
+        ctx.lineWidth = 2.2;
+        ctx.stroke();
+      }
+
+      // Base Node Circle Body
+      ctx.beginPath();
+      ctx.arc(x, y, radius, 0, Math.PI * 2);
+      ctx.fillStyle = isHero ? '#38bdf8' : color;
+      if (isHero) {
+        ctx.shadowColor = '#38bdf8';
+        ctx.shadowBlur = 16;
+      }
+      ctx.fill();
+
+      // White outline rim (prominent on hero, subtle on ambient)
+      ctx.strokeStyle = isHero ? '#ffffff' : 'rgba(255, 255, 255, 0.7)';
+      ctx.lineWidth = isHero ? 2.2 : 1.1;
+      ctx.stroke();
+
+      // Center Glyph Symbol
+      ctx.shadowBlur = 0;
+      drawGlyphSymbol(x, y, radius, glyph);
+
+      // Label Text with Dark Halo
+      ctx.font = `${isHero ? '700 12px' : '400 10.5px'} Inter, system-ui, sans-serif`;
+      const textX = x + radius + 6;
+      const textY = y + 4;
+
+      ctx.strokeStyle = 'rgba(15, 23, 42, 0.92)';
+      ctx.lineWidth = isHero ? 3.5 : 2.5;
+      ctx.strokeText(label, textX, textY);
+
+      ctx.fillStyle = isHero ? '#ffffff' : '#94a3b8';
+      ctx.fillText(label, textX, textY);
+
+      ctx.restore();
+    }
+
+    function drawGlyphSymbol(x, y, radius, glyph) {
+      if (radius < 4) return;
+      if (glyph === 'i') {
+        const h = Math.max(3, radius * 0.45);
+        ctx.beginPath();
+        ctx.arc(x, y - h * 0.65, Math.max(1.0, h * 0.22), 0, Math.PI * 2);
+        ctx.fillStyle = '#ffffff';
+        ctx.fill();
+        ctx.beginPath();
+        ctx.moveTo(x, y - h * 0.15);
+        ctx.lineTo(x, y + h * 0.75);
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 1.6;
+        ctx.stroke();
+      } else if (glyph === 'hub' || glyph === 'plus') {
+        const size = Math.max(3, radius * 0.45);
+        ctx.beginPath();
+        ctx.moveTo(x - size, y);
+        ctx.lineTo(x + size, y);
+        ctx.moveTo(x, y - size);
+        ctx.lineTo(x, y + size);
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 1.8;
+        ctx.stroke();
+      } else if (glyph === 'ring') {
+        ctx.beginPath();
+        ctx.arc(x, y, Math.max(2, radius * 0.4), 0, Math.PI * 2);
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 1.4;
+        ctx.stroke();
+      } else {
+        ctx.beginPath();
+        ctx.arc(x, y, Math.max(1.5, radius * 0.32), 0, Math.PI * 2);
+        ctx.fillStyle = '#ffffff';
+        ctx.fill();
+      }
+    }
+
+    function hexToRgba(hex, alpha) {
+      if (!hex || hex.startsWith('rgba')) return hex;
+      let c = hex.replace('#', '');
+      if (c.length === 3) c = c.split('').map(x => x + x).join('');
+      const num = parseInt(c, 16);
+      return `rgba(${(num >> 16) & 255}, ${(num >> 8) & 255}, ${num & 255}, ${alpha})`;
+    }
+
+    // ── Interactive UI Controls ───────────────────────────────────────────────
+    document.querySelectorAll('.step-pill').forEach(pill => {
+      pill.addEventListener('click', () => {
+        const step = parseInt(pill.dataset.step, 10);
+        setCommit(step);
+      });
+    });
+
+    const btnPlay = document.getElementById('btnPlay');
+    btnPlay.addEventListener('click', () => {
+      isPlaying = !isPlaying;
+      btnPlay.textContent = isPlaying ? "❚❚ Pause" : "▶ Play";
+      btnPlay.classList.toggle('active', isPlaying);
+    });
+
+    document.getElementById('btnPrev').addEventListener('click', () => setCommit(currentCommit - 1));
+    document.getElementById('btnNext').addEventListener('click', () => setCommit(currentCommit + 1));
+
+    window.addEventListener('keydown', (e) => {
+      if (e.code === 'Space') {
+        e.preventDefault();
+        btnPlay.click();
+      } else if (e.code === 'ArrowLeft') {
+        setCommit(currentCommit - 1);
+      } else if (e.code === 'ArrowRight') {
+        setCommit(currentCommit + 1);
+      }
+    });
+
+    // Inspector toggle
+    const toggleInspectorBtn = document.getElementById('toggleInspectorBtn');
+    const inspectorSidebar = document.getElementById('inspectorSidebar');
+    toggleInspectorBtn.addEventListener('click', () => {
+      const isVisible = inspectorSidebar.style.display !== 'none';
+      inspectorSidebar.style.display = isVisible ? 'none' : 'flex';
+      toggleInspectorBtn.classList.toggle('active', !isVisible);
+    });
+
+    // Start initial state at Commit 0
+    setCommit(0);
+    render();
+  </script>
+</body>
+</html>

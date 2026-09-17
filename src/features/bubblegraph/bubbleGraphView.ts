@@ -104,6 +104,8 @@ export class BubbleGraphView extends ItemView {
     private levelResetBtnEl!: HTMLElement;
     private fontSizeSliderEl!: HTMLInputElement;
     private fontSizeDisplayEl!: HTMLElement;
+    private denseSliderEl!: HTMLInputElement;
+    private denseDisplayEl!: HTMLElement;
     private timelinePlayBtnEl!: HTMLElement;
     private timelineSliderEl!: HTMLInputElement;
     private timelineCanvasEl!: HTMLCanvasElement;
@@ -432,6 +434,16 @@ export class BubbleGraphView extends ItemView {
         }
         if (this.fontSizeDisplayEl) {
             this.fontSizeDisplayEl.setText(`${this.labelFontSize}px`);
+        }
+        this.plugin.settings.bubbleDenseScale = 1.15;
+        if (this.denseSliderEl) {
+            this.denseSliderEl.value = '1.15';
+        }
+        if (this.denseDisplayEl) {
+            this.denseDisplayEl.setText('1.15x');
+        }
+        if (this.simulation) {
+            this.simulation.setOptions({ denseScale: 1.15 });
         }
         if (this.inspectorEl) {
             this.inspectorEl.toggleClass('collapsed', !this.isInspectorOpen);
@@ -1275,15 +1287,15 @@ export class BubbleGraphView extends ItemView {
         // Divider: Separator after Text Level
         textGroup.createDiv({ cls: 'pakcli-row2-divider' });
 
-        // 5. Text Size Slider
+        // 5. Text Size Slider (6 to 36px)
         const sizeGroup = textGroup.createDiv({ cls: 'pakcli-size-group' });
         sizeGroup.createSpan({ text: 'Size:', cls: 'pakcli-size-label' });
         this.fontSizeSliderEl = sizeGroup.createEl('input', {
             type: 'range',
             cls: 'pakcli-font-slider'
         });
-        this.fontSizeSliderEl.min = '8';
-        this.fontSizeSliderEl.max = '24';
+        this.fontSizeSliderEl.min = '6';
+        this.fontSizeSliderEl.max = '36';
         this.fontSizeSliderEl.step = '1';
         this.fontSizeSliderEl.value = this.labelFontSize.toString();
 
@@ -1304,6 +1316,38 @@ export class BubbleGraphView extends ItemView {
         };
 
         // Divider: Separator after Text Size
+        textGroup.createDiv({ cls: 'pakcli-row2-divider' });
+
+        // Dense Bubble Scale Slider (0.01 to 10.0x)
+        const denseGroup = textGroup.createDiv({ cls: 'pakcli-size-group pakcli-dense-group' });
+        denseGroup.createSpan({ text: 'Dense:', cls: 'pakcli-size-label', title: 'Dense bubble breathing room scale (0.01 to 10.0x)' });
+        this.denseSliderEl = denseGroup.createEl('input', {
+            type: 'range',
+            cls: 'pakcli-font-slider pakcli-dense-slider'
+        });
+        this.denseSliderEl.min = '0.01';
+        this.denseSliderEl.max = '10.0';
+        this.denseSliderEl.step = '0.01';
+        const currentDense = this.plugin.settings.bubbleDenseScale ?? 1.15;
+        this.denseSliderEl.value = currentDense.toString();
+
+        this.denseDisplayEl = denseGroup.createSpan({
+            text: `${currentDense.toFixed(2)}x`,
+            cls: 'pakcli-size-display'
+        });
+
+        this.denseSliderEl.oninput = () => {
+            const val = parseFloat(this.denseSliderEl.value) || 1.15;
+            this.denseDisplayEl.setText(`${val.toFixed(2)}x`);
+            this.setDenseScale(val, false);
+        };
+
+        this.denseSliderEl.onchange = async () => {
+            const val = parseFloat(this.denseSliderEl.value) || 1.15;
+            await this.setDenseScale(val, true);
+        };
+
+        // Divider: Separator after Dense Size
         textGroup.createDiv({ cls: 'pakcli-row2-divider' });
 
         // 6. Toggle Speaker (Sound FX Mute / Unmute)
@@ -2624,6 +2668,24 @@ export class BubbleGraphView extends ItemView {
     public setSfxThreshold(thresh: number): void {
         if (this.simulation) {
             this.simulation.setOptions({ sfxThreshold: thresh });
+        }
+    }
+
+    public async setDenseScale(scale: number, persist: boolean = true): Promise<void> {
+        scale = Math.max(0.01, Math.min(10.0, scale));
+        if (this.denseSliderEl) {
+            this.denseSliderEl.value = scale.toString();
+        }
+        if (this.denseDisplayEl) {
+            this.denseDisplayEl.setText(`${scale.toFixed(2)}x`);
+        }
+        if (persist) {
+            this.plugin.settings.bubbleDenseScale = scale;
+            await this.plugin.saveSettings();
+        }
+        if (this.simulation) {
+            this.simulation.setOptions({ denseScale: scale });
+            this.simulation.reheat(0.35);
         }
     }
 
