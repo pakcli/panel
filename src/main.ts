@@ -2713,6 +2713,22 @@ export default class PakCLITablePlugin extends Plugin {
 					});
 
 				new Setting(containerEl)
+					.setName('Show index.md & index.base Rows in Explorer')
+					.setDesc('Keep index.md and index.base files visible as rows in the folder tree without hiding the [i] and [base] badges on the folder row. Can also be toggled from the explorer toolbar icon.')
+					.addToggle((t) => {
+						t.setValue(this.settings.showMergedIndexRows === true)
+							.onChange(async (val) => {
+								this.settings.showMergedIndexRows = val;
+								await this.saveSettings();
+								if (this.splitViewManager) {
+									this.splitViewManager.updateButtonState();
+									this.splitViewManager.refreshFolderBadges();
+									this.splitViewManager.applyBaseExplorerFilter();
+								}
+							});
+					});
+
+				new Setting(containerEl)
 					.setName('Show Baseless Folders in Base Filter Mode')
 					.setDesc('When Base filter is active: show ALL folder rows including those without an index.base file. When disabled (default), only folders that have a base file (or contain a subfolder with one) are shown.')
 					.addToggle((t) => {

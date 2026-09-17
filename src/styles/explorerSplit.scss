@@ -1,7 +1,8 @@
 /* ── PakCLI Explorer Additions & Split View ──────────────────────────────── */
 
 .pakcli-explorer-split-btn,
-.pakcli-explorer-base-btn {
+.pakcli-explorer-base-btn,
+.pakcli-explorer-show-index-btn {
   transition: color 0.15s ease, background 0.15s ease;
 
   &.is-active {

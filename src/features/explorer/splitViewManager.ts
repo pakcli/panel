@@ -9,6 +9,7 @@ export class SplitViewManager implements HoverParent {
   private plugin: PakCLITablePlugin;
   private splitBtnEl: HTMLElement | null = null;
   private baseBtnEl: HTMLElement | null = null;
+  private showIndexBtnEl: HTMLElement | null = null;
   private recentPaneEl: HTMLElement | null = null;
   private splitterEl: HTMLElement | null = null;
   private attachedLeaf: WorkspaceLeaf | null = null;
@@ -222,7 +223,9 @@ export class SplitViewManager implements HoverParent {
       this.splitBtnEl &&
       navButtons.contains(this.splitBtnEl) &&
       this.baseBtnEl &&
-      navButtons.contains(this.baseBtnEl)
+      navButtons.contains(this.baseBtnEl) &&
+      this.showIndexBtnEl &&
+      navButtons.contains(this.showIndexBtnEl)
     ) {
       this.updateButtonState();
       return;
@@ -235,6 +238,10 @@ export class SplitViewManager implements HoverParent {
     if (this.baseBtnEl) {
       this.baseBtnEl.remove();
       this.baseBtnEl = null;
+    }
+    if (this.showIndexBtnEl) {
+      this.showIndexBtnEl.remove();
+      this.showIndexBtnEl = null;
     }
 
     // 1. Split View Toggle Button
@@ -270,15 +277,34 @@ export class SplitViewManager implements HoverParent {
       new Notice(`Base Explorer Mode: ${next ? 'ON (Base files & affected folders only)' : 'OFF (All files visible)'}`);
     });
 
+    // 3. Show Index & Base Rows Toggle Button (Beside Filter Toggle)
+    const showIndexBtn = document.createElement('div');
+    showIndexBtn.className = 'clickable-icon nav-action-button pakcli-explorer-show-index-btn';
+    showIndexBtn.setAttribute('aria-label', 'Toggle Show Index & Base Rows (index.md, index.base)');
+    setIcon(showIndexBtn, 'file-text');
+
+    showIndexBtn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const next = !this.plugin.settings.showMergedIndexRows;
+      this.plugin.settings.showMergedIndexRows = next;
+      await this.plugin.saveSettings();
+      this.updateButtonState();
+      this.refreshFolderBadges();
+      this.applyBaseExplorerFilter();
+      new Notice(`Index Rows (index.md & index.base): ${next ? 'Shown' : 'Hidden'}`);
+    });
+
     navButtons.appendChild(splitBtn);
     navButtons.appendChild(baseBtn);
+    navButtons.appendChild(showIndexBtn);
 
     this.splitBtnEl = splitBtn;
     this.baseBtnEl = baseBtn;
+    this.showIndexBtnEl = showIndexBtn;
     this.updateButtonState();
   }
 
-  private updateButtonState() {
+  public updateButtonState() {
     if (this.splitBtnEl) {
       const isSplitEnabled = this.plugin.settings.explorerSplitEnabled;
       if (isSplitEnabled) {
@@ -298,6 +324,17 @@ export class SplitViewManager implements HoverParent {
       } else {
         this.baseBtnEl.removeClass('is-active');
         this.baseBtnEl.setAttribute('aria-label', 'Base Explorer Mode: Inactive (Click to Enable)');
+      }
+    }
+
+    if (this.showIndexBtnEl) {
+      const isShowIndex = !!this.plugin.settings.showMergedIndexRows;
+      if (isShowIndex) {
+        this.showIndexBtnEl.addClass('is-active');
+        this.showIndexBtnEl.setAttribute('aria-label', 'Index & Base Rows: Shown (Click to Hide index.md & index.base rows)');
+      } else {
+        this.showIndexBtnEl.removeClass('is-active');
+        this.showIndexBtnEl.setAttribute('aria-label', 'Index & Base Rows: Hidden (Click to Show index.md & index.base rows)');
       }
     }
   }
@@ -957,7 +994,8 @@ export class SplitViewManager implements HoverParent {
           item.el.removeClass('pakcli-base-hidden');
           item.el.removeClass('pakcli-folder-hidden');
           // Check if merged folder file should still be hidden
-          if (this.plugin.settings.enableMergeFolderIndex !== false && item.file instanceof TFile && this.isMergedFolderFile(item.file)) {
+          const shouldHideMerged = this.plugin.settings.enableMergeFolderIndex !== false && !this.plugin.settings.showMergedIndexRows;
+          if (shouldHideMerged && item.file instanceof TFile && this.isMergedFolderFile(item.file)) {
             item.el.style.display = 'none';
             item.el.addClass('pakcli-merged-child-hidden');
           } else {
@@ -968,16 +1006,19 @@ export class SplitViewManager implements HoverParent {
 
         // When isActive is true:
         if (item.file instanceof TFile) {
-          if (this.plugin.settings.enableMergeFolderIndex !== false && this.isMergedFolderFile(item.file)) {
+          const isMerged = this.isMergedFolderFile(item.file);
+          const shouldHideMerged = this.plugin.settings.enableMergeFolderIndex !== false && !this.plugin.settings.showMergedIndexRows;
+          if (shouldHideMerged && isMerged) {
             item.el.style.display = 'none';
             item.el.addClass('pakcli-merged-child-hidden');
             continue;
           }
           const isBase = this.isBaseFile(item.file.path || path);
-          if (isBase) {
+          if (isBase || (this.plugin.settings.showMergedIndexRows && isMerged)) {
             item.el.style.removeProperty('display');
             item.el.addClass('pakcli-base-file');
             item.el.removeClass('pakcli-base-hidden');
+            item.el.removeClass('pakcli-merged-child-hidden');
           } else {
             item.el.style.display = 'none';
             item.el.removeClass('pakcli-base-file');
@@ -1022,21 +1063,23 @@ export class SplitViewManager implements HoverParent {
       const titleEl = fileEl.querySelector('.nav-file-title') as HTMLElement;
       const path = normalize(titleEl?.getAttribute('data-path') || fileEl.getAttribute('data-path') || titleEl?.textContent || '');
 
-      if (this.plugin.settings.enableMergeFolderIndex !== false) {
-        const abstract = this.app.vault.getAbstractFileByPath(path);
-        if (abstract instanceof TFile && this.isMergedFolderFile(abstract)) {
-          (fileEl as HTMLElement).style.display = 'none';
-          fileEl.addClass('pakcli-merged-child-hidden');
-          return;
-        }
+      const abstract = this.app.vault.getAbstractFileByPath(path);
+      const isMerged = abstract instanceof TFile && this.isMergedFolderFile(abstract);
+      const shouldHideMerged = this.plugin.settings.enableMergeFolderIndex !== false && !this.plugin.settings.showMergedIndexRows;
+
+      if (shouldHideMerged && isMerged) {
+        (fileEl as HTMLElement).style.display = 'none';
+        fileEl.addClass('pakcli-merged-child-hidden');
+        return;
       }
+      fileEl.removeClass('pakcli-merged-child-hidden');
 
       if (!isActive) {
         (fileEl as HTMLElement).style.removeProperty('display');
         fileEl.removeClass('pakcli-base-file');
         fileEl.removeClass('pakcli-base-hidden');
       } else {
-        if (this.isBaseFile(path)) {
+        if (this.isBaseFile(path) || (this.plugin.settings.showMergedIndexRows && isMerged)) {
           (fileEl as HTMLElement).style.removeProperty('display');
           fileEl.addClass('pakcli-base-file');
           fileEl.removeClass('pakcli-base-hidden');
@@ -1460,7 +1503,8 @@ views:
       }
     });
 
-    // 2. Hide merged child files from the children list
+    // 2. Hide merged child files from the children list (only if showMergedIndexRows is false)
+    const shouldHideMerged = this.plugin.settings.enableMergeFolderIndex !== false && !this.plugin.settings.showMergedIndexRows;
     if (view.fileItems && typeof view.fileItems === 'object') {
       const fileItemsMap = view.fileItems as Record<string, { el?: HTMLElement; file?: TAbstractFile }>;
       for (const [_, item] of Object.entries(fileItemsMap)) {
@@ -1468,8 +1512,13 @@ views:
         if (item.el.closest('.pakcli-explorer-recent-pane')) continue;
 
         if (this.isMergedFolderFile(item.file)) {
-          item.el.style.display = 'none';
-          item.el.addClass('pakcli-merged-child-hidden');
+          if (shouldHideMerged) {
+            item.el.style.display = 'none';
+            item.el.addClass('pakcli-merged-child-hidden');
+          } else {
+            item.el.style.removeProperty('display');
+            item.el.removeClass('pakcli-merged-child-hidden');
+          }
         }
       }
     } else {
@@ -1480,8 +1529,13 @@ views:
         const path = titleEl?.getAttribute('data-path') || fileEl.getAttribute('data-path') || '';
         const abstract = this.app.vault.getAbstractFileByPath(path);
         if (abstract instanceof TFile && this.isMergedFolderFile(abstract)) {
-          (fileEl as HTMLElement).style.display = 'none';
-          fileEl.addClass('pakcli-merged-child-hidden');
+          if (shouldHideMerged) {
+            (fileEl as HTMLElement).style.display = 'none';
+            fileEl.addClass('pakcli-merged-child-hidden');
+          } else {
+            (fileEl as HTMLElement).style.removeProperty('display');
+            fileEl.removeClass('pakcli-merged-child-hidden');
+          }
         }
       });
     }
@@ -1599,6 +1653,10 @@ views:
     if (this.baseBtnEl) {
       this.baseBtnEl.remove();
       this.baseBtnEl = null;
+    }
+    if (this.showIndexBtnEl) {
+      this.showIndexBtnEl.remove();
+      this.showIndexBtnEl = null;
     }
     if (this.recentPaneEl) {
       this.recentPaneEl.remove();
