@@ -2769,6 +2769,102 @@ export default class PakCLITablePlugin extends Plugin {
 					});
 
 				new Setting(containerEl)
+					.setName('Apply Default Filter on Base Creation')
+					.setDesc('When creating a new index.base file via the folder [base] badge, automatically add a folder-scoped filter to all views.')
+					.addToggle((t) => {
+						t.setValue(this.settings.enableBaseDefaultFilter !== false)
+							.onChange(async (val) => {
+								this.settings.enableBaseDefaultFilter = val;
+								await this.saveSettings();
+							});
+					});
+
+				const baseFilterSetting = new Setting(containerEl)
+					.setName('Default Base Filter Formula')
+					.setDesc('1 baris formula filter global ("filters:") yang otomatis berlaku untuk semua view (all views) saat membuat file index.base baru.');
+
+				// Informational Note explaining the formula
+				const noteEl = baseFilterSetting.descEl.createDiv({ cls: 'pakcli-base-filter-note' });
+				noteEl.style.marginTop = '8px';
+				noteEl.style.fontSize = '12px';
+				noteEl.style.lineHeight = '1.5';
+				noteEl.style.color = 'var(--text-muted)';
+				
+				const noteTitle = noteEl.createEl('div', { text: 'Note / Penjelasan Formula (All Views):' });
+				noteTitle.style.fontWeight = '600';
+				noteTitle.style.color = 'var(--text-normal)';
+				noteTitle.style.marginBottom = '4px';
+
+				const noteList = noteEl.createEl('ul');
+				noteList.style.margin = '0 0 8px 18px';
+				noteList.style.padding = '0';
+
+				const liFolder = noteList.createEl('li');
+				liFolder.createEl('code', { text: 'file.folder == this.file.folder' }).style.fontWeight = 'bold';
+				liFolder.appendText(' : Filter database agar hanya menampilkan catatan yang berada di dalam folder yang sama.');
+
+				const liIndex = noteList.createEl('li');
+				liIndex.createEl('code', { text: '!file.name.contains("index")' }).style.fontWeight = 'bold';
+				liIndex.appendText(' : Mengecualikan file index (index.md, index.base) agar tidak mengotori atau duplikat di dalam tabel data.');
+
+				const liGlobal = noteList.createEl('li');
+				liGlobal.createEl('code', { text: 'filters: <formula>' }).style.fontWeight = 'bold';
+				liGlobal.appendText(' : Diletakkan di level root/global sehingga otomatis mewarisi ke semua view (all views) dalam 1 baris ringkas.');
+
+				// Copy-pasteable formula box with 1-click copy button
+				const formulaBox = baseFilterSetting.descEl.createDiv({ cls: 'pakcli-base-formula-box' });
+				formulaBox.style.display = 'flex';
+				formulaBox.style.alignItems = 'center';
+				formulaBox.style.gap = '10px';
+				formulaBox.style.marginTop = '6px';
+				formulaBox.style.padding = '6px 12px';
+				formulaBox.style.background = 'var(--background-secondary)';
+				formulaBox.style.border = '1px solid var(--background-modifier-border)';
+				formulaBox.style.borderRadius = '6px';
+
+				const formulaCode = formulaBox.createEl('code', {
+					text: this.settings.baseDefaultFilterFormula || 'file.folder == this.file.folder && !file.name.contains("index")'
+				});
+				formulaCode.style.flex = '1';
+				formulaCode.style.userSelect = 'all';
+				formulaCode.style.fontFamily = 'var(--font-monospace)';
+				formulaCode.style.fontSize = '12px';
+				formulaCode.style.color = 'var(--text-accent)';
+				formulaCode.style.overflowWrap = 'anywhere';
+
+				const copyBtn = formulaBox.createEl('button', {
+					text: 'Copy Formula',
+					cls: 'mod-cta'
+				});
+				copyBtn.style.fontSize = '11px';
+				copyBtn.style.padding = '4px 10px';
+				copyBtn.style.cursor = 'pointer';
+				copyBtn.style.whiteSpace = 'nowrap';
+				copyBtn.addEventListener('click', async (evt) => {
+					evt.preventDefault();
+					const textToCopy = this.settings.baseDefaultFilterFormula || 'file.folder == this.file.folder && !file.name.contains("index")';
+					try {
+						await navigator.clipboard.writeText(textToCopy);
+						new Notice('Copied formula to clipboard!');
+						copyBtn.setText('Copied!');
+						setTimeout(() => copyBtn.setText('Copy Formula'), 1600);
+					} catch (err) {
+						new Notice('Failed to copy formula: ' + String(err));
+					}
+				});
+
+				baseFilterSetting.addText((text) => {
+					text.setPlaceholder('file.folder == this.file.folder && !file.name.contains("index")')
+						.setValue(this.settings.baseDefaultFilterFormula || 'file.folder == this.file.folder && !file.name.contains("index")')
+						.onChange(async (val) => {
+							this.settings.baseDefaultFilterFormula = val;
+							formulaCode.setText(val || 'file.folder == this.file.folder && !file.name.contains("index")');
+							await this.saveSettings();
+						});
+					text.inputEl.style.width = '260px';
+				});
+
+				new Setting(containerEl)
 					.setName('Hover Preview for [i] Badge')
 					.setDesc('Show note page preview popup when hovering over the [i] badge on folder rows.')
 					.addToggle((t) => {

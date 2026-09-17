@@ -1178,17 +1178,27 @@ export class SplitViewManager implements HoverParent {
     const folderPath = folder.path === '/' ? '' : folder.path;
     const basePath = `${folderPath}/index.base`.replace(/^\/+/, '');
 
-    const initialContent = JSON.stringify(
-      {
-        version: 1,
-        title: `${folder.name} Base`,
-        folder: folder.path,
-        createdAt: new Date().toISOString(),
-        views: [],
-      },
-      null,
-      2
-    ) + '\n';
+    const useDefaultFilter = this.plugin.settings.enableBaseDefaultFilter !== false;
+    const rawFormula = (this.plugin.settings.baseDefaultFilterFormula || 'file.folder == this.file.folder && !file.name.contains("index")').trim();
+
+    // In YAML, if formula starts with special chars like ! or @, quote it so YAML parser doesn't throw a tag error
+    const formattedFormula = (rawFormula.startsWith('!') || rawFormula.startsWith('&') || rawFormula.startsWith('*') || rawFormula.startsWith('@') || rawFormula.startsWith('`'))
+      ? `'${rawFormula.replace(/'/g, "''")}'`
+      : rawFormula;
+
+    let initialContent: string;
+    if (useDefaultFilter && formattedFormula) {
+      initialContent = `filters: ${formattedFormula}
+views:
+  - type: table
+    name: Table
+`;
+    } else {
+      initialContent = `views:
+  - type: table
+    name: Table
+`;
+    }
 
     try {
       const created = await this.app.vault.create(basePath, initialContent);
