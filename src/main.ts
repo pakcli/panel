@@ -301,7 +301,7 @@ export default class PakCLITablePlugin extends Plugin {
 		});
 
 		// A–Z Dictionary Navigator Ribbon Icon & Command
-		this.addRibbonIcon('book-marked', 'PakCLI: A–Z Dictionary Navigator', () => {
+		this.addRibbonIcon('book-marked', 'Open A–Z Dictionary Navigator (Popup)', () => {
 			new DictionaryPopupModal(this).open();
 		});
 

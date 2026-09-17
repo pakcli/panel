@@ -6,8 +6,12 @@ export class DictionaryExplorerManager {
   private plugin: PakCLITablePlugin;
   private collapsedLetters: Set<string> = new Set();
   private mutationObserver: MutationObserver | null = null;
-  private debounceTimer: number | null = null;
+  private rafId: number | null = null;
+  private needsFollowUpPass = false;
+  private trailingTimer: number | null = null;
   private navFilesContainer: HTMLElement | null = null;
+  private onScrollBound: (() => void) | null = null;
+  private dictChildrenContainer: HTMLElement | null = null;
 
   constructor(plugin: PakCLITablePlugin) {
     this.plugin = plugin;
@@ -28,22 +32,42 @@ export class DictionaryExplorerManager {
   }
 
   public destroy() {
-    if (this.debounceTimer !== null) {
-      window.clearTimeout(this.debounceTimer);
-      this.debounceTimer = null;
+    if (this.rafId !== null) {
+      cancelAnimationFrame(this.rafId);
+      this.rafId = null;
+    }
+    if (this.trailingTimer !== null) {
+      window.clearTimeout(this.trailingTimer);
+      this.trailingTimer = null;
+    }
+    if (this.navFilesContainer && this.onScrollBound) {
+      this.navFilesContainer.removeEventListener('scroll', this.onScrollBound);
+      this.onScrollBound = null;
     }
     this.disconnectObserver();
     this.removeVirtualFolders();
   }
 
   public scheduleRefresh() {
-    if (this.debounceTimer !== null) {
-      window.clearTimeout(this.debounceTimer);
+    this.needsFollowUpPass = true;
+    if (this.rafId === null) {
+      this.rafId = requestAnimationFrame(() => {
+        this.rafId = null;
+        this.needsFollowUpPass = false;
+        this.refreshVirtualFolders();
+        if (this.needsFollowUpPass) {
+          this.scheduleRefresh();
+        }
+      });
     }
-    this.debounceTimer = window.setTimeout(() => {
-      this.debounceTimer = null;
+
+    if (this.trailingTimer !== null) {
+      window.clearTimeout(this.trailingTimer);
+    }
+    this.trailingTimer = window.setTimeout(() => {
+      this.trailingTimer = null;
       this.refreshVirtualFolders();
-    }, 80);
+    }, 60);
   }
 
   // ── Observer helpers ───────────────────────────────────────────────────────
@@ -53,8 +77,6 @@ export class DictionaryExplorerManager {
     this.mutationObserver.observe(this.navFilesContainer, {
       childList: true,
       subtree: true,
-      attributes: true,
-      attributeFilter: ['class'],
     });
   }
 
@@ -123,6 +145,16 @@ export class DictionaryExplorerManager {
 
     this.navFilesContainer = (container.querySelector('.nav-files-container') || container) as HTMLElement;
 
+    if (this.navFilesContainer) {
+      if (this.onScrollBound) {
+        this.navFilesContainer.removeEventListener('scroll', this.onScrollBound);
+      }
+      this.onScrollBound = () => {
+        this.scheduleRefresh();
+      };
+      this.navFilesContainer.addEventListener('scroll', this.onScrollBound, { passive: true });
+    }
+
     if (!this.mutationObserver) {
       this.mutationObserver = new MutationObserver((mutations) => {
         if (document.querySelector('.nav-folder-title input, .nav-file-title input')) return;
@@ -133,33 +165,27 @@ export class DictionaryExplorerManager {
           const targetEl = mut.target as HTMLElement;
           if (!targetEl) continue;
 
-          // Completely ignore anything inside our virtual folders
+          // Ignore mutations inside our own virtual folders
           if (targetEl.classList?.contains('pakcli-virtual-folder') ||
               targetEl.closest?.('.pakcli-virtual-folder')) continue;
 
-          // For attribute mutations, only care about the dict folder's own class changes
-          if (mut.type === 'attributes') {
-            if (targetEl.classList.contains('nav-folder')) {
-              const title = targetEl.querySelector(':scope > .nav-folder-title, :scope > .tree-item-self');
-              const p = normalizePath(title?.getAttribute('data-path') || targetEl.getAttribute('data-path') || '');
-              if (this.isMatchingDictFolder(p)) {
-                shouldRefresh = true;
-                break;
-              }
-            }
-            continue;
+          // Fast-path: Mutation inside or directly on the dictionary folder's children container
+          if (this.dictChildrenContainer &&
+              (targetEl === this.dictChildrenContainer || this.dictChildrenContainer.contains(targetEl))) {
+            shouldRefresh = true;
+            break;
           }
 
-          // childList mutations: check added nodes
+          // Check added nodes
           if (mut.addedNodes?.length > 0) {
             for (let i = 0; i < mut.addedNodes.length; i++) {
               const node = mut.addedNodes[i] as HTMLElement;
               if (node.nodeType !== Node.ELEMENT_NODE) continue;
-              if (node.classList?.contains('pakcli-virtual-folder') ||
-                  node.closest?.('.pakcli-virtual-folder')) continue;
-              const p = normalizePath(node.getAttribute?.('data-path') || '');
+              if (node.classList?.contains('pakcli-virtual-folder')) continue;
+              const p = normalizePath(node.getAttribute?.('data-path') ||
+                node.querySelector?.('.nav-file-title, .nav-folder-title, .tree-item-self')?.getAttribute('data-path') || '');
               if (this.isMatchingDictFolder(p)) { shouldRefresh = true; break; }
-              const pf = node.closest?.('.nav-folder:not(.pakcli-virtual-folder), .tree-item.nav-folder:not(.pakcli-virtual-folder)');
+              const pf = node.closest?.('.nav-folder:not(.pakcli-virtual-folder)');
               if (pf) {
                 const t = pf.querySelector(':scope > .nav-folder-title, :scope > .tree-item-self');
                 const fp = normalizePath(t?.getAttribute('data-path') || pf.getAttribute('data-path') || '');
@@ -169,21 +195,18 @@ export class DictionaryExplorerManager {
           }
           if (shouldRefresh) break;
 
-          // childList mutations: check removed nodes
+          // Check removed nodes
           if (mut.removedNodes?.length > 0) {
             for (let i = 0; i < mut.removedNodes.length; i++) {
               const node = mut.removedNodes[i] as HTMLElement;
               if (node.nodeType !== Node.ELEMENT_NODE) continue;
-              if (node.classList?.contains('pakcli-virtual-folder') ||
-                  node.closest?.('.pakcli-virtual-folder')) continue;
-              const p = normalizePath(node.getAttribute?.('data-path') || '');
+              if (node.classList?.contains('pakcli-virtual-folder')) continue;
+              const p = normalizePath(node.getAttribute?.('data-path') ||
+                node.querySelector?.('.nav-file-title, .nav-folder-title, .tree-item-self')?.getAttribute('data-path') || '');
               if (this.isMatchingDictFolder(p)) { shouldRefresh = true; break; }
             }
           }
           if (shouldRefresh) break;
-
-          const targetPath = normalizePath(targetEl.getAttribute?.('data-path') || '');
-          if (targetPath && this.isMatchingDictFolder(targetPath)) { shouldRefresh = true; break; }
         }
 
         if (shouldRefresh) this.scheduleRefresh();
@@ -279,10 +302,31 @@ export class DictionaryExplorerManager {
 
     if (folderEl.classList.contains('is-collapsed')) return;
 
+    this.dictChildrenContainer = childrenContainer;
+
     // ── Disconnect observer for the entire DOM operation window ─────────────
     this.disconnectObserver();
 
     try {
+      // 0. Scan vault files so virtual folders are never destroyed by DOM virtualization during scroll
+      const folderAbstract = this.app.vault.getAbstractFileByPath(dictRoot);
+      const vaultFilesByLetter = new Map<string, TFile[]>();
+      for (let c = 65; c <= 90; c++) vaultFilesByLetter.set(String.fromCharCode(c), []);
+      vaultFilesByLetter.set('#', []);
+
+      if (folderAbstract instanceof TFolder) {
+        for (const child of folderAbstract.children) {
+          if (child instanceof TFile && !child.name.toLowerCase().startsWith('index.')) {
+            const firstChar = child.basename.trim().charAt(0).toUpperCase();
+            if (firstChar >= 'A' && firstChar <= 'Z') {
+              vaultFilesByLetter.get(firstChar)?.push(child);
+            } else {
+              vaultFilesByLetter.get('#')?.push(child);
+            }
+          }
+        }
+      }
+
       // 1. Collect all nav-file elements (including those already in virtual folders)
       const allNavFileEls = Array.from(childrenContainer.querySelectorAll('.nav-file, .tree-item.nav-file')) as HTMLElement[];
 
@@ -319,9 +363,11 @@ export class DictionaryExplorerManager {
       });
 
       const letters = [...Array.from({ length: 26 }, (_, i) => String.fromCharCode(65 + i)), '#'];
-      const activeLetters = letters.filter(letter => (letterMap.get(letter) || []).length > 0);
+      const activeLetters = letters.filter(letter => 
+        (vaultFilesByLetter.get(letter)?.length ?? 0) > 0 || (letterMap.get(letter)?.length ?? 0) > 0
+      );
 
-      // 3. Remove virtual folders for letters with 0 files, recovering their files
+      // 3. Remove virtual folders for letters with truly 0 files in both vault and DOM
       const existingVFs = Array.from(childrenContainer.querySelectorAll(':scope > .pakcli-virtual-folder[data-virtual-letter]')) as HTMLElement[];
       for (const vf of existingVFs) {
         const letter = vf.getAttribute('data-virtual-letter') || '';
@@ -341,6 +387,8 @@ export class DictionaryExplorerManager {
 
         // Find or create the virtual folder element
         let vfEl = childrenContainer.querySelector(`.pakcli-virtual-folder[data-virtual-letter="${letter}"]`) as HTMLElement;
+
+        const totalCount = vaultFilesByLetter.get(letter)?.length ?? fileEls.length;
 
         if (!vfEl) {
           // ── Create new virtual folder ──────────────────────────────────
@@ -387,7 +435,7 @@ export class DictionaryExplorerManager {
           // Count
           const countSpan = document.createElement('span');
           countSpan.className = 'nav-folder-title-extra tree-item-flair pakcli-virtual-count';
-          countSpan.textContent = String(fileEls.length);
+          countSpan.textContent = String(totalCount);
           titleDiv.appendChild(countSpan);
 
           vfEl.appendChild(titleDiv);
@@ -432,8 +480,8 @@ export class DictionaryExplorerManager {
 
           // Update count
           const countSpan = vfEl.querySelector(':scope > .pakcli-virtual-folder-title .pakcli-virtual-count');
-          if (countSpan && countSpan.textContent !== String(fileEls.length)) {
-            countSpan.textContent = String(fileEls.length);
+          if (countSpan && countSpan.textContent !== String(totalCount)) {
+            countSpan.textContent = String(totalCount);
           }
 
           // Update children visibility
@@ -485,17 +533,14 @@ export class DictionaryExplorerManager {
           if (vf.parentElement !== childrenContainer) childrenContainer.appendChild(vf);
         }
         for (let i = 0; i < desiredVFEls.length; i++) {
-          if (childrenContainer.children[i] !== desiredVFEls[i]) {
-            childrenContainer.appendChild(desiredVFEls[i]);
-          }
+          childrenContainer.appendChild(desiredVFEls[i]);
         }
       }
 
     } catch (err) {
       console.error('[PakCLI Dictionary] Error applying virtual folders:', err);
     } finally {
-      // Reconnect observer after a brief delay to absorb any residual Obsidian mutations
-      window.setTimeout(() => this.connectObserver(), 150);
+      this.connectObserver();
     }
   }
 }

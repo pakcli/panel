@@ -3,7 +3,8 @@
 .pakcli-explorer-split-btn,
 .pakcli-explorer-base-btn,
 .pakcli-explorer-show-index-btn,
-.pakcli-explorer-dict-btn {
+.pakcli-explorer-dict-btn,
+.pakcli-explorer-dict-vf-btn {
   transition: color 0.15s ease, background 0.15s ease;
 
   &.is-active {

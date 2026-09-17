@@ -11,6 +11,7 @@ export class SplitViewManager implements HoverParent {
   private splitBtnEl: HTMLElement | null = null;
   private baseBtnEl: HTMLElement | null = null;
   private showIndexBtnEl: HTMLElement | null = null;
+  private dictVirtualFolderBtnEl: HTMLElement | null = null;
   private recentPaneEl: HTMLElement | null = null;
   private splitterEl: HTMLElement | null = null;
   private attachedLeaf: WorkspaceLeaf | null = null;
@@ -226,7 +227,9 @@ export class SplitViewManager implements HoverParent {
       this.baseBtnEl &&
       navButtons.contains(this.baseBtnEl) &&
       this.showIndexBtnEl &&
-      navButtons.contains(this.showIndexBtnEl)
+      navButtons.contains(this.showIndexBtnEl) &&
+      this.dictVirtualFolderBtnEl &&
+      navButtons.contains(this.dictVirtualFolderBtnEl)
     ) {
       this.updateButtonState();
       return;
@@ -243,6 +246,10 @@ export class SplitViewManager implements HoverParent {
     if (this.showIndexBtnEl) {
       this.showIndexBtnEl.remove();
       this.showIndexBtnEl = null;
+    }
+    if (this.dictVirtualFolderBtnEl) {
+      this.dictVirtualFolderBtnEl.remove();
+      this.dictVirtualFolderBtnEl = null;
     }
 
     // 1. Split View Toggle Button
@@ -295,25 +302,34 @@ export class SplitViewManager implements HoverParent {
       new Notice(`Index Rows (index.md & index.base): ${next ? 'Shown' : 'Hidden'}`);
     });
 
-    // 4. A-Z Dictionary Popup Button (Beside Show Index Toggle)
-    const dictBtn = document.createElement('div');
-    dictBtn.className = 'clickable-icon nav-action-button pakcli-explorer-dict-btn';
-    dictBtn.setAttribute('aria-label', 'Open A–Z Dictionary Navigator (Popup)');
-    setIcon(dictBtn, 'book-marked');
+    // 4. Virtual Folders Toggle Button (A-Z virtual grouping in explorer)
+    const dictVFBtn = document.createElement('div');
+    dictVFBtn.className = 'clickable-icon nav-action-button pakcli-explorer-dict-vf-btn';
+    dictVFBtn.setAttribute('aria-label', 'Toggle Virtual A–Z Folders in Explorer');
+    setIcon(dictVFBtn, 'folder-tree');
 
-    dictBtn.addEventListener('click', (e) => {
+    dictVFBtn.addEventListener('click', async (e) => {
       e.stopPropagation();
-      new DictionaryPopupModal(this.plugin).open();
+      const current = this.plugin.settings.enableDictionaryVirtualFolders !== false;
+      const next = !current;
+      this.plugin.settings.enableDictionaryVirtualFolders = next;
+      await this.plugin.saveSettings();
+      this.updateButtonState();
+      if (this.plugin.dictionaryExplorerManager) {
+        this.plugin.dictionaryExplorerManager.refreshVirtualFolders();
+      }
+      new Notice(`Virtual Folders in Explorer: ${next ? 'Enabled' : 'Disabled'}`);
     });
 
     navButtons.appendChild(splitBtn);
     navButtons.appendChild(baseBtn);
     navButtons.appendChild(showIndexBtn);
-    navButtons.appendChild(dictBtn);
+    navButtons.appendChild(dictVFBtn);
 
     this.splitBtnEl = splitBtn;
     this.baseBtnEl = baseBtn;
     this.showIndexBtnEl = showIndexBtn;
+    this.dictVirtualFolderBtnEl = dictVFBtn;
     this.updateButtonState();
   }
 
@@ -348,6 +364,17 @@ export class SplitViewManager implements HoverParent {
       } else {
         this.showIndexBtnEl.removeClass('is-active');
         this.showIndexBtnEl.setAttribute('aria-label', 'Index & Base Rows: Hidden (Click to Show index.md & index.base rows)');
+      }
+    }
+
+    if (this.dictVirtualFolderBtnEl) {
+      const isVFEnabled = this.plugin.settings.enableDictionaryVirtualFolders !== false;
+      if (isVFEnabled) {
+        this.dictVirtualFolderBtnEl.addClass('is-active');
+        this.dictVirtualFolderBtnEl.setAttribute('aria-label', 'Virtual A–Z Folders: Enabled (Click to Disable)');
+      } else {
+        this.dictVirtualFolderBtnEl.removeClass('is-active');
+        this.dictVirtualFolderBtnEl.setAttribute('aria-label', 'Virtual A–Z Folders: Disabled (Click to Enable)');
       }
     }
   }
@@ -1721,6 +1748,10 @@ views:
     if (this.showIndexBtnEl) {
       this.showIndexBtnEl.remove();
       this.showIndexBtnEl = null;
+    }
+    if (this.dictVirtualFolderBtnEl) {
+      this.dictVirtualFolderBtnEl.remove();
+      this.dictVirtualFolderBtnEl = null;
     }
     if (this.recentPaneEl) {
       this.recentPaneEl.remove();

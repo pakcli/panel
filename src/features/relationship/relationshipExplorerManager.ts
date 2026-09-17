@@ -7,8 +7,11 @@ export class RelationshipExplorerManager {
     private plugin: PakCLITablePlugin;
     private collapsedTierIds: Set<string> = new Set();
     private mutationObserver: MutationObserver | null = null;
-    private debounceTimer: number | null = null;
+    private rafId: number | null = null;
+    private needsFollowUpPass = false;
+    private trailingTimer: number | null = null;
     private navFilesContainer: HTMLElement | null = null;
+    private onScrollBound: (() => void) | null = null;
 
     constructor(plugin: PakCLITablePlugin) {
         this.plugin = plugin;
@@ -29,22 +32,42 @@ export class RelationshipExplorerManager {
     }
 
     public destroy() {
-        if (this.debounceTimer !== null) {
-            window.clearTimeout(this.debounceTimer);
-            this.debounceTimer = null;
+        if (this.rafId !== null) {
+            cancelAnimationFrame(this.rafId);
+            this.rafId = null;
+        }
+        if (this.trailingTimer !== null) {
+            window.clearTimeout(this.trailingTimer);
+            this.trailingTimer = null;
+        }
+        if (this.navFilesContainer && this.onScrollBound) {
+            this.navFilesContainer.removeEventListener('scroll', this.onScrollBound);
+            this.onScrollBound = null;
         }
         this.disconnectObserver();
         this.removeVirtualFolders();
     }
 
     public scheduleRefresh() {
-        if (this.debounceTimer !== null) {
-            window.clearTimeout(this.debounceTimer);
+        this.needsFollowUpPass = true;
+        if (this.rafId === null) {
+            this.rafId = requestAnimationFrame(() => {
+                this.rafId = null;
+                this.needsFollowUpPass = false;
+                this.refreshVirtualFolders();
+                if (this.needsFollowUpPass) {
+                    this.scheduleRefresh();
+                }
+            });
         }
-        this.debounceTimer = window.setTimeout(() => {
-            this.debounceTimer = null;
+
+        if (this.trailingTimer !== null) {
+            window.clearTimeout(this.trailingTimer);
+        }
+        this.trailingTimer = window.setTimeout(() => {
+            this.trailingTimer = null;
             this.refreshVirtualFolders();
-        }, 80);
+        }, 60);
     }
 
     private connectObserver() {
@@ -52,8 +75,6 @@ export class RelationshipExplorerManager {
         this.mutationObserver.observe(this.navFilesContainer, {
             childList: true,
             subtree: true,
-            attributes: true,
-            attributeFilter: ['class'],
         });
     }
 
@@ -110,6 +131,16 @@ export class RelationshipExplorerManager {
 
         this.navFilesContainer = (container.querySelector('.nav-files-container') || container) as HTMLElement;
 
+        if (this.navFilesContainer) {
+            if (this.onScrollBound) {
+                this.navFilesContainer.removeEventListener('scroll', this.onScrollBound);
+            }
+            this.onScrollBound = () => {
+                this.scheduleRefresh();
+            };
+            this.navFilesContainer.addEventListener('scroll', this.onScrollBound, { passive: true });
+        }
+
         if (!this.mutationObserver) {
             const relRoot = normalizePath(this.plugin.settings.familyCirclesRootFolder || 'Relationships');
             this.mutationObserver = new MutationObserver((mutations) => {
@@ -121,25 +152,15 @@ export class RelationshipExplorerManager {
                     const targetEl = mut.target as HTMLElement;
                     if (!targetEl) continue;
 
-                    // CRITICAL: Ignore any mutations internal to our virtual folders
+                    // Ignore mutations inside our virtual folders
                     if (targetEl.closest?.('.pakcli-virtual-folder')) continue;
 
-                    // Only refresh on attribute changes for the root folder collapse
-                    if (mut.type === 'attributes') {
-                        const p = normalizePath(targetEl.getAttribute?.('data-path') || '');
-                        if (p === relRoot && (targetEl.classList.contains('nav-folder') || targetEl.classList.contains('nav-folder-title') || targetEl.classList.contains('tree-item-self'))) {
-                            shouldRefresh = true;
-                            break;
-                        }
-                        continue;
-                    }
-
-                    // Check added nodes: ignore our virtual folder elements
+                    // Check added nodes
                     if (mut.addedNodes?.length > 0) {
                         for (let i = 0; i < mut.addedNodes.length; i++) {
                             const node = mut.addedNodes[i] as HTMLElement;
                             if (node.nodeType !== Node.ELEMENT_NODE) continue;
-                            if (node.classList?.contains('pakcli-virtual-folder') || node.closest?.('.pakcli-virtual-folder')) continue;
+                            if (node.classList?.contains('pakcli-virtual-folder')) continue;
                             const p = normalizePath(node.getAttribute?.('data-path') || '');
                             if (p === relRoot || p.startsWith(relRoot + '/')) { shouldRefresh = true; break; }
                         }
@@ -151,22 +172,12 @@ export class RelationshipExplorerManager {
                         for (let i = 0; i < mut.removedNodes.length; i++) {
                             const node = mut.removedNodes[i] as HTMLElement;
                             if (node.nodeType !== Node.ELEMENT_NODE) continue;
-                            if (node.classList?.contains('pakcli-virtual-folder') || node.closest?.('.pakcli-virtual-folder')) continue;
+                            if (node.classList?.contains('pakcli-virtual-folder')) continue;
                             const p = normalizePath(node.getAttribute?.('data-path') || '');
                             if (p === relRoot || p.startsWith(relRoot + '/')) { shouldRefresh = true; break; }
                         }
                     }
                     if (shouldRefresh) break;
-
-                    const targetPath = normalizePath(targetEl.getAttribute?.('data-path') || '');
-                    if (targetPath === relRoot || targetPath.startsWith(relRoot + '/')) { shouldRefresh = true; break; }
-
-                    const parentFolder = targetEl.closest?.('.nav-folder:not(.pakcli-virtual-folder), .tree-item.nav-folder:not(.pakcli-virtual-folder)');
-                    if (parentFolder) {
-                        const title = parentFolder.querySelector(':scope > .nav-folder-title, :scope > .tree-item-self');
-                        const folderPath = normalizePath(title?.getAttribute('data-path') || '');
-                        if (folderPath === relRoot || folderPath.startsWith(relRoot + '/')) { shouldRefresh = true; break; }
-                    }
                 }
 
                 if (shouldRefresh) this.scheduleRefresh();
@@ -742,8 +753,7 @@ export class RelationshipExplorerManager {
         } catch (err) {
             console.error('[PakCLI Relationship] Error applying virtual folders:', err);
         } finally {
-            // Reconnect observer after a brief delay to absorb any residual Obsidian mutations
-            window.setTimeout(() => this.connectObserver(), 150);
+            window.setTimeout(() => this.connectObserver(), 30);
         }
     }
 
@@ -789,7 +799,7 @@ export class RelationshipExplorerManager {
             childrenContainer.removeAttribute('data-pakcli-tiers');
             childrenContainer.removeAttribute('data-pakcli-sort-order');
         } finally {
-            window.setTimeout(() => this.connectObserver(), 150);
+            window.setTimeout(() => this.connectObserver(), 30);
         }
     }
 }
