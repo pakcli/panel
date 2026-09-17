@@ -746,11 +746,13 @@ export function buildVaultGraph(
         const relTierColor = matchedRelTier ? resolveTierColor(matchedRelTier) : undefined;
         let color = getDefaultNodeColor(app);
 
-        if (matchedRelTier) {
+        if (!useCaptainColors) {
+            color = getDefaultNodeColor(app);
+        } else if (matchedRelTier) {
             // Relationship nodes strictly keep their tier color from settings
             const exactRule = captainRules?.find(r => r.enabled !== false && compareFolderPaths(r.path, folderPath));
             color = (exactRule && exactRule.color) ? exactRule.color : (relTierColor || getDefaultNodeColor(app));
-        } else if (useCaptainColors) {
+        } else {
             const matchedRule = matchFolderRule(folderPath || topLevelFolder, captainRules || [], fileConfigs);
             if (matchedRule && matchedRule.color) {
                 color = matchedRule.color;
@@ -984,7 +986,7 @@ export function buildVaultGraph(
                     directNodeIds: directIds,
                     centroid: { x: 0, y: 0 },
                     radius: computeClusterRadius(Math.max(1, directIds.length), baseDepth + 1),
-                    color: effColor,
+                    color: useCaptainColors ? effColor : getDefaultNodeColor(app),
                     tierColor: effColor,
                     isRelTier: true,
                     hullPolygon: [],
@@ -1040,7 +1042,7 @@ export function buildVaultGraph(
                 directNodeIds: friendsDirectIds,
                 centroid: { x: 0, y: 0 },
                 radius: computeClusterRadius(Math.max(1, friendsAllNodeIds.length), baseDepth + 1),
-                color: friendsColor,
+                color: useCaptainColors ? friendsColor : getDefaultNodeColor(app),
                 tierColor: friendsColor,
                 isRelTier: true,
                 hullPolygon: [],
@@ -1077,7 +1079,7 @@ export function buildVaultGraph(
                     directNodeIds: directIds,
                     centroid: { x: 0, y: 0 },
                     radius: computeClusterRadius(Math.max(1, allDescendantIds.length), baseDepth + 2 + i),
-                    color: chainColor,
+                    color: useCaptainColors ? chainColor : getDefaultNodeColor(app),
                     tierColor: chainColor,
                     isRelTier: true,
                     hullPolygon: [],
@@ -1108,7 +1110,7 @@ export function buildVaultGraph(
                 directNodeIds: directIds,
                 centroid: { x: 0, y: 0 },
                 radius: computeClusterRadius(Math.max(1, directIds.length), baseDepth + 1),
-                color: sideColor,
+                color: useCaptainColors ? sideColor : getDefaultNodeColor(app),
                 tierColor: sideColor,
                 isRelTier: true,
                 hullPolygon: [],

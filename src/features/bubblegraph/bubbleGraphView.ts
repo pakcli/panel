@@ -619,39 +619,43 @@ export class BubbleGraphView extends ItemView {
         const relRoot = this.plugin.settings.familyCirclesRootFolder || 'Relationships';
         const normRelRoot = normalizePath(relRoot).toLowerCase();
 
+        const defaultAccent = getDefaultNodeColor(this.app);
+
         for (const node of this.graphData.nodes) {
-            if (node.relTierColor) {
-                // Relationship nodes ALWAYS keep their tier color from settings
+            if (!this.useCaptainColors) {
+                node.color = defaultAccent;
+            } else if (node.relTierColor) {
+                // Relationship nodes keep their tier color from settings when anchor is enabled
                 const exactRule = captainRules.find(r => r.enabled !== false && compareFolderPaths(r.path, node.folderPath || ''));
                 node.color = (exactRule && exactRule.color) ? exactRule.color : node.relTierColor;
-            } else if (this.useCaptainColors) {
+            } else {
                 const matchedRule = matchFolderRule(node.folderPath || node.topLevelFolder, captainRules, fileConfigs);
                 if (matchedRule && matchedRule.color) {
                     node.color = matchedRule.color;
                 } else {
                     node.color = getFolderColor(node.folderPath || node.topLevelFolder, captainRules, true, fileConfigs, this.app);
                 }
-            } else {
-                node.color = getDefaultNodeColor(this.app);
             }
         }
         for (const cluster of this.graphData.clusters) {
-            const isRootRel = cluster.id === relRoot || 
-                              normalizePath(cluster.id).toLowerCase() === normRelRoot ||
-                              (cluster.isRelTier && cluster.depth === 1 && !cluster.parentClusterId);
-
-            if (cluster.isRelTier) {
-                if (isRootRel) {
-                    // Outermost Relationships container cluster is ALWAYS default theme color
-                    cluster.color = getDefaultNodeColor(this.app);
-                } else {
-                    // Sub-tier bubbles (Household, Family, Close Friends, Friends, Know, Bad) ALWAYS keep their tier color
-                    cluster.color = cluster.tierColor || getDefaultNodeColor(this.app);
-                }
-            } else if (this.useCaptainColors) {
-                cluster.color = getFolderColor(cluster.id, captainRules, true, fileConfigs, this.app);
+            if (!this.useCaptainColors) {
+                cluster.color = defaultAccent;
             } else {
-                cluster.color = getDefaultNodeColor(this.app);
+                const isRootRel = cluster.id === relRoot || 
+                                  normalizePath(cluster.id).toLowerCase() === normRelRoot ||
+                                  (cluster.isRelTier && cluster.depth === 1 && !cluster.parentClusterId);
+
+                if (cluster.isRelTier) {
+                    if (isRootRel) {
+                        // Outermost Relationships container cluster is ALWAYS default theme color
+                        cluster.color = defaultAccent;
+                    } else {
+                        // Sub-tier bubbles (Household, Family, Close Friends, Friends, Know, Bad) keep their tier color
+                        cluster.color = cluster.tierColor || defaultAccent;
+                    }
+                } else {
+                    cluster.color = getFolderColor(cluster.id, captainRules, true, fileConfigs, this.app);
+                }
             }
         }
     }
