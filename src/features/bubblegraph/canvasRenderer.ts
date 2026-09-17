@@ -187,20 +187,32 @@ export class CanvasRenderer {
                 ctx.globalAlpha = 0.2;
             }
 
-            // Create smooth circular bubble path
-            ctx.beginPath();
-            ctx.arc(cluster.centroid.x, cluster.centroid.y, cluster.radius, 0, Math.PI * 2);
-
-            // Fill styling: Always render bubble fill so the entered folder view is still visible
             const baseColor = cluster.color || '#4a5568';
+            const directChildren = state.clusters.filter(c => c.parentClusterId === cluster.id && c.radius > 0);
+
             if (cluster.depth === 1) {
                 // Top-level Parent Bubble
                 const fillAlpha = isHovered ? state.hullOpacity * 2.2 : state.hullOpacity;
                 ctx.fillStyle = this.hexToRgba(baseColor, fillAlpha);
-                ctx.fill();
 
-                // Glow contour stroke: Recolour border to fully transparent if this is the entered folder
+                // Carve out direct child bubbles so parent color does NOT bleed into inner bubbles
+                ctx.beginPath();
+                ctx.arc(cluster.centroid.x, cluster.centroid.y, cluster.radius, 0, Math.PI * 2, false);
+                for (const child of directChildren) {
+                    const dx = child.centroid.x - cluster.centroid.x;
+                    const dy = child.centroid.y - cluster.centroid.y;
+                    const dist = Math.sqrt(dx * dx + dy * dy);
+                    if (dist + child.radius <= cluster.radius * 1.05) {
+                        ctx.moveTo(child.centroid.x + child.radius, child.centroid.y);
+                        ctx.arc(child.centroid.x, child.centroid.y, child.radius, 0, Math.PI * 2, true);
+                    }
+                }
+                ctx.fill('evenodd');
+
+                // Glow contour stroke of outer boundary only
                 if (!isExactScopedRoot) {
+                    ctx.beginPath();
+                    ctx.arc(cluster.centroid.x, cluster.centroid.y, cluster.radius, 0, Math.PI * 2);
                     if (isHovered) {
                         ctx.shadowColor = baseColor;
                         ctx.shadowBlur = 16;
@@ -213,15 +225,30 @@ export class CanvasRenderer {
                     ctx.stroke();
                 }
             } else {
-                // Nested Child Bubble (Depth 2 to 5) - Solid continuous stroke
-                const fillAlpha = isHovered ? 0.28 : Math.max(0.04, 0.10 - cluster.depth * 0.015);
+                // Nested Child Bubble (Depth 2 to 5)
+                const fillAlpha = isHovered ? 0.32 : Math.max(0.08, (state.hullOpacity || 0.12) * 1.1);
                 ctx.fillStyle = this.hexToRgba(baseColor, fillAlpha);
-                ctx.fill();
 
-                // Recolour border to fully transparent if this is the entered folder
+                // Carve out direct children so this bubble's color (even if red) won't affect bubbles inside it
+                ctx.beginPath();
+                ctx.arc(cluster.centroid.x, cluster.centroid.y, cluster.radius, 0, Math.PI * 2, false);
+                for (const child of directChildren) {
+                    const dx = child.centroid.x - cluster.centroid.x;
+                    const dy = child.centroid.y - cluster.centroid.y;
+                    const dist = Math.sqrt(dx * dx + dy * dy);
+                    if (dist + child.radius <= cluster.radius * 1.05) {
+                        ctx.moveTo(child.centroid.x + child.radius, child.centroid.y);
+                        ctx.arc(child.centroid.x, child.centroid.y, child.radius, 0, Math.PI * 2, true);
+                    }
+                }
+                ctx.fill('evenodd');
+
+                // Contour stroke of this cluster's outer boundary only
                 if (!isExactScopedRoot) {
-                    ctx.strokeStyle = this.hexToRgba(baseColor, isHovered ? 0.90 : Math.max(0.35, 0.55 - cluster.depth * 0.05));
-                    ctx.lineWidth = isHovered ? 1.8 : Math.max(1.0, 1.4 - cluster.depth * 0.1);
+                    ctx.beginPath();
+                    ctx.arc(cluster.centroid.x, cluster.centroid.y, cluster.radius, 0, Math.PI * 2);
+                    ctx.strokeStyle = this.hexToRgba(baseColor, isHovered ? 0.95 : 0.65);
+                    ctx.lineWidth = isHovered ? 2.0 : 1.4;
                     ctx.stroke();
                 }
             }
@@ -244,10 +271,10 @@ export class CanvasRenderer {
                 const isFolderLevelAllowed = (clusterLevel >= userMin && clusterLevel <= userMax) || 
                                              (clusterLevel >= effectiveMinLevel && clusterLevel <= effectiveMaxLevel);
 
-                if (isHovered || isFolderLevelAllowed) {
-                    if (cluster.depth === 1) {
+                if (isHovered || isFolderLevelAllowed || cluster.isRelTier) {
+                    if (cluster.depth === 1 && !cluster.isRelTier) {
                         this.drawClusterFolderTab(cluster, baseColor, isHovered, state);
-                    } else if (isHovered || (cluster.radius >= 14 && (zoom >= 0.35 || isFolderLevelAllowed))) {
+                    } else if (isHovered || cluster.isRelTier || (cluster.radius >= 8 && (zoom >= 0.25 || isFolderLevelAllowed))) {
                         this.drawSubClusterFolderTab(cluster, baseColor, isHovered, state);
                     }
                 }
@@ -327,7 +354,9 @@ export class CanvasRenderer {
         const fontSize = Math.max(7, Math.round((baseSize * 0.88) * 10) / 10);
         ctx.font = `500 ${fontSize}px Inter, system-ui, sans-serif`;
         const textWidth = ctx.measureText(labelText).width;
-        const tabWidth = textWidth + Math.round(fontSize * 1.1 + 4);
+        const dotRadius = Math.max(2, Math.round(fontSize * 0.28));
+        const dotSpacing = dotRadius * 2 + 5;
+        const tabWidth = textWidth + Math.round(fontSize * 1.1 + 4) + dotSpacing;
         const tabHeight = Math.round(fontSize * 1.4 + 4);
 
         const tabX = cluster.centroid.x - tabWidth / 2;
@@ -336,16 +365,22 @@ export class CanvasRenderer {
         ctx.save();
         ctx.beginPath();
         ctx.roundRect(tabX, tabY, tabWidth, tabHeight, Math.max(3, Math.round(fontSize * 0.35)));
-        ctx.fillStyle = isHovered ? 'rgba(15, 23, 42, 0.95)' : 'rgba(15, 23, 42, 0.78)';
+        ctx.fillStyle = isHovered ? 'rgba(15, 23, 42, 0.95)' : 'rgba(15, 23, 42, 0.85)';
         ctx.fill();
 
-        ctx.strokeStyle = isHovered ? color : this.hexToRgba(color, 0.45);
-        ctx.lineWidth = isHovered ? 1.3 : 0.8;
+        ctx.strokeStyle = isHovered ? color : this.hexToRgba(color, 0.85);
+        ctx.lineWidth = isHovered ? 1.5 : 1.1;
         ctx.stroke();
 
-        ctx.fillStyle = isHovered ? '#ffffff' : '#94a3b8';
+        // Draw color indicator dot
+        ctx.beginPath();
+        ctx.arc(tabX + Math.round(fontSize * 0.55 + dotRadius), tabY + tabHeight / 2, dotRadius, 0, Math.PI * 2);
+        ctx.fillStyle = color;
+        ctx.fill();
+
+        ctx.fillStyle = isHovered ? '#ffffff' : '#f1f5f9';
         ctx.textBaseline = 'middle';
-        ctx.fillText(labelText, tabX + Math.round(fontSize * 0.55 + 2), tabY + tabHeight / 2);
+        ctx.fillText(labelText, tabX + Math.round(fontSize * 0.55 + dotRadius * 2 + 4), tabY + tabHeight / 2);
         ctx.restore();
     }
 

@@ -302,6 +302,23 @@ Relasi toksik, lawan berbahaya, atau musuh (skor -1.00 / bad).
                         folderConfigs[`${root}/${t.folderName}`] = { color: t.color };
                     });
                     this.plugin.settings.fileConfigs = folderConfigs;
+
+                    if (!this.plugin.settings.rules) this.plugin.settings.rules = [];
+                    const existingRule = this.plugin.settings.rules.find(r => normalizePath(r.path || '').toLowerCase() === root.toLowerCase());
+                    if (existingRule) {
+                        existingRule.color = '#6366f1';
+                        existingRule.enabled = true;
+                        existingRule.includeChildren = true;
+                    } else {
+                        this.plugin.settings.rules.push({
+                            path: root,
+                            isNested: true,
+                            includeChildren: true,
+                            useNoteTitle: 'inherit',
+                            enabled: true,
+                            color: '#6366f1'
+                        });
+                    }
                 }
 
                 await this.plugin.saveSettings();

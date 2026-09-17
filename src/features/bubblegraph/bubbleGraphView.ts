@@ -1,8 +1,8 @@
 import { ItemView, WorkspaceLeaf, setIcon, TFile, Menu, normalizePath, Notice } from 'obsidian';
 import type PakCLITablePlugin from '../../main';
-import { DEFAULT_BUBBLE_GRAPH_SETTINGS } from '../../settings';
+import { DEFAULT_BUBBLE_GRAPH_SETTINGS, DEFAULT_RELATIONSHIP_TIERS } from '../../settings';
 import { BubbleNode, BubbleCluster } from './types';
-import { buildVaultGraph, BuiltGraph, getFolderColor, matchFolderRule, getNodeEffectiveTime, getNodeLatestTime, resolveNodeImageUrl } from './graphBuilder';
+import { buildVaultGraph, BuiltGraph, getFolderColor, matchFolderRule, getDefaultNodeColor, getNodeEffectiveTime, getNodeLatestTime, resolveNodeImageUrl, compareFolderPaths } from './graphBuilder';
 import { BubbleSimulation } from './simulation';
 import { CanvasRenderer, ViewportTransform, RenderState } from './canvasRenderer';
 import { SfxManager } from './sfxManager';
@@ -182,6 +182,7 @@ export class BubbleGraphView extends ItemView {
         this.enableNodeImageCover = this.plugin.settings.bubbleEnableNodeImageCover !== false;
         this.nodeImageBorder = this.plugin.settings.bubbleNodeImageBorder || 'thick';
         this.relationshipAllScopeState = Boolean(this.plugin.settings.bubbleRelationshipAllScopeState);
+        this.useCaptainColors = Boolean(this.plugin.settings.bubbleUseCaptainColors);
 
         // Initialize Procedural SFX Engine
         this.sfxManager = new SfxManager(
@@ -521,11 +522,21 @@ export class BubbleGraphView extends ItemView {
         const effectiveViewStructure = folderEntry?.viewStructure || this.plugin.settings.relationshipViewStructure || 'concentric';
         const effectiveMode = folderEntry?.mode || this.plugin.settings.relationshipMode || '1dir';
 
+        const rawTiers = this.plugin.settings.relationshipTiers || DEFAULT_RELATIONSHIP_TIERS;
+        const sanitizedTiers = rawTiers
+            .filter(t => t.id.toLowerCase() !== 'know' && t.name.toLowerCase() !== 'know')
+            .map(t => {
+                if (t.id.toLowerCase() === 'friends' || t.name.toLowerCase() === 'friends') {
+                    return { ...t, min: 0.01, max: Math.max(t.max, 0.40) };
+                }
+                return { ...t };
+            });
+
         const relationshipSettings = {
             rootFolder: relRoot,
             mode: effectiveMode,
             propertyKey: this.plugin.settings.relationshipPropertyKey || 'closeness',
-            tiers: this.plugin.settings.relationshipTiers,
+            tiers: sanitizedTiers,
             viewStructure: effectiveViewStructure,
             folders: folders,
             allScopeState: this.relationshipAllScopeState
@@ -540,7 +551,8 @@ export class BubbleGraphView extends ItemView {
             effMaxDepth, 
             this.scopedFolder,
             glyphSettings,
-            relationshipSettings
+            relationshipSettings,
+            this.plugin.settings.fileConfigs as Record<string, any>
         );
 
         // Sort all nodes according to active timelapse mode (Vanilla, Time, Filename A-Z, File Title A-Z)
@@ -611,12 +623,45 @@ export class BubbleGraphView extends ItemView {
     private applyCaptainFolderColors(): void {
         if (!this.graphData) return;
         const captainRules = this.plugin.settings.rules || [];
+        const fileConfigs = this.plugin.settings.fileConfigs as Record<string, any> | undefined;
+
+        const relRoot = this.plugin.settings.familyCirclesRootFolder || 'Relationships';
+        const normRelRoot = normalizePath(relRoot).toLowerCase();
 
         for (const node of this.graphData.nodes) {
-            node.color = getFolderColor(node.folderPath || node.topLevelFolder, captainRules, this.useCaptainColors);
+            if (node.relTierColor) {
+                // Relationship nodes ALWAYS keep their tier color from settings
+                const exactRule = captainRules.find(r => r.enabled !== false && compareFolderPaths(r.path, node.folderPath || ''));
+                node.color = (exactRule && exactRule.color) ? exactRule.color : node.relTierColor;
+            } else if (this.useCaptainColors) {
+                const matchedRule = matchFolderRule(node.folderPath || node.topLevelFolder, captainRules, fileConfigs);
+                if (matchedRule && matchedRule.color) {
+                    node.color = matchedRule.color;
+                } else {
+                    node.color = getFolderColor(node.folderPath || node.topLevelFolder, captainRules, true, fileConfigs);
+                }
+            } else {
+                node.color = getDefaultNodeColor();
+            }
         }
         for (const cluster of this.graphData.clusters) {
-            cluster.color = getFolderColor(cluster.id, captainRules, this.useCaptainColors);
+            const isRootRel = cluster.id === relRoot || 
+                              normalizePath(cluster.id).toLowerCase() === normRelRoot ||
+                              (cluster.isRelTier && cluster.depth === 1 && !cluster.parentClusterId);
+
+            if (cluster.isRelTier) {
+                if (isRootRel) {
+                    // Outermost Relationships container cluster is ALWAYS default theme color
+                    cluster.color = getDefaultNodeColor();
+                } else {
+                    // Sub-tier bubbles (Household, Family, Close Friends, Friends, Know, Bad) ALWAYS keep their tier color
+                    cluster.color = cluster.tierColor || getDefaultNodeColor();
+                }
+            } else if (this.useCaptainColors) {
+                cluster.color = getFolderColor(cluster.id, captainRules, true, fileConfigs);
+            } else {
+                cluster.color = getDefaultNodeColor();
+            }
         }
     }
 

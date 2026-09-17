@@ -241,53 +241,172 @@ export function adjustAccentLightness(colorStr: string, isDark: boolean): string
     return `#${toHex(finalR)}${toHex(finalG)}${toHex(finalB)}`;
 }
 
-export function matchFolderRule(folderPath: string, rules: FolderRule[]): FolderRule | null {
-    if (!rules || rules.length === 0 || !folderPath) return null;
-    const activeRules = rules.filter(r => r.enabled);
-    const matches: FolderRule[] = [];
-    const normalizedPath = normalizePath(folderPath);
+function cleanSegment(s: string): string {
+    return s
+        .toLowerCase()
+        .replace(/^\d+[\s\-_.]+/, '') // strip leading numbers like "1 - ", "2.", etc.
+        .replace(/^title\s+/i, '')     // strip leading "title " prefix
+        .replace(/[_\-]+/g, ' ')       // replace underscores/hyphens with spaces
+        .replace(/\s+/g, ' ')
+        .trim();
+}
+
+function segmentsMatch(p1: string, p2: string): boolean {
+    if (p1 === p2) return true;
+    if (p1.length >= 4 && p2.length >= 4 && (p1.includes(p2) || p2.includes(p1))) return true;
+    return false;
+}
+
+export function resolveTierColor(
+    tier: RelationshipTierConfig | null | undefined,
+    fallbackIndex: number = 0
+): string {
+    if (tier && tier.color && typeof tier.color === 'string' && tier.color.trim().length > 0) {
+        return tier.color.trim();
+    }
+    if (tier) {
+        const def = DEFAULT_RELATIONSHIP_TIERS.find(t => 
+            (tier.id && t.id.toLowerCase() === tier.id.toLowerCase()) ||
+            (tier.name && segmentsMatch(t.name, tier.name)) ||
+            (tier.folderName && t.folderName && segmentsMatch(t.folderName, tier.folderName))
+        );
+        if (def && def.color) return def.color;
+    }
+    const fallbackColors = ['#10b981', '#f59e0b', '#8b5cf6', '#06b6d4', '#94a3b8', '#ef4444'];
+    return fallbackColors[fallbackIndex % fallbackColors.length];
+}
+
+export function compareFolderPaths(path1: string, path2: string): boolean {
+    const parts1 = path1.split('/').filter(Boolean).map(cleanSegment);
+    const parts2 = path2.split('/').filter(Boolean).map(cleanSegment);
+    if (parts1.length !== parts2.length) return false;
+    for (let i = 0; i < parts1.length; i++) {
+        if (!segmentsMatch(parts1[i], parts2[i])) return false;
+    }
+    return true;
+}
+
+function isSubfolderOf(childPath: string, parentPath: string): boolean {
+    const childParts = childPath.split('/').filter(Boolean).map(cleanSegment);
+    const parentParts = parentPath.split('/').filter(Boolean).map(cleanSegment);
+    if (childParts.length <= parentParts.length) return false;
+    for (let i = 0; i < parentParts.length; i++) {
+        if (!segmentsMatch(childParts[i], parentParts[i])) return false;
+    }
+    return true;
+}
+
+export function matchFolderRule(
+    folderPath: string, 
+    rules?: FolderRule[], 
+    fileConfigs?: Record<string, any>
+): FolderRule | null {
+    if (!folderPath) return null;
+    const normalizedPath = normalizePath(folderPath).replace(/^\/+|\/+$/g, '');
+
+    // 1. Check direct fileConfigs override if available
+    if (fileConfigs) {
+        const parts = normalizedPath.split('/');
+        for (let i = parts.length; i >= 1; i--) {
+            const sub = parts.slice(0, i).join('/');
+            const cfg = fileConfigs[sub] || fileConfigs[sub.toLowerCase()];
+            if (cfg && cfg.color) {
+                return {
+                    path: sub,
+                    isNested: true,
+                    includeChildren: true,
+                    useNoteTitle: 'inherit',
+                    enabled: true,
+                    color: cfg.color
+                };
+            }
+        }
+    }
+
+    if (!rules || rules.length === 0) return null;
+    const activeRules = rules.filter(r => r.enabled !== false);
+    if (activeRules.length === 0) return null;
+
+    const matches: { rule: FolderRule; specificity: number }[] = [];
 
     for (const rule of activeRules) {
-        const normalizedRulePath = normalizePath(rule.path || '');
-        if (normalizedRulePath.includes('*')) {
-            const regexParts = normalizedRulePath.split('/').map(part => {
+        const rawRulePath = (rule.path || '').trim();
+        const normalizedRulePath = normalizePath(rawRulePath).replace(/^\/+|\/+$/g, '');
+
+        if (normalizedRulePath.toLowerCase().includes('*')) {
+            const regexParts = normalizedRulePath.toLowerCase().split('/').map(part => {
                 if (part === '*') return '[^/]+';
                 if (part === '**') return '.*';
                 return part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\\\*/g, '[^/]+');
             });
             const regexString = regexParts.join('/');
-            const fullRegex = rule.includeChildren ? new RegExp(`^${regexString}(?:/.*)?$`) : new RegExp(`^${regexString}$`);
-            if (fullRegex.test(normalizedPath)) {
-                matches.push(rule);
+            const fullRegex = rule.includeChildren 
+                ? new RegExp(`^${regexString}(?:/.*)?$`, 'i') 
+                : new RegExp(`^${regexString}$`, 'i');
+            if (fullRegex.test(normalizedPath.toLowerCase())) {
+                matches.push({ rule, specificity: normalizedRulePath.length });
             }
-        } else if (rule.includeChildren) {
-            if (normalizedRulePath === "" || normalizedRulePath === ".") {
-                matches.push(rule);
-            } else if (normalizedPath === normalizedRulePath || normalizedPath.startsWith(normalizedRulePath + '/')) {
-                matches.push(rule);
+        } else if (normalizedRulePath === "" || normalizedRulePath === ".") {
+            if (rule.includeChildren || normalizedPath === "") {
+                matches.push({ rule, specificity: 0 });
             }
         } else {
-            if (normalizedPath === normalizedRulePath) {
-                matches.push(rule);
+            // Check exact segment-aware match
+            if (compareFolderPaths(normalizedPath, normalizedRulePath)) {
+                matches.push({ rule, specificity: normalizedRulePath.length + 100 });
+            } 
+            // Check subfolder match (when rule applies to children)
+            else if (isSubfolderOf(normalizedPath, normalizedRulePath)) {
+                matches.push({ 
+                    rule, 
+                    specificity: rule.includeChildren ? normalizedRulePath.length + 50 : normalizedRulePath.length 
+                });
             }
         }
     }
+
     if (matches.length === 0) return null;
-    matches.sort((a, b) => (b.path || '').length - (a.path || '').length);
-    return matches[0];
+    matches.sort((a, b) => b.specificity - a.specificity);
+    return matches[0].rule;
 }
 
 export function getFolderColor(
     folderPath: string,
     captainRules?: FolderRule[],
-    useCaptainColors: boolean = false
+    useCaptainColors: boolean = false,
+    fileConfigs?: Record<string, any>
 ): string {
-    if (useCaptainColors && captainRules && captainRules.length > 0 && folderPath && folderPath !== '/') {
-        const matchedRule = matchFolderRule(folderPath, captainRules);
+    if (!useCaptainColors) {
+        return getDefaultNodeColor();
+    }
+
+    if (!folderPath || folderPath === '/' || folderPath === '.') {
+        return getDefaultNodeColor();
+    }
+
+    const norm = normalizePath(folderPath).replace(/^\/+|\/+$/g, '');
+
+    // 1. Check explicit captain rule
+    if (captainRules && captainRules.length > 0) {
+        const matchedRule = matchFolderRule(norm, captainRules, fileConfigs);
         if (matchedRule && matchedRule.color) {
             return matchedRule.color;
         }
     }
+
+    // 2. Check fileConfigs
+    if (fileConfigs) {
+        const parts = norm.split('/');
+        for (let i = parts.length; i >= 1; i--) {
+            const sub = parts.slice(0, i).join('/');
+            const cfg = fileConfigs[sub] || fileConfigs[sub.toLowerCase()];
+            if (cfg && cfg.color) {
+                return cfg.color;
+            }
+        }
+    }
+
+    // Folders without captain rules stay default color
     return getDefaultNodeColor();
 }
 
@@ -308,8 +427,18 @@ export function buildVaultGraph(
     maxClusterDepth: number = 3,
     scopedFolder: string | null = null,
     glyphSettings?: NodeGlyphSettings,
-    relationshipSettings?: RelationshipGraphSettings
+    relationshipSettings?: RelationshipGraphSettings,
+    fileConfigs?: Record<string, any>
 ): BuiltGraph {
+    const relRoot = relationshipSettings?.rootFolder ? normalizePath(relationshipSettings.rootFolder) : 'Relationships';
+    const relFolders = new Set<string>();
+    relFolders.add(relRoot);
+    if (relationshipSettings?.folders && relationshipSettings.folders.length > 0) {
+        for (const f of relationshipSettings.folders) {
+            if (f.path) relFolders.add(normalizePath(f.path));
+        }
+    }
+
     const BINARY_EXTENSIONS = new Set([
         'png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg', 'ico',
         'mp3', 'wav', 'ogg', 'm4a', 'flac',
@@ -405,21 +534,29 @@ export function buildVaultGraph(
             ? relationshipSettings.tiers
             : DEFAULT_RELATIONSHIP_TIERS;
         const relTiers = rawTiers
-            .filter(t => t.id !== 'know')
-            .map(t => (t.id === 'friends' ? { ...t, min: 0.01, max: 0.40 } : { ...t }));
+            .filter(t => t.id.toLowerCase() !== 'know' && t.name.toLowerCase() !== 'know')
+            .map(t => {
+                if (t.id.toLowerCase() === 'friends' || t.name.toLowerCase() === 'friends') {
+                    return { ...t, min: 0.01, max: Math.max(t.max, 0.40) };
+                }
+                return { ...t };
+            });
         const propKey = relationshipSettings?.propertyKey || 'closeness';
 
         let matchedRelTier: RelationshipTierConfig | null = null;
         if (matchedRelFolder) {
             if (folderPath.startsWith(matchedRelFolder + '/')) {
                 const subPath = folderPath.slice(matchedRelFolder.length + 1);
-                const subName = subPath.split('/')[0].toLowerCase();
-                matchedRelTier = relTiers.find(t => 
-                    subName === t.folderName.toLowerCase() || 
-                    subName === t.name.toLowerCase() || 
-                    subName === t.id.toLowerCase() ||
-                    subName.includes(t.name.toLowerCase())
-                ) || null;
+                const subName = subPath.split('/')[0];
+                const cleanSub = cleanSegment(subName);
+                matchedRelTier = relTiers.find(t => {
+                    const cleanFolder = t.folderName ? cleanSegment(t.folderName) : '';
+                    const cleanName = t.name ? cleanSegment(t.name) : '';
+                    const cleanId = t.id ? cleanSegment(t.id) : '';
+                    return (cleanFolder && (cleanSub === cleanFolder || segmentsMatch(cleanSub, cleanFolder))) ||
+                           (cleanName && (cleanSub === cleanName || segmentsMatch(cleanSub, cleanName))) ||
+                           (cleanId && (cleanSub === cleanId || segmentsMatch(cleanSub, cleanId)));
+                }) || null;
             }
 
             if (!matchedRelTier) {
@@ -516,9 +653,18 @@ export function buildVaultGraph(
             }
         }
 
-        let color = getFolderColor(folderPath || topLevelFolder, captainRules, useCaptainColors);
+        const relTierColor = matchedRelTier ? resolveTierColor(matchedRelTier) : undefined;
+        let color = getDefaultNodeColor();
+
         if (matchedRelTier) {
-            color = matchedRelTier.color;
+            // Relationship nodes strictly keep their tier color from settings
+            const exactRule = captainRules?.find(r => r.enabled !== false && compareFolderPaths(r.path, folderPath));
+            color = (exactRule && exactRule.color) ? exactRule.color : (relTierColor || getDefaultNodeColor());
+        } else if (useCaptainColors) {
+            const matchedRule = matchFolderRule(folderPath || topLevelFolder, captainRules || [], fileConfigs);
+            if (matchedRule && matchedRule.color) {
+                color = matchedRule.color;
+            }
         }
 
         const node: BubbleNode = {
@@ -546,7 +692,9 @@ export function buildVaultGraph(
             color,
             isActive,
             clusterId,
-            subClusterId
+            subClusterId,
+            relTierColor,
+            isRelTier: Boolean(matchedRelTier)
         };
 
         nodes.push(node);
@@ -676,10 +824,22 @@ export function buildVaultGraph(
         const relNodes = graphNodes.filter(n => n.folderPath === targetRelRoot || n.folderPath.startsWith(targetRelRoot + '/'));
         if (relNodes.length === 0) return [];
 
-        const sortedTiers = [...tiers].sort((a, b) => Math.max(b.min, b.max) - Math.max(a.min, a.max));
+        const effectiveTiers = (tiers && tiers.length > 0 ? tiers : DEFAULT_RELATIONSHIP_TIERS)
+            .filter(t => t.id.toLowerCase() !== 'know' && t.name.toLowerCase() !== 'know')
+            .map(t => {
+                if (t.id.toLowerCase() === 'friends' || t.name.toLowerCase() === 'friends') {
+                    return { ...t, min: 0.01, max: Math.max(t.max, 0.40) };
+                }
+                return { ...t };
+            });
+        const sortedTiers = [...effectiveTiers].sort((a, b) => Math.max(b.min, b.max) - Math.max(a.min, a.max));
         const tierDirectNodeMap = new Map<string, string[]>();
         for (const t of sortedTiers) {
-            tierDirectNodeMap.set(`${targetRelRoot}/${t.id}`, []);
+            const list: string[] = [];
+            tierDirectNodeMap.set(`${targetRelRoot}/${t.id}`, list);
+            if (t.folderName && t.folderName !== t.id) {
+                tierDirectNodeMap.set(`${targetRelRoot}/${t.folderName}`, list);
+            }
         }
         tierDirectNodeMap.set(targetRelRoot, []);
 
@@ -693,7 +853,7 @@ export function buildVaultGraph(
 
         const allRelNodeIds = relNodes.map(n => n.id);
         const rootDirectIds = tierDirectNodeMap.get(targetRelRoot) || [];
-        const rootColor = getFolderColor(targetRelRoot, captainRules, useCaptainColors);
+        const rootColor = getDefaultNodeColor();
 
         const rootCluster: BubbleCluster = {
             id: targetRelRoot,
@@ -705,6 +865,8 @@ export function buildVaultGraph(
             centroid: { x: 0, y: 0 },
             radius: computeClusterRadius(allRelNodeIds.length, baseDepth),
             color: rootColor,
+            tierColor: undefined,
+            isRelTier: true,
             hullPolygon: [],
             smoothedHull: [],
             boundingBox: { minX: 0, minY: 0, maxX: 0, maxY: 0 }
@@ -721,6 +883,8 @@ export function buildVaultGraph(
                 const tier = sortedTiers[i];
                 const clusterId = `${targetRelRoot}/${tier.id}`;
                 const directIds = tierDirectNodeMap.get(clusterId) || [];
+                const exactRule = captainRules?.find(r => r.enabled !== false && compareFolderPaths(r.path, clusterId));
+                const effColor = (exactRule && exactRule.color) ? exactRule.color : resolveTierColor(tier, i);
                 const tierCluster: BubbleCluster = {
                     id: clusterId,
                     name: tier.name,
@@ -730,13 +894,18 @@ export function buildVaultGraph(
                     directNodeIds: directIds,
                     centroid: { x: 0, y: 0 },
                     radius: computeClusterRadius(Math.max(1, directIds.length), baseDepth + 1),
-                    color: tier.color,
+                    color: effColor,
+                    tierColor: effColor,
+                    isRelTier: true,
                     hullPolygon: [],
                     smoothedHull: [],
                     boundingBox: { minX: 0, minY: 0, maxX: 0, maxY: 0 }
                 };
                 relClusters.push(tierCluster);
                 clusterMapRef.set(clusterId, tierCluster);
+                if (tier.folderName && tier.folderName !== tier.id) {
+                    clusterMapRef.set(`${targetRelRoot}/${tier.folderName}`, tierCluster);
+                }
             }
             return relClusters;
         }
@@ -748,7 +917,7 @@ export function buildVaultGraph(
         //   2. Unsure [0.00 - 0.00] (direct child of targetRelRoot)
         //   3. Bad [-1.00 - -0.01] (direct child of targetRelRoot)
 
-        const sortedAsc = [...tiers].sort((a, b) => Math.min(a.min, a.max) - Math.min(b.min, b.max));
+        const sortedAsc = [...effectiveTiers].sort((a, b) => Math.min(a.min, a.max) - Math.min(b.min, b.max));
         const positiveTiers = sortedAsc.filter(t => Math.max(t.min, t.max) > 0.0);
         const unsureTiers = sortedAsc.filter(t => t.min === 0.0 && t.max === 0.0);
         const badTiers = sortedAsc.filter(t => Math.max(t.min, t.max) < 0.0);
@@ -769,6 +938,8 @@ export function buildVaultGraph(
             }
 
             const friendsAllNodeIds = [...friendsDirectIds, ...innerChainAllNodeIds];
+            const exactFriendsRule = captainRules?.find(r => r.enabled !== false && compareFolderPaths(r.path, friendsClusterId));
+            const friendsColor = (exactFriendsRule && exactFriendsRule.color) ? exactFriendsRule.color : resolveTierColor(friendsTier, 0);
 
             const friendsCluster: BubbleCluster = {
                 id: friendsClusterId,
@@ -779,13 +950,18 @@ export function buildVaultGraph(
                 directNodeIds: friendsDirectIds,
                 centroid: { x: 0, y: 0 },
                 radius: computeClusterRadius(Math.max(1, friendsAllNodeIds.length), baseDepth + 1),
-                color: friendsTier.color,
+                color: friendsColor,
+                tierColor: friendsColor,
+                isRelTier: true,
                 hullPolygon: [],
                 smoothedHull: [],
                 boundingBox: { minX: 0, minY: 0, maxX: 0, maxY: 0 }
             };
             relClusters.push(friendsCluster);
             clusterMapRef.set(friendsClusterId, friendsCluster);
+            if (friendsTier.folderName && friendsTier.folderName !== friendsTier.id) {
+                clusterMapRef.set(`${targetRelRoot}/${friendsTier.folderName}`, friendsCluster);
+            }
 
             for (let i = 0; i < innerChainTiers.length; i++) {
                 const tier = innerChainTiers[i];
@@ -799,6 +975,9 @@ export function buildVaultGraph(
                     allDescendantIds.push(...subDirects);
                 }
 
+                const exactChainRule = captainRules?.find(r => r.enabled !== false && compareFolderPaths(r.path, clusterId));
+                const chainColor = (exactChainRule && exactChainRule.color) ? exactChainRule.color : resolveTierColor(tier, i + 1);
+
                 const chainCluster: BubbleCluster = {
                     id: clusterId,
                     name: tier.name,
@@ -808,19 +987,28 @@ export function buildVaultGraph(
                     directNodeIds: directIds,
                     centroid: { x: 0, y: 0 },
                     radius: computeClusterRadius(Math.max(1, allDescendantIds.length), baseDepth + 2 + i),
-                    color: tier.color,
+                    color: chainColor,
+                    tierColor: chainColor,
+                    isRelTier: true,
                     hullPolygon: [],
                     smoothedHull: [],
                     boundingBox: { minX: 0, minY: 0, maxX: 0, maxY: 0 }
                 };
                 relClusters.push(chainCluster);
                 clusterMapRef.set(clusterId, chainCluster);
+                if (tier.folderName && tier.folderName !== tier.id) {
+                    clusterMapRef.set(`${targetRelRoot}/${tier.folderName}`, chainCluster);
+                }
             }
         }
 
-        for (const tier of sideBranches) {
+        for (let i = 0; i < sideBranches.length; i++) {
+            const tier = sideBranches[i];
             const clusterId = `${targetRelRoot}/${tier.id}`;
             const directIds = tierDirectNodeMap.get(clusterId) || [];
+            const exactSideRule = captainRules?.find(r => r.enabled !== false && compareFolderPaths(r.path, clusterId));
+            const sideColor = (exactSideRule && exactSideRule.color) ? exactSideRule.color : resolveTierColor(tier, 5 + i);
+
             const sideCluster: BubbleCluster = {
                 id: clusterId,
                 name: tier.name,
@@ -830,33 +1018,34 @@ export function buildVaultGraph(
                 directNodeIds: directIds,
                 centroid: { x: 0, y: 0 },
                 radius: computeClusterRadius(Math.max(1, directIds.length), baseDepth + 1),
-                color: tier.color,
+                color: sideColor,
+                tierColor: sideColor,
+                isRelTier: true,
                 hullPolygon: [],
                 smoothedHull: [],
                 boundingBox: { minX: 0, minY: 0, maxX: 0, maxY: 0 }
             };
             relClusters.push(sideCluster);
             clusterMapRef.set(clusterId, sideCluster);
+            if (tier.folderName && tier.folderName !== tier.id) {
+                clusterMapRef.set(`${targetRelRoot}/${tier.folderName}`, sideCluster);
+            }
         }
 
         return relClusters;
-    }
-
-    const relRoot = relationshipSettings?.rootFolder ? normalizePath(relationshipSettings.rootFolder) : 'Relationships';
-    const relFolders = new Set<string>();
-    relFolders.add(relRoot);
-    if (relationshipSettings?.folders && relationshipSettings.folders.length > 0) {
-        for (const f of relationshipSettings.folders) {
-            if (f.path) relFolders.add(normalizePath(f.path));
-        }
     }
 
     const rawTiers = (relationshipSettings?.tiers && relationshipSettings.tiers.length > 0)
         ? relationshipSettings.tiers
         : DEFAULT_RELATIONSHIP_TIERS;
     const relTiers = rawTiers
-        .filter(t => t.id !== 'know')
-        .map(t => (t.id === 'friends' ? { ...t, min: 0.01, max: 0.40 } : { ...t }));
+        .filter(t => t.id.toLowerCase() !== 'know' && t.name.toLowerCase() !== 'know')
+        .map(t => {
+            if (t.id.toLowerCase() === 'friends' || t.name.toLowerCase() === 'friends') {
+                return { ...t, min: 0.01, max: Math.max(t.max, 0.40) };
+            }
+            return { ...t };
+        });
 
     const defaultViewStruct = relationshipSettings?.viewStructure || 'concentric';
     const allScopeState = relationshipSettings?.allScopeState ?? false;
@@ -1019,7 +1208,7 @@ export function buildVaultGraph(
             directNodeIds: directIds,
             centroid: { x: 0, y: 0 },
             radius: initialRadius,
-            color: getFolderColor(folderPath, captainRules, useCaptainColors),
+            color: getFolderColor(folderPath, captainRules, useCaptainColors, fileConfigs),
             hullPolygon: [],
             smoothedHull: [],
             boundingBox: { minX: 0, minY: 0, maxX: 0, maxY: 0 }

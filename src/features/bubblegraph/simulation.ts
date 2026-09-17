@@ -88,11 +88,11 @@ export function computeNodesRequiredRadius(nodes: BubbleNode[], denseScale: numb
 
 export function computeLeafClusterRadius(nodeCount: number, depth: number = 2, denseScale: number = DENSE_BUBBLE_MULTIPLIER): number {
     if (nodeCount <= 0) return 0;
-    if (nodeCount === 1) return depth === 1 ? 14 : 12;
-    if (nodeCount === 2) return depth === 1 ? 18 : 15;
-    if (nodeCount === 3) return depth === 1 ? 22 : 19;
-    const base = Math.sqrt(nodeCount) * 7.0 + (depth === 1 ? 7 : 5);
-    let r = Math.max(13, Math.round(base));
+    if (nodeCount === 1) return depth === 1 ? 18 : 16;
+    if (nodeCount === 2) return depth === 1 ? 22 : 18;
+    if (nodeCount === 3) return depth === 1 ? 26 : 22;
+    const base = Math.sqrt(nodeCount) * 7.5 + (depth === 1 ? 9 : 7);
+    let r = Math.max(16, Math.round(base));
     if (nodeCount >= 4) {
         r = Math.max(5, Math.round(r * denseScale));
     }

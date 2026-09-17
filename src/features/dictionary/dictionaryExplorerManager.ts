@@ -55,6 +55,9 @@ export class DictionaryExplorerManager {
       this.rafId = requestAnimationFrame(() => {
         this.rafId = null;
         this.needsFollowUpPass = false;
+        if (document.querySelector('.nav-files-container input, .nav-files-container [contenteditable="true"], .nav-folder-title input, .nav-file-title input, [contenteditable="true"]')) {
+          return;
+        }
         this.refreshVirtualFolders();
         if (this.needsFollowUpPass) {
           this.scheduleRefresh();
@@ -67,6 +70,9 @@ export class DictionaryExplorerManager {
     }
     this.trailingTimer = window.setTimeout(() => {
       this.trailingTimer = null;
+      if (document.querySelector('.nav-files-container input, .nav-files-container [contenteditable="true"], .nav-folder-title input, .nav-file-title input, [contenteditable="true"]')) {
+        return;
+      }
       this.refreshVirtualFolders();
     }, 60);
   }
@@ -178,7 +184,7 @@ export class DictionaryExplorerManager {
 
     if (!this.mutationObserver) {
       this.mutationObserver = new MutationObserver((mutations) => {
-        if (document.querySelector('.nav-folder-title input, .nav-file-title input')) return;
+        if (document.querySelector('.nav-files-container input, .nav-files-container [contenteditable="true"], .nav-folder-title input, .nav-file-title input, [contenteditable="true"]')) return;
 
         let shouldRefresh = false;
 
@@ -317,7 +323,7 @@ export class DictionaryExplorerManager {
     const container = (leaves[0].view as any)?.containerEl as HTMLElement;
     if (!container) return;
 
-    if (document.querySelector('.nav-folder-title input, .nav-file-title input')) return;
+    if (document.querySelector('.nav-files-container input, .nav-files-container [contenteditable="true"], .nav-folder-title input, .nav-file-title input, [contenteditable="true"]')) return;
 
     const entries = this.getDictionaryFolderEntries();
     if (entries.length === 0) return;
@@ -496,27 +502,36 @@ export class DictionaryExplorerManager {
         const cleanTitle = domTitle.toLowerCase().endsWith('.md') ? domTitle.slice(0, -3).toLowerCase() : domTitle.toLowerCase();
         matchedFile = vaultByBasename.get(cleanTitle) || null;
       }
+      if (!matchedFile && rawPath) {
+        const abstract = this.app.vault.getAbstractFileByPath(rawPath) || this.app.vault.getAbstractFileByPath(decodeURIComponent(rawPath));
+        if (abstract instanceof TFile) {
+          matchedFile = abstract;
+        }
+      }
 
       // If in non-merged mode and file belongs to another folder outside this tree, restore it
-      if (!isMerged && normP && !matchedFile) {
-        const abstract = this.app.vault.getAbstractFileByPath(rawPath) || this.app.vault.getAbstractFileByPath(decodeURIComponent(rawPath));
-        if (abstract instanceof TFile && abstract.parent) {
-          const trueParent = normalizePath(abstract.parent.path);
-          if (trueParent.toLowerCase() !== normFolderPathLower) {
-            const trueFolderEl = this.findDictionaryFolderEl(container, trueParent);
-            if (trueFolderEl) {
-              const trueChildren = (trueFolderEl.querySelector(':scope > .nav-folder-children, :scope > .tree-item-children') ||
-                trueFolderEl.querySelector('.nav-folder-children, .tree-item-children')) as HTMLElement;
-              if (trueChildren && fileEl.parentElement !== trueChildren) {
-                trueChildren.appendChild(fileEl);
-                continue;
-              }
+      if (!isMerged && matchedFile && matchedFile.parent) {
+        const trueParent = normalizePath(matchedFile.parent.path);
+        if (trueParent.toLowerCase() !== normFolderPathLower) {
+          const trueFolderEl = this.findDictionaryFolderEl(container, trueParent);
+          if (trueFolderEl) {
+            const trueChildren = (trueFolderEl.querySelector(':scope > .nav-folder-children, :scope > .tree-item-children') ||
+              trueFolderEl.querySelector('.nav-folder-children, .tree-item-children')) as HTMLElement;
+            if (trueChildren && fileEl.parentElement !== trueChildren) {
+              trueChildren.appendChild(fileEl);
+              continue;
             }
           }
         }
       }
 
-      const noteName = matchedFile ? matchedFile.basename : (domTitle.toLowerCase().endsWith('.md') ? domTitle.slice(0, -3) : domTitle);
+      // If file does not exist in vault at all, it was deleted! Remove from DOM!
+      if (!matchedFile) {
+        fileEl.remove();
+        continue;
+      }
+
+      const noteName = matchedFile.basename;
       if (!noteName) continue;
 
       // Keep index files at root of this folder
@@ -698,6 +713,14 @@ export class DictionaryExplorerManager {
           const titleB = b.querySelector('.nav-file-title-content, .tree-item-inner, .nav-file-title')?.textContent?.trim() || b.getAttribute('data-path') || '';
           return titleA.localeCompare(titleB, undefined, { sensitivity: 'base' });
         });
+
+        // Clean up any children in chDiv that are not in fileEls (deleted or moved files)
+        const currentChildren = Array.from(chDiv.children) as HTMLElement[];
+        for (const child of currentChildren) {
+          if (!fileEls.includes(child)) {
+            child.remove();
+          }
+        }
 
         const currentChFiles = Array.from(chDiv.children);
         const chMatches = currentChFiles.length === fileEls.length &&

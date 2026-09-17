@@ -54,6 +54,9 @@ export class RelationshipExplorerManager {
             this.rafId = requestAnimationFrame(() => {
                 this.rafId = null;
                 this.needsFollowUpPass = false;
+                if (document.querySelector('.nav-files-container input, .nav-files-container [contenteditable="true"], .nav-folder-title input, .nav-file-title input, [contenteditable="true"]')) {
+                    return;
+                }
                 this.refreshVirtualFolders();
                 if (this.needsFollowUpPass) {
                     this.scheduleRefresh();
@@ -66,6 +69,9 @@ export class RelationshipExplorerManager {
         }
         this.trailingTimer = window.setTimeout(() => {
             this.trailingTimer = null;
+            if (document.querySelector('.nav-files-container input, .nav-files-container [contenteditable="true"], .nav-folder-title input, .nav-file-title input, [contenteditable="true"]')) {
+                return;
+            }
             this.refreshVirtualFolders();
         }, 60);
     }
@@ -144,7 +150,7 @@ export class RelationshipExplorerManager {
         if (!this.mutationObserver) {
             const relRoot = normalizePath(this.plugin.settings.familyCirclesRootFolder || 'Relationships');
             this.mutationObserver = new MutationObserver((mutations) => {
-                if (document.querySelector('.nav-folder-title input, .nav-file-title input')) return;
+                if (document.querySelector('.nav-files-container input, .nav-files-container [contenteditable="true"], .nav-folder-title input, .nav-file-title input, [contenteditable="true"]')) return;
 
                 let shouldRefresh = false;
 
@@ -249,7 +255,7 @@ export class RelationshipExplorerManager {
         const container = (leaves[0].view as any)?.containerEl as HTMLElement;
         if (!container) return;
 
-        if (document.querySelector('.nav-folder-title input, .nav-file-title input')) return;
+        if (document.querySelector('.nav-files-container input, .nav-files-container [contenteditable="true"], .nav-folder-title input, .nav-file-title input, [contenteditable="true"]')) return;
 
         const relRoot = normalizePath(this.plugin.settings.familyCirclesRootFolder || 'Relationships');
 

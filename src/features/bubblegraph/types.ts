@@ -28,6 +28,8 @@ export interface BubbleNode {
     isActive: boolean;
     clusterId: string;
     subClusterId: string;
+    relTierColor?: string;
+    isRelTier?: boolean;
 }
 
 export interface BubbleEdge {
@@ -58,6 +60,8 @@ export interface BubbleCluster {
     isHovered?: boolean;
     isDense?: boolean;
     baseRadius?: number;
+    tierColor?: string;
+    isRelTier?: boolean;
 }
 
 export interface InspectorData {

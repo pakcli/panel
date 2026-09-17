@@ -677,18 +677,26 @@ export default class PakCLITablePlugin extends Plugin {
 		const fallback = await loadVaultConfig(this.app, 'pakcli-panel');
 		this.settings = Object.assign({}, DEFAULT_TABLE_SETTINGS, fallback, stored);
 
-		// Auto-migrate relationship tiers if outdated (e.g. still has 'enemy' instead of 'unsure' and 'bad')
+		// Auto-migrate relationship tiers if outdated (e.g. still has 'enemy' instead of 'unsure' and 'bad', or legacy 'know')
 		if (this.settings.relationshipTiers && this.settings.relationshipTiers.length > 0) {
 			const hasEnemy = this.settings.relationshipTiers.some(t => t.id === 'enemy');
+			const hasKnow = this.settings.relationshipTiers.some(t => t.id.toLowerCase() === 'know' || t.name.toLowerCase() === 'know');
 			const hasUnsure = this.settings.relationshipTiers.some(t => t.id === 'unsure');
 			const hasBad = this.settings.relationshipTiers.some(t => t.id === 'bad');
-			if (hasEnemy || !hasUnsure || !hasBad) {
-				this.settings.relationshipTiers = this.settings.relationshipTiers.filter(t => t.id !== 'enemy');
+			if (hasEnemy || hasKnow || !hasUnsure || !hasBad) {
+				this.settings.relationshipTiers = this.settings.relationshipTiers
+					.filter(t => t.id !== 'enemy' && t.id.toLowerCase() !== 'know' && t.name.toLowerCase() !== 'know')
+					.map(t => {
+						if (t.id.toLowerCase() === 'friends' || t.name.toLowerCase() === 'friends') {
+							return { ...t, min: 0.01, max: Math.max(t.max, 0.40) };
+						}
+						return { ...t };
+					});
 				if (!this.settings.relationshipTiers.some(t => t.id === 'unsure')) {
-					this.settings.relationshipTiers.push({ id: 'unsure', name: 'Unsure', min: 0.00, max: 0.00, color: '#94a3b8', folderName: '6 - Unsure' });
+					this.settings.relationshipTiers.push({ id: 'unsure', name: 'Unsure', min: 0.00, max: 0.00, color: '#94a3b8', folderName: '5 - Unsure' });
 				}
 				if (!this.settings.relationshipTiers.some(t => t.id === 'bad')) {
-					this.settings.relationshipTiers.push({ id: 'bad', name: 'Bad', min: -1.00, max: -0.01, color: '#ef4444', folderName: '7 - Bad' });
+					this.settings.relationshipTiers.push({ id: 'bad', name: 'Bad', min: -1.00, max: -0.01, color: '#ef4444', folderName: '6 - Bad' });
 				}
 			}
 		}
@@ -1484,7 +1492,8 @@ export default class PakCLITablePlugin extends Plugin {
 				const renderFullSection = () => {
 					tiersSectionWrap.empty();
 
-					const currentTiers: RelationshipTierConfig[] = this.settings.relationshipTiers || DEFAULT_RELATIONSHIP_TIERS;
+					const currentTiers: RelationshipTierConfig[] = (this.settings.relationshipTiers || DEFAULT_RELATIONSHIP_TIERS)
+						.filter(t => t.id.toLowerCase() !== 'know' && t.name.toLowerCase() !== 'know');
 
 					// Validation helper: check for overlaps
 					const validateOverlap = (tiers: RelationshipTierConfig[]): { valid: boolean; error?: string } => {
@@ -1563,6 +1572,15 @@ export default class PakCLITablePlugin extends Plugin {
 					const listTitle = tiersHeaderRow.createEl('h4', { text: 'Customizable Tier Ranges & Rules:' });
 					listTitle.style.cssText = 'margin: 0; font-size: 14px;';
 
+					const refreshBubbleViews = () => {
+						const leaves = this.app.workspace.getLeavesOfType(BUBBLE_GRAPH_VIEW_TYPE);
+						leaves.forEach((leaf) => {
+							if (leaf.view instanceof BubbleGraphView) {
+								leaf.view.reloadGraphData();
+							}
+						});
+					};
+
 					const addTierBtn = tiersHeaderRow.createEl('button', { text: '+ Add Tier', cls: 'mod-cta' });
 					addTierBtn.style.cssText = 'font-size: 12px; padding: 4px 10px;';
 					addTierBtn.onclick = async () => {
@@ -1579,6 +1597,7 @@ export default class PakCLITablePlugin extends Plugin {
 						this.settings.relationshipTiers = currentTiers;
 						await this.saveSettings();
 						renderFullSection();
+						refreshBubbleViews();
 					};
 
 					// Render each tier row
@@ -1595,6 +1614,7 @@ export default class PakCLITablePlugin extends Plugin {
 							this.settings.relationshipTiers = currentTiers;
 							await this.saveSettings();
 							renderFullSection();
+							refreshBubbleViews();
 						};
 
 						// Tier Name
@@ -1606,6 +1626,7 @@ export default class PakCLITablePlugin extends Plugin {
 							tier.name = nameInput.value.trim() || tier.name;
 							this.settings.relationshipTiers = currentTiers;
 							await this.saveSettings();
+							refreshBubbleViews();
 						};
 
 						// Range Min
@@ -1621,6 +1642,7 @@ export default class PakCLITablePlugin extends Plugin {
 							this.settings.relationshipTiers = currentTiers;
 							await this.saveSettings();
 							renderFullSection();
+							refreshBubbleViews();
 						};
 
 						// Range Max
@@ -1636,6 +1658,7 @@ export default class PakCLITablePlugin extends Plugin {
 							this.settings.relationshipTiers = currentTiers;
 							await this.saveSettings();
 							renderFullSection();
+							refreshBubbleViews();
 						};
 
 						// Subfolder Name (for subfolder mode)
@@ -1647,6 +1670,7 @@ export default class PakCLITablePlugin extends Plugin {
 							tier.folderName = folderInput.value.trim() || tier.folderName;
 							this.settings.relationshipTiers = currentTiers;
 							await this.saveSettings();
+							refreshBubbleViews();
 						};
 
 						// Delete Button
@@ -1659,6 +1683,7 @@ export default class PakCLITablePlugin extends Plugin {
 								this.settings.relationshipTiers = currentTiers;
 								await this.saveSettings();
 								renderFullSection();
+								refreshBubbleViews();
 							};
 						}
 					});
