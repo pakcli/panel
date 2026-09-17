@@ -605,6 +605,10 @@ body.pakcli-resizing-y {
   margin: 0;
   border-radius: var(--radius-s);
 
+  height: auto !important;
+  min-height: 0 !important;
+  flex: 0 0 auto !important;
+
   // Subtle pixelated checkerbox watermark pattern (digital / virtual canvas texture)
   background-image: repeating-conic-gradient(
     rgba(var(--mono-rgb-100), 0.024) 0% 25%, 
@@ -751,16 +755,28 @@ body.pakcli-resizing-y {
   }
 
   &.is-collapsed {
+    height: auto !important;
+    min-height: 0 !important;
+
     .pakcli-virtual-folder-title .collapse-icon svg {
       transform: rotate(0deg) !important; // Collapsed: points right '>'
     }
 
     .pakcli-virtual-folder-children {
       display: none !important;
+      height: 0 !important;
+      min-height: 0 !important;
+      padding: 0 !important;
+      margin: 0 !important;
+      border: none !important;
+      overflow: hidden !important;
     }
   }
 
   .pakcli-virtual-folder-children {
+    height: auto !important;
+    min-height: 0 !important;
+    flex: 0 0 auto !important;
     padding-left: var(--nav-indent, 14px);
     position: relative;
     border-left: 1px solid var(--nav-indentation-guide-color, var(--background-modifier-border));
@@ -773,6 +789,13 @@ body.pakcli-resizing-y {
       padding: 4px 0 4px 8px;
     }
   }
+}
+
+/* Ensure containers holding virtual folders never accumulate ghost height */
+.nav-folder-children:has(> .pakcli-virtual-folder),
+.tree-item-children:has(> .pakcli-virtual-folder) {
+  height: auto !important;
+  min-height: 0 !important;
 }
 
 /* ── A–Z Dictionary Navigator Modal & Full Listed View ───────────────────── */
