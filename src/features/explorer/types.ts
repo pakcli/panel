@@ -84,6 +84,7 @@ export interface ExplorerSettings {
   folderBadgePosition?: 'left' | 'right-inline' | 'right-align' | 'hidden';
   showFolderBadgeI?: boolean;
   showFolderBadgeBase?: boolean;
+  affectExternalCountBadge?: boolean;
   showMergedIndexRows?: boolean;
   enableBaseDefaultFilter?: boolean;
   baseDefaultFilterFormula?: string;
@@ -113,6 +114,7 @@ export const DEFAULT_EXPLORER_SETTINGS: ExplorerSettings = {
   folderBadgePosition: 'right-inline',
   showFolderBadgeI: true,
   showFolderBadgeBase: true,
+  affectExternalCountBadge: false,
   showMergedIndexRows: false,
   enableBaseDefaultFilter: true,
   baseDefaultFilterFormula: 'file.folder == this.file.folder && !file.name.contains("index")',

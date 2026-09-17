@@ -2785,6 +2785,18 @@ export default class PakCLITablePlugin extends Plugin {
 					});
 
 				new Setting(containerEl)
+					.setName('Affect Third-Party Count Badge')
+					.setDesc('When enabled, aligns folder note count badges from other plugins to the far right of the row. When disabled (default), third-party count badges are completely untouched.')
+					.addToggle((t) => {
+						t.setValue(this.settings.affectExternalCountBadge === true)
+							.onChange(async (val) => {
+								this.settings.affectExternalCountBadge = val;
+								await this.saveSettings();
+								if (this.splitViewManager) this.splitViewManager.refreshFolderBadges();
+							});
+					});
+
+				new Setting(containerEl)
 					.setName('Apply Default Filter on Base Creation')
 					.setDesc('When creating a new index.base file via the folder [base] badge, automatically add a folder-scoped filter to all views.')
 					.addToggle((t) => {

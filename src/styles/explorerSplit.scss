@@ -52,28 +52,59 @@
   display: inline-flex;
   align-items: center;
   gap: 3px;
-  margin-left: 6px;
-  margin-right: 4px;
   flex-shrink: 0;
   user-select: none;
   vertical-align: middle;
   white-space: nowrap;
+
+  &.pakcli-badge-pos-left {
+    margin-right: 6px;
+    margin-left: 2px;
+  }
+
+  &.pakcli-badge-pos-right-inline {
+    margin-left: 6px;
+    margin-right: 4px;
+  }
+
+  &.pakcli-badge-pos-right-align {
+    margin-left: auto;
+    margin-right: 4px;
+  }
 }
 
-/* Hide badges while a rename/create input is active in this title row */
-/* Obsidian uses contenteditable (not <input>) for rename — catch both */
+/* Ensure right-inline badges sit tight against the folder text, not pushed to the far right */
+.nav-folder-title.pakcli-title-badge-right-inline .nav-folder-title-content,
+.nav-folder-title.pakcli-title-badge-right-inline .tree-item-inner,
+.nav-folder-title:has(.pakcli-badge-pos-right-inline) .nav-folder-title-content,
+.nav-folder-title:has(.pakcli-badge-pos-right-inline) .tree-item-inner {
+  flex-grow: 0 !important;
+  flex-shrink: 1 !important;
+  flex-basis: auto !important;
+  min-width: 0 !important;
+}
+
+/* Only push external count badge (e.g. Note Count plugin) to far right if toggle is enabled */
+.pakcli-affect-count-badge .nav-folder-title .tree-item-flair,
+.pakcli-affect-count-badge .nav-folder-title .tree-item-flair-outer,
+.pakcli-affect-count-badge .nav-folder-title .nav-folder-title-extra,
+.nav-folder-title.pakcli-affect-count-badge .tree-item-flair,
+.nav-folder-title.pakcli-affect-count-badge .tree-item-flair-outer,
+.nav-folder-title.pakcli-affect-count-badge .nav-folder-title-extra {
+  margin-left: auto !important;
+  flex-shrink: 0 !important;
+}
+
+/* Hide badges completely while a rename/create input is active in this title row */
+/* Obsidian uses contenteditable (or <input>) for rename — catch both */
 .nav-folder-title:has([contenteditable="true"]) .pakcli-folder-index-badges,
 .nav-folder-title:has(input) .pakcli-folder-index-badges,
+.nav-folder-title[contenteditable="true"] .pakcli-folder-index-badges,
 .nav-file-title:has([contenteditable="true"]) .pakcli-folder-index-badges,
-.nav-file-title:has(input) .pakcli-folder-index-badges {
+.nav-file-title:has(input) .pakcli-folder-index-badges,
+.nav-file-title[contenteditable="true"] .pakcli-folder-index-badges {
   display: none !important;
   pointer-events: none !important;
-}
-
-/* Right-align: badge is a direct child of the title flex row, pushed to the end */
-.nav-folder-title > .pakcli-folder-index-badges.pakcli-badge-pos-right-align {
-  margin-left: auto;
-  flex-shrink: 0;
 }
 
 .pakcli-folder-badge {
