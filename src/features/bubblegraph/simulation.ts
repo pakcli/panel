@@ -362,7 +362,8 @@ export class BubbleSimulation {
                             const ca = children[i];
                             for (let j = i + 1; j < children.length; j++) {
                                 const cb = children[j];
-                                const minD = ca.radius + cb.radius + (isParentScoped ? 4.0 : (ca.isDense || cb.isDense ? 3.0 : 2.0));
+                                const isRel = Boolean(ca.isRelTier || cb.isRelTier);
+                                const minD = ca.radius + cb.radius + (isRel ? 22.0 : (isParentScoped ? 4.0 : (ca.isDense || cb.isDense ? 3.0 : 2.0)));
                                 const dx = cb.centroid.x - ca.centroid.x;
                                 const dy = cb.centroid.y - ca.centroid.y;
                                 const d2 = dx * dx + dy * dy;
@@ -765,8 +766,9 @@ export class BubbleSimulation {
                         const parent = clusterById.get(sa.parentClusterId);
                         if (!parent) continue;
                         const isParentScopedRoot = Boolean(this.options.scopedFolder && (parent.id === this.options.scopedFolder || parent.depth === 1));
-                        const extraSiblingMargin = isParentScopedRoot ? 10.0 : (sa.isDense || sb.isDense ? 5.0 : 2.5);
-                        const minD = sa.radius + sb.radius + 3.0;
+                        const isRel = Boolean(sa.isRelTier || sb.isRelTier);
+                        const extraSiblingMargin = isRel ? 32.0 : (isParentScopedRoot ? 10.0 : (sa.isDense || sb.isDense ? 5.0 : 2.5));
+                        const minD = sa.radius + sb.radius + (isRel ? 18.0 : 3.0);
                         const parentBaseR = parent.baseRadius || parent.radius;
                         const idealD = Math.max(minD + extraSiblingMargin, (parentBaseR * 0.80) / Math.sqrt(Math.max(1, clustersAtDepth.length)));
                         const dx = sb.centroid.x - sa.centroid.x;
@@ -803,7 +805,8 @@ export class BubbleSimulation {
 
                             const parent = clusterById.get(sa.parentClusterId);
                             const isParentScopedRoot = Boolean(this.options.scopedFolder && parent && (parent.id === this.options.scopedFolder || parent.depth === 1));
-                            const minD = sa.radius + sb.radius + (isParentScopedRoot ? 8.0 : (sa.isDense || sb.isDense ? 5.0 : 3.0));
+                            const isRel = Boolean(sa.isRelTier || sb.isRelTier);
+                            const minD = sa.radius + sb.radius + (isRel ? 20.0 : (isParentScopedRoot ? 8.0 : (sa.isDense || sb.isDense ? 5.0 : 3.0)));
                             const dx = sb.centroid.x - sa.centroid.x;
                             const dy = sb.centroid.y - sa.centroid.y;
                             const d2 = dx * dx + dy * dy;

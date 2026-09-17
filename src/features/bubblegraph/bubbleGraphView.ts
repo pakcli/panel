@@ -37,8 +37,8 @@ export class BubbleGraphView extends ItemView {
     private customLabelFormats: string = 'md, canvas, json, base, csv, folder';
     private customLabelFormatsSet: Set<string> = new Set(['md', 'canvas', 'json', 'base', 'csv', 'folder']);
     private showLines: boolean = true;
-    private labelMinLevel: number = 1; // 1 to 4
-    private labelMaxLevel: number = 2; // 1 to 4
+    private labelMinLevel: number = 1; // 1 to 5
+    private labelMaxLevel: number = 2; // 1 to 5
     private labelRangeLevel: number = 2; // legacy single level fallback
     private labelFontSize: number = 11; // 8 - 24px
 
@@ -1237,7 +1237,7 @@ export class BubbleGraphView extends ItemView {
             cls: 'pakcli-range-min'
         });
         this.levelMinSliderEl.min = '1';
-        this.levelMinSliderEl.max = '4';
+        this.levelMinSliderEl.max = '5';
         this.levelMinSliderEl.step = '1';
         this.levelMinSliderEl.value = this.labelMinLevel.toString();
 
@@ -1246,7 +1246,7 @@ export class BubbleGraphView extends ItemView {
             cls: 'pakcli-range-max'
         });
         this.levelMaxSliderEl.min = '1';
-        this.levelMaxSliderEl.max = '4';
+        this.levelMaxSliderEl.max = '5';
         this.levelMaxSliderEl.step = '1';
         this.levelMaxSliderEl.value = this.labelMaxLevel.toString();
 
@@ -1263,7 +1263,7 @@ export class BubbleGraphView extends ItemView {
 
         const handleMinInput = () => {
             let minVal = parseInt(this.levelMinSliderEl.value, 10) || 1;
-            let maxVal = parseInt(this.levelMaxSliderEl.value, 10) || 4;
+            let maxVal = parseInt(this.levelMaxSliderEl.value, 10) || 5;
             if (minVal > maxVal) {
                 minVal = maxVal;
                 this.levelMinSliderEl.value = minVal.toString();
@@ -1276,7 +1276,7 @@ export class BubbleGraphView extends ItemView {
 
         const handleMaxInput = () => {
             let minVal = parseInt(this.levelMinSliderEl.value, 10) || 1;
-            let maxVal = parseInt(this.levelMaxSliderEl.value, 10) || 4;
+            let maxVal = parseInt(this.levelMaxSliderEl.value, 10) || 5;
             if (maxVal < minVal) {
                 maxVal = minVal;
                 this.levelMaxSliderEl.value = maxVal.toString();
@@ -1304,7 +1304,7 @@ export class BubbleGraphView extends ItemView {
             if (this.labelMinLevel === this.labelMaxLevel) {
                 const rect = dualSliderContainer.getBoundingClientRect();
                 const relX = (e.clientX - rect.left) / (rect.width || 1);
-                const thumbPos = (this.labelMinLevel - 1) / 3;
+                const thumbPos = (this.labelMinLevel - 1) / 4;
                 if (relX < thumbPos) {
                     this.levelMinSliderEl.style.zIndex = '5';
                     this.levelMaxSliderEl.style.zIndex = '4';
@@ -2736,10 +2736,11 @@ export class BubbleGraphView extends ItemView {
 
     private getLevelName(lvl: number): string {
         switch (lvl) {
-            case 1: return 'Top Folders & Root Files';
-            case 2: return 'Level 1 Files & Subfolders';
-            case 3: return 'Level 2 Files & Deep Folders';
-            case 4: return 'Deepest Hierarchy (L4+)';
+            case 1: return 'L1: Root / Relation Folder';
+            case 2: return 'L2: Bad, Unsure, Friends & Subfolders';
+            case 3: return 'L3: Close Friends & L3 Folders';
+            case 4: return 'L4: Family & L4 Folders';
+            case 5: return 'L5: Household & L5+ Folders';
             default: return `Level ${lvl}`;
         }
     }
@@ -2756,8 +2757,8 @@ export class BubbleGraphView extends ItemView {
         this.levelMinSliderEl.value = this.labelMinLevel.toString();
         this.levelMaxSliderEl.value = this.labelMaxLevel.toString();
 
-        const leftPercent = ((this.labelMinLevel - 1) / 3) * 100;
-        const widthPercent = ((this.labelMaxLevel - this.labelMinLevel) / 3) * 100;
+        const leftPercent = ((this.labelMinLevel - 1) / 4) * 100;
+        const widthPercent = ((this.labelMaxLevel - this.labelMinLevel) / 4) * 100;
         if (this.levelHighlightEl) {
             this.levelHighlightEl.style.left = `${leftPercent}%`;
             this.levelHighlightEl.style.width = `${widthPercent}%`;
@@ -2765,13 +2766,13 @@ export class BubbleGraphView extends ItemView {
 
         // Compute scope depth (items inside scoped folder start at 1 + scope depth)
         const scopeLevel = (this.scopedFolder && this.scopedFolder !== '/' && this.scopedFolder !== '.')
-            ? Math.min(4, 1 + this.scopedFolder.split('/').filter(Boolean).length)
+            ? Math.min(5, 1 + this.scopedFolder.split('/').filter(Boolean).length)
             : 1;
 
         // Visual grayout of unavailable levels < scopeLevel without altering stored user setting
         if (this.levelGrayoutEl) {
             if (scopeLevel > 1) {
-                const grayoutWidth = ((scopeLevel - 1) / 3) * 100;
+                const grayoutWidth = ((scopeLevel - 1) / 4) * 100;
                 this.levelGrayoutEl.style.width = `${grayoutWidth}%`;
                 this.levelGrayoutEl.style.display = 'block';
                 this.levelGrayoutEl.title = `Levels 1${scopeLevel > 2 ? `-${scopeLevel - 1}` : ''} inactive: view scoped to Level ${scopeLevel} (${this.scopedFolder})`;
@@ -2812,8 +2813,8 @@ export class BubbleGraphView extends ItemView {
     }
 
     public async setTextLevelRange(min: number, max: number): Promise<void> {
-        this.labelMinLevel = Math.max(1, Math.min(4, Math.min(min, max)));
-        this.labelMaxLevel = Math.max(1, Math.min(4, Math.max(min, max)));
+        this.labelMinLevel = Math.max(1, Math.min(5, Math.min(min, max)));
+        this.labelMaxLevel = Math.max(1, Math.min(5, Math.max(min, max)));
         this.labelRangeLevel = this.labelMaxLevel;
         this.plugin.settings.bubbleLabelMinLevel = this.labelMinLevel;
         this.plugin.settings.bubbleLabelMaxLevel = this.labelMaxLevel;

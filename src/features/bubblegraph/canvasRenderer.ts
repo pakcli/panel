@@ -29,8 +29,8 @@ export interface RenderState {
     labelMode?: 'all' | 'folder' | 'text' | 'custom' | 'off' | 'hide';
     customLabelFormats?: Set<string>;
     labelRangeLevel?: number; // legacy single level fallback
-    labelMinLevel?: number; // 1 to 4 (hierarchy depth: 1 = root/top, 2 = subfolder, 3 = L3, 4 = L4+)
-    labelMaxLevel?: number; // 1 to 4
+    labelMinLevel?: number; // 1 to 5 (hierarchy depth: 1 = root/top, 2 = subfolder, 3 = L3, 4 = L4, 5 = L5+)
+    labelMaxLevel?: number; // 1 to 5
     labelFontSize: number; // 8 to 24px
     hullOpacity: number;
     intraLinkOpacity: number;
@@ -149,7 +149,7 @@ export class CanvasRenderer {
 
         // Resolve scope level and effective text levels (items inside scoped folder start at 1 + scope depth)
         const scopeLevel = (state.scopedFolder && state.scopedFolder !== '/' && state.scopedFolder !== '.')
-            ? Math.min(4, 1 + state.scopedFolder.split('/').filter(Boolean).length)
+            ? Math.min(5, 1 + state.scopedFolder.split('/').filter(Boolean).length)
             : 1;
         const userMin = state.labelMinLevel ?? 1;
         const userMax = state.labelMaxLevel ?? (state.labelRangeLevel ?? 2);
@@ -262,19 +262,22 @@ export class CanvasRenderer {
                 )));
 
             if (state.showLabels && isFolderModeAllowed) {
-                const clusterParts = cluster.id ? cluster.id.split('/').filter(Boolean) : [];
-                let clusterLevel = Math.min(4, Math.max(1, clusterParts.length));
-                if (state.scopedFolder && cluster.id && (cluster.id === state.scopedFolder || cluster.id.startsWith(state.scopedFolder + '/'))) {
-                    const subParts = cluster.id === state.scopedFolder ? [] : cluster.id.slice(state.scopedFolder.length + 1).split('/').filter(Boolean);
-                    clusterLevel = Math.min(4, Math.max(1, 1 + subParts.length));
+                let clusterLevel = cluster.depth || 1;
+                if (!cluster.isRelTier) {
+                    const clusterParts = cluster.id ? cluster.id.split('/').filter(Boolean) : [];
+                    clusterLevel = Math.min(5, Math.max(1, cluster.depth || clusterParts.length));
+                    if (state.scopedFolder && cluster.id && (cluster.id === state.scopedFolder || cluster.id.startsWith(state.scopedFolder + '/'))) {
+                        const subParts = cluster.id === state.scopedFolder ? [] : cluster.id.slice(state.scopedFolder.length + 1).split('/').filter(Boolean);
+                        clusterLevel = Math.min(5, Math.max(1, 1 + subParts.length));
+                    }
                 }
                 const isFolderLevelAllowed = (clusterLevel >= userMin && clusterLevel <= userMax) || 
                                              (clusterLevel >= effectiveMinLevel && clusterLevel <= effectiveMaxLevel);
 
-                if (isHovered || isFolderLevelAllowed || cluster.isRelTier) {
-                    if (cluster.depth === 1 && !cluster.isRelTier) {
+                if (isHovered || isFolderLevelAllowed) {
+                    if (cluster.depth === 1) {
                         this.drawClusterFolderTab(cluster, baseColor, isHovered, state);
-                    } else if (isHovered || cluster.isRelTier || (cluster.radius >= 8 && (zoom >= 0.25 || isFolderLevelAllowed))) {
+                    } else if (isHovered || cluster.radius >= 8) {
                         this.drawSubClusterFolderTab(cluster, baseColor, isHovered, state);
                     }
                 }
@@ -469,7 +472,7 @@ export class CanvasRenderer {
 
         // Resolve scope level and effective text levels (items inside scoped folder start at 1 + scope depth)
         const scopeLevel = (state.scopedFolder && state.scopedFolder !== '/' && state.scopedFolder !== '.')
-            ? Math.min(4, 1 + state.scopedFolder.split('/').filter(Boolean).length)
+            ? Math.min(5, 1 + state.scopedFolder.split('/').filter(Boolean).length)
             : 1;
         const userMin = state.labelMinLevel ?? 1;
         const userMax = state.labelMaxLevel ?? (state.labelRangeLevel ?? 2);
@@ -500,16 +503,22 @@ export class CanvasRenderer {
                 state.nodeImageBorder || 'thick'
             );
 
-            // Draw Labels (Dual Handle Range Level 1-4: File/Folder Hierarchy Depth based)
+            // Draw Labels (Dual Handle Range Level 1-5: File/Folder Hierarchy Depth based)
             // Level 1 = Vault root files (nodeParts.length === 0)
-            // Level 2 = Files inside top-level folders (nodeParts.length === 1, e.g. "Digital Library/Sacrifice Self Ending.md")
-            // Level 3 = Files inside subfolders (nodeParts.length === 2)
-            // Level 4 = Files inside Level 3+ deep subfolders (nodeParts.length >= 3)
+            // Level 2 = Files inside top-level folders / Bad / Unsure / Friends
+            // Level 3 = Files inside subfolders / Close Friends
+            // Level 4 = Files inside Level 3+ subfolders / Family
+            // Level 5 = Household & Deepest subfolders
             const nodeParts = node.folderPath ? node.folderPath.split('/').filter(Boolean) : [];
-            let nodeLevel = Math.min(4, 1 + nodeParts.length);
-            if (state.scopedFolder && node.folderPath && (node.folderPath === state.scopedFolder || node.folderPath.startsWith(state.scopedFolder + '/'))) {
+            let nodeLevel = Math.min(5, 1 + nodeParts.length);
+            if (node.isRelTier && node.subClusterId) {
+                const parentCluster = state.clusters.find(c => c.id === node.subClusterId);
+                if (parentCluster && parentCluster.depth) {
+                    nodeLevel = parentCluster.depth;
+                }
+            } else if (state.scopedFolder && node.folderPath && (node.folderPath === state.scopedFolder || node.folderPath.startsWith(state.scopedFolder + '/'))) {
                 const subParts = node.folderPath === state.scopedFolder ? [] : node.folderPath.slice(state.scopedFolder.length + 1).split('/').filter(Boolean);
-                nodeLevel = Math.min(4, Math.max(1, 1 + subParts.length));
+                nodeLevel = Math.min(5, Math.max(1, 1 + subParts.length));
             }
             const isLevelAllowed = (nodeLevel >= userMin && nodeLevel <= userMax) || 
                                    (nodeLevel >= effectiveMinLevel && nodeLevel <= effectiveMaxLevel);
