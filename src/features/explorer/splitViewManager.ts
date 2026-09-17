@@ -2,6 +2,7 @@ import { App, Menu, Notice, setIcon, TFile, TFolder, TAbstractFile, WorkspaceLea
 import type PakCLITablePlugin from '../../main';
 import { ExplorerSectionId, RecentTimeFilter, RECENT_TIME_FILTER_OPTIONS } from './types';
 import { ensureFolderExists } from '../sqlseal/utils/views';
+import { DictionaryPopupModal } from '../dictionary/dictionaryPopupModal';
 
 export class SplitViewManager implements HoverParent {
   public hoverPopover: HoverPopover | null = null;
@@ -294,9 +295,21 @@ export class SplitViewManager implements HoverParent {
       new Notice(`Index Rows (index.md & index.base): ${next ? 'Shown' : 'Hidden'}`);
     });
 
+    // 4. A-Z Dictionary Popup Button (Beside Show Index Toggle)
+    const dictBtn = document.createElement('div');
+    dictBtn.className = 'clickable-icon nav-action-button pakcli-explorer-dict-btn';
+    dictBtn.setAttribute('aria-label', 'Open A–Z Dictionary Navigator (Popup)');
+    setIcon(dictBtn, 'book-marked');
+
+    dictBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      new DictionaryPopupModal(this.plugin).open();
+    });
+
     navButtons.appendChild(splitBtn);
     navButtons.appendChild(baseBtn);
     navButtons.appendChild(showIndexBtn);
+    navButtons.appendChild(dictBtn);
 
     this.splitBtnEl = splitBtn;
     this.baseBtnEl = baseBtn;
@@ -1237,11 +1250,15 @@ export class SplitViewManager implements HoverParent {
 views:
   - type: table
     name: Table
+  - type: list
+    name: List
 `;
     } else {
       initialContent = `views:
   - type: table
     name: Table
+  - type: list
+    name: List
 `;
     }
 

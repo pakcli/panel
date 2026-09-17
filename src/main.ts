@@ -45,6 +45,10 @@ import { CodeblockScaler } from './features/codeblock/scaler';
 // Bubble Graph View (Spec v18)
 import { BUBBLE_GRAPH_VIEW_TYPE, BubbleGraphView } from './features/bubblegraph';
 
+// A–Z Dictionary Imports
+import { DictionaryPopupModal } from './features/dictionary/dictionaryPopupModal';
+import { DictionaryExplorerManager } from './features/dictionary/dictionaryExplorerManager';
+
 export default class PakCLITablePlugin extends Plugin {
 	declare settings: PakCLITableSettings;
 	router!: AssetRouter;
@@ -56,6 +60,7 @@ export default class PakCLITablePlugin extends Plugin {
 	settingsPanelStates: Map<string, boolean> = new Map();
 	splitViewManager!: SplitViewManager;
 	relationshipExplorerManager!: RelationshipExplorerManager;
+	dictionaryExplorerManager!: DictionaryExplorerManager;
 	vaultRoot: string = '';
 	bubbleRibbonEl: HTMLElement | null = null;
 
@@ -295,6 +300,19 @@ export default class PakCLITablePlugin extends Plugin {
 			}
 		});
 
+		// A–Z Dictionary Navigator Ribbon Icon & Command
+		this.addRibbonIcon('book-marked', 'PakCLI: A–Z Dictionary Navigator', () => {
+			new DictionaryPopupModal(this).open();
+		});
+
+		this.addCommand({
+			id: 'open-az-dictionary-navigator',
+			name: 'Open A–Z Dictionary Navigator',
+			callback: () => {
+				new DictionaryPopupModal(this).open();
+			},
+		});
+
 		this.addRibbonIcon('git-fork', 'Create New Timeline Narrative Note', async () => {
 			const sample = [
 				'# Timeline Narrative Decision Tree',
@@ -415,6 +433,10 @@ export default class PakCLITablePlugin extends Plugin {
 		// Initialize Relationship Virtual Explorer Manager
 		this.relationshipExplorerManager = new RelationshipExplorerManager(this);
 		this.relationshipExplorerManager.init();
+
+		// Initialize Dictionary Virtual Explorer Manager
+		this.dictionaryExplorerManager = new DictionaryExplorerManager(this);
+		this.dictionaryExplorerManager.init();
 
 		// Replace Vanilla GraphView listener if enabled
 		this.registerEvent(
@@ -643,6 +665,9 @@ export default class PakCLITablePlugin extends Plugin {
 		}
 		if (this.relationshipExplorerManager) {
 			this.relationshipExplorerManager.destroy();
+		}
+		if (this.dictionaryExplorerManager) {
+			this.dictionaryExplorerManager.destroy();
 		}
 		eventBus.emit('table:unloaded', { version: this.manifest.version });
 	}
@@ -2936,6 +2961,53 @@ export default class PakCLITablePlugin extends Plugin {
 							.onChange(async (val) => {
 								this.settings.folderIndexUseTimestamp = val;
 								await this.saveSettings();
+							});
+					});
+
+				new Setting(containerEl)
+					.setName('A–Z Dictionary Settings')
+					.setDesc('Configure the A–Z Dictionary Navigator popup, scope, and folder path.')
+					.setHeading();
+
+				new Setting(containerEl)
+					.setName('Dictionary Scope Mode')
+					.setDesc('Choose whether the A–Z Dictionary indexes a designated folder or dynamically tracks the currently active note folder.')
+					.addDropdown((d) => {
+						d.addOption('specific', 'Specific Folder (Folder Khusus)')
+							.addOption('active', 'Active Folder (Folder Aktif)')
+							.setValue(this.settings.dictionaryScope || 'specific')
+							.onChange(async (val) => {
+								this.settings.dictionaryScope = val as 'specific' | 'active';
+								await this.saveSettings();
+							});
+					});
+
+				new Setting(containerEl)
+					.setName('Target Dictionary Folder')
+					.setDesc('Folder path to index when Scope Mode is set to "Specific Folder".')
+					.addText((text) => {
+						text.setPlaceholder('Dictionary')
+							.setValue(this.settings.dictionaryFolderPath || 'Dictionary')
+							.onChange(async (val) => {
+								this.settings.dictionaryFolderPath = val.trim() || 'Dictionary';
+								await this.saveSettings();
+								if (this.dictionaryExplorerManager) {
+									this.dictionaryExplorerManager.refreshVirtualFolders();
+								}
+							});
+					});
+
+				new Setting(containerEl)
+					.setName('Virtual A–Z Folders in File Explorer')
+					.setDesc('Organize files inside the Dictionary folder under virtual letter folders (A, B, C...) in the Obsidian file tree without moving physical files.')
+					.addToggle((t) => {
+						t.setValue(this.settings.enableDictionaryVirtualFolders !== false)
+							.onChange(async (val) => {
+								this.settings.enableDictionaryVirtualFolders = val;
+								await this.saveSettings();
+								if (this.dictionaryExplorerManager) {
+									this.dictionaryExplorerManager.refreshVirtualFolders();
+								}
 							});
 					});
 

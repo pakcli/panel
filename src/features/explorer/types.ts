@@ -93,6 +93,13 @@ export interface ExplorerSettings {
   folderIndexSuffix?: string;
   folderIndexUseTimestamp?: boolean;
   carouselOrientation?: 'horizontal' | 'vertical';
+  enableDictionaryMode?: boolean;
+  dictionaryScope?: 'specific' | 'active';
+  dictionaryFolderPath?: string;
+  dictionaryPinnedTerms?: string[];
+  dictionaryActiveLetter?: string | null;
+  dictionaryDisplayMode?: 'list' | 'grouped';
+  enableDictionaryVirtualFolders?: boolean;
 }
 
 export const DEFAULT_EXPLORER_SETTINGS: ExplorerSettings = {
@@ -123,5 +130,12 @@ export const DEFAULT_EXPLORER_SETTINGS: ExplorerSettings = {
   folderIndexSuffix: '',
   folderIndexUseTimestamp: false,
   carouselOrientation: 'horizontal',
+  enableDictionaryMode: true,
+  dictionaryScope: 'specific',
+  dictionaryFolderPath: 'Dictionary',
+  dictionaryPinnedTerms: [],
+  dictionaryActiveLetter: null,
+  dictionaryDisplayMode: 'list',
+  enableDictionaryVirtualFolders: true,
 };
 

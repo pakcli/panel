@@ -2,7 +2,8 @@
 
 .pakcli-explorer-split-btn,
 .pakcli-explorer-base-btn,
-.pakcli-explorer-show-index-btn {
+.pakcli-explorer-show-index-btn,
+.pakcli-explorer-dict-btn {
   transition: color 0.15s ease, background 0.15s ease;
 
   &.is-active {
@@ -665,22 +666,27 @@ body.pakcli-resizing-y {
       pointer-events: none;
     }
 
-    .nav-folder-title-content {
+    .nav-folder-title-content,
+    .tree-item-inner {
       font-size: var(--nav-item-size, 13px);
       font-weight: 500;
       color: var(--text-normal);
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
-      flex-shrink: 0;
+      flex-grow: 0 !important;
+      flex-shrink: 0 !important;
+      flex-basis: auto !important;
+      min-width: 0 !important;
       pointer-events: none;
     }
 
-    // Connecting line between text and virtual badge
+    // Connecting line reaching continuously from text to virtual badge
     .pakcli-virtual-folder-line {
-      flex: 1 1 auto;
+      flex: 1 1 0% !important;
+      min-width: 8px;
       height: 1px;
-      margin: 0 10px 0 8px;
+      margin: 0 6px 0 8px;
       background: var(--tier-color, var(--interactive-accent));
       opacity: 0.32;
       border-radius: 1px;
@@ -705,7 +711,7 @@ body.pakcli-resizing-y {
       background: var(--background-modifier-form-field, rgba(var(--mono-rgb-100), 0.06));
       color: var(--text-muted);
       border: 1px solid var(--background-modifier-border);
-      margin-left: 6px;
+      margin-left: 0;
       flex-shrink: 0;
       vertical-align: middle;
       user-select: none;
@@ -768,4 +774,502 @@ body.pakcli-resizing-y {
     }
   }
 }
+
+/* ── A–Z Dictionary Navigator Modal & Full Listed View ───────────────────── */
+
+.pakcli-dict-modal {
+  max-width: 680px !important;
+  width: 90vw !important;
+  max-height: 80vh !important;
+  height: 75vh !important;
+  display: flex !important;
+  flex-direction: column !important;
+  padding: 0 !important;
+  border-radius: var(--radius-l) !important;
+  background: var(--background-primary) !important;
+  box-shadow: var(--shadow-l) !important;
+  overflow: hidden !important;
+
+  .modal-content {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    padding: 0;
+    overflow: hidden;
+  }
+
+  /* Header */
+  .pakcli-dict-header {
+    padding: 16px 20px 12px 20px;
+    background: var(--background-secondary);
+    border-bottom: 1px solid var(--background-modifier-border);
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .pakcli-dict-title-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+
+    .pakcli-dict-title-left {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+
+      .pakcli-dict-title-icon {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        color: var(--interactive-accent);
+        svg {
+          width: 20px;
+          height: 20px;
+        }
+      }
+
+      .pakcli-dict-title-text {
+        margin: 0;
+        font-size: 1.15rem;
+        font-weight: 700;
+        color: var(--text-normal);
+        line-height: 1.2;
+      }
+    }
+
+    .pakcli-dict-scope-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px;
+      font-size: 0.78rem;
+      font-weight: 600;
+      border-radius: 20px;
+      border: 1px solid var(--background-modifier-border);
+      background: var(--background-primary);
+      color: var(--text-muted);
+      cursor: pointer;
+      transition: all 0.15s ease;
+
+      .pakcli-dict-scope-icon svg {
+        width: 13px;
+        height: 13px;
+      }
+
+      &:hover {
+        border-color: var(--interactive-accent);
+        color: var(--text-normal);
+      }
+
+      &.is-active-scope {
+        background: rgba(var(--interactive-accent-rgb, 120, 80, 200), 0.12);
+        border-color: var(--interactive-accent);
+        color: var(--interactive-accent);
+      }
+    }
+  }
+
+  /* Search Input */
+  .pakcli-dict-search-row {
+    .pakcli-dict-search-wrap {
+      position: relative;
+      display: flex;
+      align-items: center;
+      width: 100%;
+
+      .pakcli-dict-search-icon {
+        position: absolute;
+        left: 12px;
+        color: var(--text-faint);
+        display: flex;
+        align-items: center;
+        pointer-events: none;
+
+        svg {
+          width: 15px;
+          height: 15px;
+        }
+      }
+
+      .pakcli-dict-search-input {
+        width: 100%;
+        padding: 8px 34px 8px 34px;
+        font-size: 0.88rem;
+        border-radius: var(--radius-m);
+        border: 1px solid var(--background-modifier-border);
+        background: var(--background-primary);
+        color: var(--text-normal);
+
+        &:focus {
+          border-color: var(--interactive-accent);
+          box-shadow: 0 0 0 2px rgba(var(--interactive-accent-rgb, 120, 80, 200), 0.2);
+        }
+      }
+
+      .pakcli-dict-search-clear {
+        position: absolute;
+        right: 10px;
+        color: var(--text-muted);
+        cursor: pointer;
+
+        svg {
+          width: 14px;
+          height: 14px;
+        }
+
+        &:hover {
+          color: var(--text-normal);
+        }
+      }
+    }
+  }
+
+  /* Alphabet Shortcuts Ribbon */
+  .pakcli-dict-ribbon-wrap {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 4px;
+    padding: 10px 20px;
+    background: var(--background-secondary-alt, var(--background-secondary));
+    border-bottom: 1px solid var(--background-modifier-border);
+
+    .pakcli-dict-letter-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 3px;
+      min-width: 26px;
+      height: 24px;
+      padding: 0 6px;
+      font-size: 0.72rem;
+      font-weight: 700;
+      border-radius: 4px;
+      border: 1px solid var(--background-modifier-border);
+      background: var(--background-primary);
+      color: var(--text-muted);
+      cursor: pointer;
+      user-select: none;
+      transition: all 0.12s ease;
+
+      .pakcli-letter-count {
+        font-size: 0.62rem;
+        opacity: 0.7;
+        font-weight: 500;
+      }
+
+      &:hover:not(.is-dimmed) {
+        border-color: var(--interactive-accent);
+        color: var(--text-normal);
+      }
+
+      &.is-active,
+      &.is-pinned {
+        background: var(--interactive-accent) !important;
+        border-color: var(--interactive-accent) !important;
+        color: var(--text-on-accent) !important;
+        box-shadow: 0 1px 4px rgba(0, 0, 0, 0.15);
+
+        .pakcli-letter-count {
+          opacity: 0.9;
+        }
+      }
+
+      &.is-dimmed {
+        opacity: 0.35;
+        background: transparent;
+        border-color: transparent;
+        cursor: default;
+      }
+    }
+  }
+
+  /* Scroll Area for Lists */
+  .pakcli-dict-scroll-area {
+    flex: 1 1 auto;
+    overflow-y: auto;
+    padding: 12px 16px 24px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  /* Section Header */
+  .pakcli-dict-section-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 4px 6px 6px 6px;
+    border-bottom: 1px solid var(--background-modifier-border-focus, var(--background-modifier-border));
+
+    .pakcli-dict-section-title {
+      font-size: 0.8rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-muted);
+    }
+
+    .pakcli-dict-section-count {
+      font-size: 0.72rem;
+      font-weight: 600;
+      padding: 1px 6px;
+      border-radius: 10px;
+      background: var(--background-modifier-hover);
+      color: var(--text-faint);
+    }
+  }
+
+  /* Full Listed Mode (• ☰ List Style) */
+  .pakcli-dict-list {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .pakcli-dict-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 10px;
+    border-radius: var(--radius-s);
+    cursor: pointer;
+    user-select: none;
+    transition: background-color 0.1s ease;
+
+    &:hover {
+      background-color: var(--nav-item-background-hover, var(--background-modifier-hover));
+
+      .pakcli-dict-item-title {
+        color: var(--text-accent, var(--interactive-accent));
+      }
+
+      .pakcli-dict-pin-btn {
+        opacity: 0.7;
+      }
+    }
+
+    /* Bullet indicator: • */
+    .pakcli-dict-bullet {
+      font-size: 14px;
+      line-height: 1;
+      color: var(--text-faint);
+      flex-shrink: 0;
+    }
+
+    /* List icon: ☰ */
+    .pakcli-dict-list-icon {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--text-muted);
+      flex-shrink: 0;
+
+      svg {
+        width: 14px;
+        height: 14px;
+      }
+    }
+
+    /* Note title */
+    .pakcli-dict-item-title {
+      flex: 1 1 auto;
+      font-size: 0.88rem;
+      font-weight: 500;
+      color: var(--text-normal);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    /* Right metadata & pin */
+    .pakcli-dict-item-meta {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-shrink: 0;
+
+      .pakcli-dict-item-time {
+        font-size: 0.72rem;
+        color: var(--text-faint);
+      }
+
+      .pakcli-dict-pin-btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        color: var(--text-muted);
+        opacity: 0;
+        transition: opacity 0.12s ease, color 0.12s ease;
+
+        svg {
+          width: 13px;
+          height: 13px;
+        }
+
+        &:hover {
+          opacity: 1 !important;
+          color: var(--interactive-accent);
+        }
+
+        &.is-pinned {
+          opacity: 1 !important;
+          color: var(--interactive-accent);
+        }
+      }
+    }
+  }
+
+  /* Empty States */
+  .pakcli-dict-empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 48px 24px;
+    text-align: center;
+    color: var(--text-muted);
+
+    .pakcli-dict-empty-icon {
+      margin-bottom: 12px;
+      color: var(--text-faint);
+      svg {
+        width: 36px;
+        height: 36px;
+      }
+    }
+
+    .pakcli-dict-empty-title {
+      font-size: 0.95rem;
+      font-weight: 600;
+      color: var(--text-normal);
+      margin-bottom: 4px;
+    }
+
+    .pakcli-dict-empty-sub {
+      font-size: 0.82rem;
+      color: var(--text-muted);
+    }
+  }
+
+  .pakcli-dict-no-match {
+    padding: 24px;
+    text-align: center;
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    font-style: italic;
+  }
+
+  /* Virtual Folder Groups inside Modal */
+  .pakcli-dict-virtual-folders-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .pakcli-dict-folder-group {
+    display: flex;
+    flex-direction: column;
+    border-radius: var(--radius-m);
+    border: 1px solid var(--background-modifier-border);
+    background: var(--background-primary);
+    overflow: hidden;
+    transition: border-color 0.15s ease;
+
+    &:hover {
+      border-color: var(--interactive-accent);
+    }
+
+    .pakcli-dict-folder-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 7px 12px;
+      background: var(--background-secondary);
+      cursor: pointer;
+      user-select: none;
+
+      .pakcli-dict-folder-left {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+
+        .pakcli-dict-folder-chevron {
+          display: inline-flex;
+          align-items: center;
+          color: var(--text-faint);
+          svg { width: 14px; height: 14px; }
+        }
+
+        .pakcli-dict-folder-icon {
+          display: inline-flex;
+          align-items: center;
+          color: var(--interactive-accent);
+          svg { width: 15px; height: 15px; }
+        }
+
+        .pakcli-dict-folder-name {
+          font-size: 0.95rem;
+          font-weight: 700;
+          color: var(--text-normal);
+        }
+      }
+
+      .pakcli-dict-folder-count {
+        font-size: 0.72rem;
+        font-weight: 600;
+        padding: 2px 7px;
+        border-radius: 12px;
+        background: var(--background-modifier-form-field);
+        color: var(--text-muted);
+      }
+    }
+
+    &.is-collapsed {
+      .pakcli-dict-folder-children {
+        display: none !important;
+      }
+    }
+
+    .pakcli-dict-folder-children {
+      padding: 4px 8px 6px 12px;
+    }
+  }
+
+  .pakcli-dict-section-controls {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+
+    .pakcli-dict-ctrl-btn {
+      padding: 2px 8px;
+      font-size: 0.7rem;
+      border-radius: 4px;
+      background: var(--background-modifier-hover);
+      border: 1px solid var(--background-modifier-border);
+      color: var(--text-muted);
+      cursor: pointer;
+
+      &:hover {
+        color: var(--text-normal);
+        border-color: var(--interactive-accent);
+      }
+    }
+  }
+}
+
+/* ── File Explorer Virtual A–Z Folders (Dictionary Folder in Vault Tree) ─── */
+.pakcli-dict-virtual-folder {
+  // Inherits all .pakcli-virtual-folder styles (canvas watermark, line, badge, chevron, flair count)
+  .pakcli-dict-virtual-folder-title {
+    .nav-folder-title-content {
+      font-weight: 600;
+      letter-spacing: 0.05em;
+    }
+  }
+}
+
+
 
