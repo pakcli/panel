@@ -1,0 +1,554 @@
+/* ========================================================================= */
+/* PakCLI Audio Engine, Tactile SFX & Vault MP3 Player Styles               */
+/* Strict Obsidian Native Theming & 50% Zero-Animation Screen Popup         */
+/* ========================================================================= */
+
+.pakcli-audio-popup-container {
+    position: fixed;
+    top: 0;
+    right: 0;
+    width: 50vw;
+    min-width: 380px;
+    max-width: 720px;
+    height: 100vh;
+    z-index: var(--layer-modal, 100);
+    background-color: var(--background-primary);
+    border-left: 1px solid var(--background-modifier-border);
+    box-shadow: -8px 0 28px rgba(0, 0, 0, 0.28);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+
+    /* Zero-animation rule: Instant pop-in/out without sluggish transitions */
+    transition: none !important;
+    transform: none !important;
+    animation: none !important;
+}
+
+.pakcli-audio-view-container {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    background-color: var(--background-primary);
+}
+
+.pakcli-audio-player-root {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    overflow: hidden;
+    color: var(--text-normal);
+}
+
+/* --- Header Bar --- */
+.pakcli-audio-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 18px;
+    background-color: var(--background-secondary);
+    border-bottom: 1px solid var(--background-modifier-border);
+    flex-shrink: 0;
+}
+
+.pakcli-audio-title-group {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 700;
+    font-size: 1.05rem;
+    color: var(--text-normal);
+}
+
+.pakcli-audio-header-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+
+    button {
+        background: transparent;
+        border: 1px solid transparent;
+        border-radius: var(--radius-s);
+        padding: 6px;
+        color: var(--text-muted);
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+
+        &:hover {
+            color: var(--text-normal);
+            background-color: var(--background-modifier-hover);
+            border-color: var(--background-modifier-border);
+        }
+    }
+}
+
+/* --- Scrollable Content --- */
+.pakcli-audio-scroll-container {
+    flex: 1;
+    overflow-y: auto;
+    padding: 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+/* --- Cards General --- */
+.pakcli-audio-card {
+    background-color: var(--background-secondary);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: var(--radius-m);
+    padding: 14px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+}
+
+.pakcli-card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.pakcli-card-section-label {
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-muted);
+}
+
+/* --- Now Playing Card --- */
+.pakcli-now-playing-card {
+    background: linear-gradient(180deg, var(--background-secondary) 0%, var(--background-secondary-alt, var(--background-secondary)) 100%);
+}
+
+.pakcli-track-info-box {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+}
+
+.pakcli-disc-icon {
+    font-size: 2.2rem;
+    line-height: 1;
+    display: inline-block;
+    transition: transform 0.2s linear;
+
+    &.is-spinning {
+        animation: pakcli-disc-spin 6s linear infinite;
+    }
+}
+
+@keyframes pakcli-disc-spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
+.pakcli-track-details {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.pakcli-track-title {
+    font-size: 1.05rem;
+    font-weight: 700;
+    color: var(--text-normal);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.pakcli-track-meta-row {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 4px;
+}
+
+.pakcli-track-folder {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 220px;
+}
+
+.pakcli-audio-select {
+    padding: 2px 6px;
+    font-size: 0.76rem;
+    border-radius: var(--radius-s);
+    border: 1px solid var(--background-modifier-border);
+    background-color: var(--background-primary);
+    color: var(--text-normal);
+    cursor: pointer;
+    max-width: 160px;
+}
+
+/* Scrubber */
+.pakcli-scrubber-container {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+}
+
+.pakcli-time-display {
+    font-family: var(--font-monospace);
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    min-width: 42px;
+    text-align: center;
+}
+
+.pakcli-scrubber-range {
+    flex: 1;
+    accent-color: var(--interactive-accent);
+    cursor: pointer;
+    height: 6px;
+}
+
+/* Transport Buttons */
+.pakcli-transport-row {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    padding: 6px 0;
+}
+
+.pakcli-btn-transport {
+    background-color: var(--background-primary);
+    border: 1px solid var(--background-modifier-border);
+    color: var(--text-normal);
+    border-radius: var(--radius-m);
+    cursor: pointer;
+    padding: 8px 16px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.95rem;
+    transition: all 0.15s ease;
+
+    &:hover {
+        background-color: var(--background-modifier-hover);
+        border-color: var(--interactive-accent);
+        transform: translateY(-1px);
+    }
+
+    &:active {
+        transform: translateY(0);
+    }
+
+    &.mod-cta {
+        background-color: var(--interactive-accent);
+        color: var(--text-on-accent);
+        border-color: var(--interactive-accent);
+        padding: 10px 22px;
+        font-weight: 700;
+
+        &:hover {
+            opacity: 0.92;
+        }
+    }
+}
+
+/* Mode Buttons */
+.pakcli-mode-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.pakcli-mode-label {
+    font-size: 0.72rem;
+    font-weight: 700;
+    color: var(--text-muted);
+    margin-right: 4px;
+}
+
+.pakcli-btn-mode {
+    background-color: var(--background-primary);
+    border: 1px solid var(--background-modifier-border);
+    color: var(--text-muted);
+    border-radius: var(--radius-s);
+    cursor: pointer;
+    padding: 4px 10px;
+    font-size: 0.78rem;
+    font-weight: 500;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    transition: all 0.15s ease;
+
+    &:hover {
+        color: var(--text-normal);
+        background-color: var(--background-modifier-hover);
+    }
+
+    &.is-active {
+        background-color: rgba(var(--interactive-accent-rgb, 100, 100, 255), 0.18);
+        border-color: var(--interactive-accent);
+        color: var(--interactive-accent);
+        font-weight: 700;
+    }
+}
+
+.pakcli-mode-icon {
+    display: inline-flex;
+    align-items: center;
+}
+
+/* --- Volume Controls Card --- */
+.pakcli-volume-card {
+    gap: 10px;
+}
+
+.pakcli-volume-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.pakcli-vol-label {
+    width: 80px;
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: var(--text-normal);
+    flex-shrink: 0;
+}
+
+.pakcli-vol-slider {
+    flex: 1;
+    accent-color: var(--interactive-accent);
+    cursor: pointer;
+    height: 6px;
+}
+
+.pakcli-vol-val {
+    font-family: var(--font-monospace);
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    width: 36px;
+    text-align: right;
+}
+
+.pakcli-btn-mute {
+    padding: 4px 10px;
+    font-size: 0.78rem;
+    border-radius: var(--radius-s);
+    border: 1px solid var(--background-modifier-border);
+    background-color: var(--background-primary);
+    color: var(--text-normal);
+    cursor: pointer;
+
+    &:hover {
+        background-color: var(--background-modifier-hover);
+    }
+
+    &.is-muted {
+        background-color: rgba(239, 68, 68, 0.15);
+        color: #ef4444;
+        border-color: rgba(239, 68, 68, 0.35);
+    }
+}
+
+.pakcli-btn-test-sfx {
+    padding: 4px 10px;
+    font-size: 0.78rem;
+    border-radius: var(--radius-s);
+    border: 1px solid var(--background-modifier-border);
+    background-color: var(--background-primary);
+    color: var(--text-normal);
+    cursor: pointer;
+
+    &:hover {
+        background-color: var(--background-modifier-hover);
+        border-color: var(--interactive-accent);
+    }
+}
+
+/* --- Up Next Queue Card --- */
+.pakcli-queue-card {
+    gap: 12px;
+}
+
+.pakcli-queue-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.pakcli-queue-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.pakcli-btn-sm {
+    padding: 4px 9px;
+    font-size: 0.76rem;
+    font-weight: 600;
+    border-radius: var(--radius-s);
+    border: 1px solid var(--background-modifier-border);
+    background-color: var(--background-primary);
+    color: var(--text-normal);
+    cursor: pointer;
+
+    &:hover {
+        background-color: var(--background-modifier-hover);
+        border-color: var(--interactive-accent);
+    }
+}
+
+.pakcli-queue-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    max-height: 240px;
+    overflow-y: auto;
+}
+
+.pakcli-queue-empty {
+    padding: 16px 10px;
+    text-align: center;
+    font-size: 0.82rem;
+    color: var(--text-faint);
+    font-style: italic;
+    background-color: var(--background-primary);
+    border-radius: var(--radius-s);
+    border: 1px dashed var(--background-modifier-border);
+}
+
+.pakcli-queue-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 10px;
+    background-color: var(--background-primary);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: var(--radius-s);
+    cursor: pointer;
+    transition: background-color 0.12s ease;
+
+    &:hover {
+        background-color: var(--background-modifier-hover);
+        border-color: var(--interactive-accent);
+    }
+}
+
+.pakcli-queue-index {
+    font-family: var(--font-monospace);
+    font-size: 0.78rem;
+    color: var(--text-muted);
+    min-width: 18px;
+}
+
+.pakcli-priority-badge {
+    font-size: 0.68rem;
+    font-weight: 700;
+    padding: 1px 6px;
+    border-radius: 4px;
+    background-color: var(--interactive-accent);
+    color: var(--text-on-accent);
+}
+
+.pakcli-queue-item-title {
+    flex: 1;
+    min-width: 0;
+    font-size: 0.85rem;
+    font-weight: 500;
+    color: var(--text-normal);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.pakcli-queue-item-ext {
+    font-size: 0.72rem;
+    color: var(--text-muted);
+}
+
+.pakcli-queue-item-remove {
+    padding: 4px;
+    border: none;
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+
+    &:hover {
+        color: #ef4444;
+    }
+}
+
+/* --- Status Bar Widget Pill --- */
+.pakcli-audio-status-bar {
+    display: inline-flex;
+    align-items: center;
+    padding: 0 4px;
+}
+
+.pakcli-audio-status-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 2px 8px;
+    background-color: var(--background-secondary);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 100px;
+    font-size: 0.78rem;
+    cursor: pointer;
+    transition: background-color 0.15s ease;
+
+    &:hover {
+        background-color: var(--background-modifier-hover);
+        border-color: var(--interactive-accent);
+    }
+}
+
+.pakcli-status-icon {
+    font-size: 0.85rem;
+}
+
+.pakcli-status-text {
+    max-width: 140px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: var(--text-normal);
+    font-weight: 500;
+}
+
+.pakcli-status-time {
+    font-family: var(--font-monospace);
+    font-size: 0.72rem;
+    color: var(--text-muted);
+}
+
+.pakcli-status-btn {
+    padding: 2px 4px;
+    border: none;
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 4px;
+
+    &:hover {
+        color: var(--text-normal);
+        background-color: var(--background-modifier-hover);
+    }
+}

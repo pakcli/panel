@@ -49,6 +49,17 @@ import { BUBBLE_GRAPH_VIEW_TYPE, BubbleGraphView } from './features/bubblegraph'
 import { DictionaryPopupModal } from './features/dictionary/dictionaryPopupModal';
 import { DictionaryExplorerManager } from './features/dictionary/dictionaryExplorerManager';
 
+// Audio Engine & Ambient Player Imports
+import { 
+	AudioEngine, 
+	PlaylistManager, 
+	AudioPlayerPopup, 
+	AudioPlayerView, 
+	PAKCLI_AUDIO_VIEW_TYPE, 
+	AudioStatusBar, 
+	SUPPORTED_AUDIO_EXTENSIONS 
+} from './features/audio';
+
 export default class PakCLITablePlugin extends Plugin {
 	declare settings: PakCLITableSettings;
 	router!: AssetRouter;
@@ -63,6 +74,26 @@ export default class PakCLITablePlugin extends Plugin {
 	dictionaryExplorerManager!: DictionaryExplorerManager;
 	vaultRoot: string = '';
 	bubbleRibbonEl: HTMLElement | null = null;
+	audioRibbonEl: HTMLElement | null = null;
+	audioEngine!: AudioEngine;
+	playlistManager!: PlaylistManager;
+	audioPlayerPopup: AudioPlayerPopup | null = null;
+	audioStatusBar: AudioStatusBar | null = null;
+
+	async openAudioPlayerTab(): Promise<void> {
+		const existing = this.app.workspace.getLeavesOfType(PAKCLI_AUDIO_VIEW_TYPE);
+		let targetLeaf = existing.length > 0 ? existing[0] : null;
+		if (targetLeaf) {
+			this.app.workspace.revealLeaf(targetLeaf);
+		} else {
+			targetLeaf = this.app.workspace.getRightLeaf(false) || this.app.workspace.getLeaf('tab');
+			await targetLeaf.setViewState({
+				type: PAKCLI_AUDIO_VIEW_TYPE,
+				active: true
+			});
+			this.app.workspace.revealLeaf(targetLeaf);
+		}
+	}
 
 	openSettingsTab(sectionId?: string): void {
 		const appWithPlugins = this.app as { setting?: { open?: () => void; openTabById?: (id: string) => void } };
@@ -122,6 +153,68 @@ export default class PakCLITablePlugin extends Plugin {
 
 		// 2. Load Settings (with Vault Config fallback)
 		await this.loadSettings();
+
+		// 2.1 Initialize Audio Engine, Tactile SFX & Ambient Player
+		this.audioEngine = new AudioEngine(this.settings);
+		this.playlistManager = new PlaylistManager(
+			this.app,
+			this.audioEngine,
+			this.settings.audioTargetFolder || '',
+			this.settings.audioPlaybackMode || 'loop_all'
+		);
+		this.audioPlayerPopup = new AudioPlayerPopup(this, this.audioEngine, this.playlistManager);
+
+		// Register Audio Player View for docking as Tab leaf
+		this.registerView(
+			PAKCLI_AUDIO_VIEW_TYPE,
+			(leaf) => new AudioPlayerView(leaf, this, this.audioEngine, this.playlistManager)
+		);
+
+		// Ribbon Icon: Headphones (toggle 50% popup)
+		this.audioRibbonEl = this.addRibbonIcon('headphones', 'PakCLI Audio & Ambient Player', () => {
+			this.audioEngine.playClickSnap();
+			this.audioPlayerPopup?.toggle();
+		});
+
+		// Status Bar item
+		this.audioStatusBar = new AudioStatusBar(this, this.audioEngine, this.playlistManager);
+
+		// Global Tactile Micro-SFX Listeners
+		this.registerDomEvent(document, 'click', (e: MouseEvent) => {
+			if (this.settings.sfxSnapEnabled === false) return;
+			if (this.settings.sfxSuppressWhileTyping !== false && this.audioEngine.isUserTyping()) return;
+			const target = e.target as HTMLElement | null;
+			if (!target) return;
+			const btn = target.closest('button, .clickable-icon, .pakcli-btn, input[type="button"], input[type="submit"]');
+			if (btn) {
+				this.audioEngine.playClickSnap();
+			}
+		});
+
+		this.registerDomEvent(document, 'change', (e: Event) => {
+			if (this.settings.sfxChimeEnabled === false) return;
+			if (this.settings.sfxSuppressWhileTyping !== false && this.audioEngine.isUserTyping()) return;
+			const target = e.target as HTMLInputElement | null;
+			if (target && target.type === 'checkbox') {
+				this.audioEngine.playToggleChime(target.checked);
+			}
+		});
+
+		this.registerEvent(
+			this.app.vault.on('create', () => {
+				if (this.settings.sfxPaperSlideEnabled === false) return;
+				if (this.settings.sfxSuppressWhileTyping !== false && this.audioEngine.isUserTyping()) return;
+				this.audioEngine.playPaperSlide();
+			})
+		);
+
+		this.registerEvent(
+			this.app.vault.on('delete', () => {
+				if (this.settings.sfxPaperScrunchEnabled === false) return;
+				if (this.settings.sfxSuppressWhileTyping !== false && this.audioEngine.isUserTyping()) return;
+				this.audioEngine.playPaperScrunch();
+			})
+		);
 
 		// 3. Initialize Event Bus
 		eventBus.emit('table:loaded', { version: this.manifest.version });
@@ -599,6 +692,26 @@ export default class PakCLITablePlugin extends Plugin {
 						await this.openBubbleGraphView(folder.path);
 					});
 			});
+
+			menu.addItem((item: any) => {
+				item.setTitle('PakCLI: Play All as Playlist')
+					.setIcon('music')
+					.onClick(() => {
+						this.audioEngine?.playClickSnap();
+						this.playlistManager?.playFolderAsPlaylist(folder);
+						this.audioPlayerPopup?.show();
+					});
+			});
+
+			menu.addItem((item: any) => {
+				item.setTitle('PakCLI: Add Folder to Queue')
+					.setIcon('folder-plus')
+					.onClick(() => {
+						this.audioEngine?.playClickSnap();
+						this.playlistManager?.addFolderToQueue(folder);
+						new Notice(`Added audio in "${folder.name}" to queue`);
+					});
+			});
 		};
 
 		this.registerEvent(
@@ -626,6 +739,67 @@ export default class PakCLITablePlugin extends Plugin {
 								this.splitViewManager?.moveToBacklog(file, true);
 							});
 					});
+
+					const ext = (file.extension || '').toLowerCase();
+					if (SUPPORTED_AUDIO_EXTENSIONS.has(ext)) {
+						menu.addSeparator();
+						menu.addItem((item) => {
+							item.setTitle('PakCLI: Play Now')
+								.setIcon('play')
+								.onClick(() => {
+									this.audioEngine?.playClickSnap();
+									const track = {
+										id: file.path,
+										name: file.basename,
+										path: file.path,
+										folder: file.parent?.path || '',
+										extension: ext,
+										file: file,
+										duration: 0
+									};
+									this.playlistManager?.playNow(track);
+									this.audioPlayerPopup?.show();
+								});
+						});
+						menu.addItem((item) => {
+							item.setTitle('PakCLI: Play Next (Queue)')
+								.setIcon('skip-forward')
+								.onClick(() => {
+									this.audioEngine?.playClickSnap();
+									const track = {
+										id: file.path,
+										name: file.basename,
+										path: file.path,
+										folder: file.parent?.path || '',
+										extension: ext,
+										file: file,
+										duration: 0,
+										isPriority: true
+									};
+									this.playlistManager?.playNext(track);
+									new Notice(`Added "${file.basename}" to play next`);
+								});
+						});
+						menu.addItem((item) => {
+							item.setTitle('PakCLI: Add to End of Queue')
+								.setIcon('plus')
+								.onClick(() => {
+									this.audioEngine?.playClickSnap();
+									const track = {
+										id: file.path,
+										name: file.basename,
+										path: file.path,
+										folder: file.parent?.path || '',
+										extension: ext,
+										file: file,
+										duration: 0,
+										isPriority: true
+									};
+									this.playlistManager?.addToQueue(track);
+									new Notice(`Added "${file.basename}" to queue`);
+								});
+						});
+					}
 				} else if (file instanceof TFolder) {
 					addFolderMenuItems(menu, file);
 				}
@@ -649,6 +823,21 @@ export default class PakCLITablePlugin extends Plugin {
 		if (this.bubbleRibbonEl) {
 			this.bubbleRibbonEl.remove();
 			this.bubbleRibbonEl = null;
+		}
+		if (this.audioRibbonEl) {
+			this.audioRibbonEl.remove();
+			this.audioRibbonEl = null;
+		}
+		if (this.audioPlayerPopup) {
+			this.audioPlayerPopup.hide();
+			this.audioPlayerPopup = null;
+		}
+		if (this.audioStatusBar) {
+			this.audioStatusBar.destroy();
+			this.audioStatusBar = null;
+		}
+		if (this.audioEngine) {
+			this.audioEngine.dispose();
 		}
 
 		// 2. Persistent Snapshot on App Close / Unload
@@ -3999,6 +4188,163 @@ export default class PakCLITablePlugin extends Plugin {
 				}
 			});
 		}
+
+		// 7. Audio Engine, Tactile SFX & Ambient Player (table-audio-ambient)
+		settingsTab.registerLocalSection({
+			id: 'table-audio-ambient',
+			category: 'table',
+			title: 'Audio Engine & Ambient Player',
+			icon: 'headphones',
+			isInstalled: true,
+			render: (containerEl) => {
+				new Setting(containerEl)
+					.setName('PakCLI Audio Engine & Ambient Player')
+					.setDesc('100% offline procedural tactile micro-SFX and local vault ambient MP3 player.')
+					.setHeading();
+
+				// Quick launch buttons
+				new Setting(containerEl)
+					.setName('Open Audio Player')
+					.setDesc('Open the 50% screen floating player or dock into workspace tab.')
+					.addButton((b) => {
+						b.setButtonText('Open 50% Popup')
+							.setCta()
+							.onClick(() => {
+								this.audioPlayerPopup?.show();
+							});
+					})
+					.addButton((b) => {
+						b.setButtonText('Dock as Tab Leaf')
+							.onClick(() => {
+								this.openAudioPlayerTab();
+							});
+					});
+
+				// Target Music Folder
+				new Setting(containerEl)
+					.setName('Target Music Folder')
+					.setDesc('Select a specific folder in your vault for playlist music, or leave as None to search the entire vault.')
+					.addDropdown((d) => {
+						const folders = this.playlistManager ? this.playlistManager.getAvailableFolders() : [];
+						d.addOption('', 'None (Entire Vault)');
+						for (const f of folders) {
+							d.addOption(f, f);
+						}
+						d.setValue(this.settings.audioTargetFolder || '');
+						d.onChange(async (v) => {
+							this.settings.audioTargetFolder = v;
+							await this.saveSettings();
+							this.playlistManager?.setTargetFolder(v);
+						});
+					});
+
+				// Default Playback Mode
+				new Setting(containerEl)
+					.setName('Default Playback Mode')
+					.setDesc('Choose default behavior when tracks finish playing.')
+					.addDropdown((d) => {
+						d.addOption('loop_all', 'Loop Sequence (All tracks in order)')
+							.addOption('loop_one', 'Loop 1 Track (Repeat current track)')
+							.addOption('shuffle', 'Shuffle Random (Unplayed first)')
+							.addOption('linear', 'Linear Once (Stop at playlist end)')
+							.setValue(this.settings.audioPlaybackMode || 'loop_all')
+							.onChange(async (v: any) => {
+								this.settings.audioPlaybackMode = v;
+								await this.saveSettings();
+								this.playlistManager?.setPlaybackMode(v);
+							});
+					});
+
+				// Tactile Micro-SFX Section
+				new Setting(containerEl)
+					.setName('Tactile Micro-SFX Toggles')
+					.setDesc('Zero-latency procedural acoustic feedback generated using Web Audio API.')
+					.setHeading();
+
+				new Setting(containerEl)
+					.setName('Button Click Mechanical Snap')
+					.setDesc('Tactile 12ms microswitch impulse when clicking UI buttons.')
+					.addToggle((t) => {
+						t.setValue(this.settings.sfxSnapEnabled !== false)
+							.onChange(async (v) => {
+								this.settings.sfxSnapEnabled = v;
+								await this.saveSettings();
+							});
+					});
+
+				new Setting(containerEl)
+					.setName('Toggle Switch Chime')
+					.setDesc('Melodic ascending chime on toggle ON, descending chime on toggle OFF.')
+					.addToggle((t) => {
+						t.setValue(this.settings.sfxChimeEnabled !== false)
+							.onChange(async (v) => {
+								this.settings.sfxChimeEnabled = v;
+								await this.saveSettings();
+							});
+					});
+
+				new Setting(containerEl)
+					.setName('File Creation: Crisp Paper Slide')
+					.setDesc('Acoustic paper sliding feedback when a new file or note is created in the vault.')
+					.addToggle((t) => {
+						t.setValue(this.settings.sfxPaperSlideEnabled !== false)
+							.onChange(async (v) => {
+								this.settings.sfxPaperSlideEnabled = v;
+								await this.saveSettings();
+							});
+					});
+
+				new Setting(containerEl)
+					.setName('File Deletion: Crumpled Paper Scrunch')
+					.setDesc('Textured paper scrunch / trash crunch feedback when a file is deleted.')
+					.addToggle((t) => {
+						t.setValue(this.settings.sfxPaperScrunchEnabled !== false)
+							.onChange(async (v) => {
+								this.settings.sfxPaperScrunchEnabled = v;
+								await this.saveSettings();
+							});
+					});
+
+				new Setting(containerEl)
+					.setName('Suppress SFX While Typing')
+					.setDesc('Automatically mute micro-SFX while active in a note editor, renaming notes, or typing in text inputs.')
+					.addToggle((t) => {
+						t.setValue(this.settings.sfxSuppressWhileTyping !== false)
+							.onChange(async (v) => {
+								this.settings.sfxSuppressWhileTyping = v;
+								await this.saveSettings();
+							});
+					});
+
+				// Master Output Pipeline
+				new Setting(containerEl)
+					.setName('Master Output Pipeline')
+					.setDesc('Configure master audio output and test synthesizer.')
+					.setHeading();
+
+				new Setting(containerEl)
+					.setName('Master Volume')
+					.setDesc('Controls overall output gain for both music and micro-SFX.')
+					.addSlider((s) => {
+						s.setLimits(0, 100, 1)
+							.setValue(Math.round((this.settings.audioMasterVolume ?? 0.7) * 100))
+							.setDynamicTooltip()
+							.onChange(async (v) => {
+								this.settings.audioMasterVolume = v / 100;
+								await this.saveSettings();
+								this.audioEngine?.setMasterVolume(v / 100);
+							});
+					})
+					.addButton((b) => {
+						b.setButtonText('🔊 Test Audio')
+							.onClick(() => {
+								this.audioEngine?.playClickSnap();
+								window.setTimeout(() => this.audioEngine?.playToggleChime(true), 120);
+								window.setTimeout(() => this.audioEngine?.playPaperSlide(), 280);
+							});
+					});
+			}
+		});
 
 		this.addSettingTab(settingsTab);
 	}

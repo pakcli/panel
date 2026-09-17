@@ -6,6 +6,9 @@ import { BasesLeafletViewSettings } from './features/leaflet/types';
 import { CodeblockLanguageRule } from './features/codeblock/scaler';
 import { ExplorerSettings, DEFAULT_EXPLORER_SETTINGS, ExplorerSectionId, DictionaryFolderEntry, DictionarySubfolderMode } from './features/explorer/types';
 export type { ExplorerSectionId, ExplorerSettings, DictionaryFolderEntry, DictionarySubfolderMode };
+import { AudioPluginSettings, DEFAULT_AUDIO_SETTINGS } from './features/audio/types';
+export type { AudioPluginSettings };
+export { DEFAULT_AUDIO_SETTINGS };
 
 export type BubbleGraphIntegrationMode = 'deactivate' | 'replace' | 'second';
 export type BubbleNodeGlyphOption = 'no-dot' | 'dot' | 'plus' | 'minus' | 'i' | 'square' | 'ring' | 'star';
@@ -110,7 +113,8 @@ export interface PakCLITableSettings extends
     SQLSealSettings, 
     BasesLeafletViewSettings,
     BubbleGraphSettings,
-    ExplorerSettings 
+    ExplorerSettings,
+    AudioPluginSettings 
 {
     dateFormat: string;
     codeblockWrapMode: 'flowclip' | 'wrap' | 'scalefit';
@@ -215,6 +219,7 @@ export const DEFAULT_TABLE_SETTINGS: PakCLITableSettings = {
     ...DEFAULT_LEAFLET_SETTINGS,
     ...DEFAULT_BUBBLE_GRAPH_SETTINGS,
     ...DEFAULT_EXPLORER_SETTINGS,
+    ...DEFAULT_AUDIO_SETTINGS,
     dateFormat: '_{yyyy}{mm}{dd}',
     codeblockWrapMode: 'flowclip',
     codeblockLanguageRules: [
