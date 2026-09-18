@@ -123,91 +123,194 @@ export class SplitViewManager implements HoverParent {
   }
 
   private initCtrlMultiSelect() {
-    const eventTypes: (keyof WindowEventMap)[] = ['pointerdown', 'mousedown', 'mouseup', 'click'];
+    const isCtrlModifier = (e: MouseEvent): boolean => {
+      return (e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.button === 0;
+    };
 
-    for (const eventType of eventTypes) {
-      this.plugin.registerDomEvent(
-        window,
-        eventType,
-        (e: MouseEvent) => {
-          // Never re-process synthetic events to prevent recursion
-          if (!e.isTrusted) return;
+    // 1. Intercept pointerdown and mousedown to prevent Obsidian from:
+    //    - Opening note in a new tab / leaf
+    //    - Clearing existing multi-selection
+    //    - Initiating drag-and-drop
+    const stopCtrlDown = (e: MouseEvent) => {
+      if (!e.isTrusted) return;
+      if (!isCtrlModifier(e)) return;
 
-          const isCtrl = (e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.button === 0;
-          if (!isCtrl) return;
+      const target = e.target as HTMLElement;
+      if (!target) return;
 
-          const target = e.target as HTMLElement;
-          if (!target) return;
+      if (target.closest('.nav-buttons-container, .nav-action-button, .nav-folder-collapse-indicator, .pakcli-recent-item-remove, button, input, select')) {
+        return;
+      }
 
-          // Exclude buttons, search inputs, collapse indicators, etc.
-          if (target.closest('.nav-buttons-container, .nav-action-button, .nav-folder-collapse-indicator, .pakcli-recent-item-remove, button, input, select')) {
-            return;
-          }
+      const fileRow = target.closest(
+        '.workspace-leaf-content[data-type="file-explorer"] .nav-file-title, ' +
+        '.workspace-leaf-content[data-type="file-explorer"] .nav-folder-title, ' +
+        '.workspace-leaf-content[data-type="file-explorer"] .tree-item-self, ' +
+        '.pakcli-recent-item .tree-item-self'
+      ) as HTMLElement;
 
-          // Target must be a file or folder row inside File Explorer or Recent pane
-          const fileRow = target.closest(
-            '.workspace-leaf-content[data-type="file-explorer"] .nav-file-title, ' +
-            '.workspace-leaf-content[data-type="file-explorer"] .nav-folder-title, ' +
-            '.workspace-leaf-content[data-type="file-explorer"] .tree-item-self, ' +
-            '.pakcli-recent-item .tree-item-self'
-          );
-          if (!fileRow) return;
+      if (!fileRow) return;
 
-          // Stop the original Ctrl-event from triggering Obsidian's "open in new tab"
-          e.preventDefault();
-          e.stopPropagation();
-          e.stopImmediatePropagation();
+      e.preventDefault();
+      e.stopPropagation();
+      e.stopImmediatePropagation();
+    };
 
-          // Dispatch synthetic event with altKey: true
-          // On Windows, Alt+Click is Obsidian's native discrete multi-select trigger (identical engine to Shift-select)
-          try {
-            let synthetic: UIEvent;
-            if (window.PointerEvent && (e instanceof PointerEvent || e.type.startsWith('pointer'))) {
-              const pe = e as PointerEvent;
-              synthetic = new PointerEvent(e.type, {
-                bubbles: true,
-                cancelable: true,
-                view: window,
-                detail: pe.detail,
-                screenX: pe.screenX,
-                screenY: pe.screenY,
-                clientX: pe.clientX,
-                clientY: pe.clientY,
-                ctrlKey: false,
-                altKey: true,
-                shiftKey: false,
-                metaKey: false,
-                button: pe.button,
-                buttons: pe.buttons,
-                pointerId: pe.pointerId,
-                pointerType: pe.pointerType,
-                isPrimary: pe.isPrimary,
-              });
-            } else {
-              synthetic = new MouseEvent(e.type, {
-                bubbles: true,
-                cancelable: true,
-                view: window,
-                detail: e.detail,
-                screenX: e.screenX,
-                screenY: e.screenY,
-                clientX: e.clientX,
-                clientY: e.clientY,
-                ctrlKey: false,
-                altKey: true,
-                shiftKey: false,
-                metaKey: false,
-                button: e.button,
-                buttons: e.buttons,
-              });
-            }
-            target.dispatchEvent(synthetic);
-          } catch (err) {
-            console.warn('[PakCLI] Error dispatching synthetic alt multi-select event:', err);
-          }
-        },
-        { capture: true }
-      );
+    this.plugin.registerDomEvent(window, 'pointerdown', stopCtrlDown, { capture: true });
+    this.plugin.registerDomEvent(window, 'mousedown', stopCtrlDown, { capture: true });
+
+    // 2. Intercept click to perform discrete toggle of selection
+    this.plugin.registerDomEvent(
+      window,
+      'click',
+      (e: MouseEvent) => {
+        if (!e.isTrusted) return;
+        if (!isCtrlModifier(e)) return;
+
+        const target = e.target as HTMLElement;
+        if (!target) return;
+
+        if (target.closest('.nav-buttons-container, .nav-action-button, .nav-folder-collapse-indicator, .pakcli-recent-item-remove, button, input, select')) {
+          return;
+        }
+
+        const fileRow = target.closest(
+          '.workspace-leaf-content[data-type="file-explorer"] .nav-file-title, ' +
+          '.workspace-leaf-content[data-type="file-explorer"] .nav-folder-title, ' +
+          '.workspace-leaf-content[data-type="file-explorer"] .tree-item-self, ' +
+          '.pakcli-recent-item .tree-item-self'
+        ) as HTMLElement;
+
+        if (!fileRow) return;
+
+        e.preventDefault();
+        e.stopPropagation();
+        e.stopImmediatePropagation();
+
+        this.handleExplorerCtrlClick(fileRow, target);
+      },
+      { capture: true }
+    );
+  }
+
+  private handleExplorerCtrlClick(fileRow: HTMLElement, target: HTMLElement) {
+    // A. Handle Recent Files Pane item
+    if (fileRow.closest('.pakcli-recent-item')) {
+      fileRow.toggleClass('is-selected', !fileRow.hasClass('is-selected'));
+      return;
+    }
+
+    // B. Handle File Explorer leaf
+    const leaves = this.app.workspace.getLeavesOfType('file-explorer');
+    const leaf = leaves.find((l) => l.view?.containerEl?.contains(fileRow)) || leaves[0];
+    const view = leaf?.view as any;
+    if (!view) return;
+
+    // 1. Locate TreeItem and TAbstractFile for clicked row
+    let clickedItem: any = null;
+    let clickedFile: TAbstractFile | null = null;
+
+    if (view.fileItems) {
+      for (const p in view.fileItems) {
+        const item = view.fileItems[p];
+        if (
+          item.selfEl === fileRow ||
+          item.el === fileRow ||
+          item.selfEl?.contains(target) ||
+          item.titleEl?.contains(target) ||
+          item.selfEl?.contains(fileRow)
+        ) {
+          clickedItem = item;
+          clickedFile = item.file;
+          break;
+        }
+      }
+    }
+
+    if (!clickedFile) {
+      const p = fileRow.getAttribute('data-path') ||
+                fileRow.closest('[data-path]')?.getAttribute('data-path') ||
+                fileRow.querySelector('[data-path]')?.getAttribute('data-path') ||
+                fileRow.getAttribute('aria-label');
+      if (p) {
+        clickedFile = this.app.vault.getAbstractFileByPath(p);
+        if (view.fileItems && view.fileItems[p]) {
+          clickedItem = view.fileItems[p];
+        }
+      }
+    }
+
+    const tree = view.tree;
+    if (tree && !tree.selectedDoms) {
+      tree.selectedDoms = new Set();
+    }
+    if (!view.selectedFiles || !(view.selectedFiles instanceof Set)) {
+      view.selectedFiles = new Set();
+    }
+
+    const selectedDoms: Set<any> | null = tree?.selectedDoms || null;
+
+    // 2. Check if a multi-selection is currently active
+    const currentSelectedEls = view.containerEl.querySelectorAll(
+      '.nav-file-title.is-selected, .nav-folder-title.is-selected, .tree-item-self.is-selected'
+    );
+    const isSelectionActive = (selectedDoms && selectedDoms.size > 0) || currentSelectedEls.length > 0;
+
+    // If starting multi-selection when nothing was selected, but an item was active/focused:
+    if (!isSelectionActive) {
+      const prevFocused = tree?.focusedItem || tree?.activeDom;
+      if (prevFocused && prevFocused !== clickedItem && prevFocused.file) {
+        prevFocused.selfEl?.classList.add('is-selected');
+        prevFocused.el?.classList.add('is-selected');
+        prevFocused.selfEl?.setAttribute('aria-selected', 'true');
+        selectedDoms?.add(prevFocused);
+        view.selectedFiles.add(prevFocused.file);
+      }
+    }
+
+    // 3. Toggle clicked item
+    const isCurrentlySelected = fileRow.classList.contains('is-selected') ||
+      (clickedItem?.selfEl?.classList.contains('is-selected')) ||
+      (selectedDoms && clickedItem && selectedDoms.has(clickedItem));
+
+    if (isCurrentlySelected) {
+      // Deselect
+      fileRow.classList.remove('is-selected');
+      clickedItem?.selfEl?.classList.remove('is-selected');
+      clickedItem?.el?.classList.remove('is-selected');
+      fileRow.removeAttribute('aria-selected');
+      clickedItem?.selfEl?.removeAttribute('aria-selected');
+
+      if (selectedDoms && clickedItem) {
+        selectedDoms.delete(clickedItem);
+      }
+      if (clickedFile) {
+        view.selectedFiles.delete(clickedFile);
+      }
+
+      if (selectedDoms && selectedDoms.size === 0) {
+        if (tree) tree.activeDom = null;
+      }
+    } else {
+      // Select
+      fileRow.classList.add('is-selected');
+      clickedItem?.selfEl?.classList.add('is-selected');
+      clickedItem?.el?.classList.add('is-selected');
+      fileRow.setAttribute('aria-selected', 'true');
+      clickedItem?.selfEl?.setAttribute('aria-selected', 'true');
+
+      if (selectedDoms && clickedItem) {
+        selectedDoms.add(clickedItem);
+      }
+      if (clickedFile) {
+        view.selectedFiles.add(clickedFile);
+      }
+
+      // Update anchor for subsequent Shift+Click
+      if (tree && clickedItem) {
+        tree.activeDom = clickedItem;
+        tree.focusedItem = clickedItem;
+      }
     }
   }
 
@@ -1378,7 +1481,7 @@ export class SplitViewManager implements HoverParent {
     const tsPrefix = useTs ? this.getTimestampPrefix() : '';
 
     const title = `${tsPrefix}${prefix}${folder.name}${suffix}`;
-    const content = `---\ntitle: "${title}"\n---\n\n# ${title}\n\n`;
+    const content = this.getFolderIndexContent(title);
 
     try {
       const created = await this.app.vault.create(indexPath, content);
@@ -1964,7 +2067,7 @@ views:
     const tsPrefix = useTs ? this.getTimestampPrefix() : '';
 
     const title = `${tsPrefix}${prefix}${folder.name}${suffix}`;
-    const content = `---\ntitle: "${title}"\n---\n\n# ${title}\n\n`;
+    const content = this.getFolderIndexContent(title);
 
     try {
       const createdFile = await this.app.vault.create(indexPath, content);
@@ -1973,6 +2076,19 @@ views:
       new Notice(`Created folder index: ${indexPath}`);
     } catch (err) {
       console.error('[PakCLI] Failed to create folder index:', err);
+    }
+  }
+
+  public getFolderIndexContent(title: string): string {
+    const format = this.plugin.settings.folderIndexContentFormat || 'frontmatter_only';
+    switch (format) {
+      case 'heading_only':
+        return `# ${title}\n\n`;
+      case 'both':
+        return `---\ntitle: "${title}"\n---\n\n# ${title}\n\n`;
+      case 'frontmatter_only':
+      default:
+        return `---\ntitle: "${title}"\n---\n\n`;
     }
   }
 

@@ -92,6 +92,7 @@ export interface ExplorerSettings {
   folderIndexPrefix?: string;
   folderIndexSuffix?: string;
   folderIndexUseTimestamp?: boolean;
+  folderIndexContentFormat?: FolderIndexContentFormat;
   carouselOrientation?: 'horizontal' | 'vertical';
   enableDictionaryMode?: boolean;
   dictionaryScope?: 'specific' | 'active';
@@ -102,6 +103,8 @@ export interface ExplorerSettings {
   dictionaryDisplayMode?: 'list' | 'grouped';
   enableDictionaryVirtualFolders?: boolean;
 }
+
+export type FolderIndexContentFormat = 'frontmatter_only' | 'both' | 'heading_only';
 
 export type DictionarySubfolderMode = 'exclude' | 'include' | 'own_az';
 
@@ -139,6 +142,7 @@ export const DEFAULT_EXPLORER_SETTINGS: ExplorerSettings = {
   folderIndexPrefix: '',
   folderIndexSuffix: '',
   folderIndexUseTimestamp: false,
+  folderIndexContentFormat: 'frontmatter_only',
   carouselOrientation: 'horizontal',
   enableDictionaryMode: true,
   dictionaryScope: 'specific',

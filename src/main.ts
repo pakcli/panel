@@ -3526,6 +3526,20 @@ export default class PakCLITablePlugin extends Plugin {
 					});
 
 				new Setting(containerEl)
+					.setName('Folder Index Content Format')
+					.setDesc('Choose title frontmatter and heading structure when creating index.md via the [i] badge.')
+					.addDropdown((d) => {
+						d.addOption('frontmatter_only', 'title frontmatter = file name only (Default)')
+							.addOption('both', 'title frontmatter = file name, first level 1 heading = file name')
+							.addOption('heading_only', 'first level 1 heading = file name only')
+							.setValue(this.settings.folderIndexContentFormat || 'frontmatter_only')
+							.onChange(async (val: any) => {
+								this.settings.folderIndexContentFormat = val;
+								await this.saveSettings();
+							});
+					});
+
+				new Setting(containerEl)
 					.setName('A–Z Dictionary Settings')
 					.setDesc('Configure the A–Z Dictionary Navigator popup, scope, and folder path.')
 					.setHeading();
