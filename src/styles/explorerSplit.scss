@@ -393,6 +393,12 @@
         font-weight: 500;
       }
 
+      &.is-selected {
+        background-color: var(--nav-item-background-active, var(--background-modifier-selected, rgba(var(--color-accent-rgb, 120, 80, 200), 0.2)));
+        color: var(--nav-item-color-active, var(--text-normal));
+        font-weight: 500;
+      }
+
       .tree-item-icon {
         display: flex;
         align-items: center;

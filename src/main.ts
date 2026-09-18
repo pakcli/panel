@@ -1,7 +1,7 @@
-import { Plugin, Notice, Setting, PluginSettingTab, ButtonComponent, TFile, TFolder, TextComponent, setIcon, normalizePath } from 'obsidian';
+import { Plugin, Notice, Setting, PluginSettingTab, ButtonComponent, TFile, TFolder, TAbstractFile, Menu, TextComponent, setIcon, normalizePath } from 'obsidian';
 import { PakCLITableSettings, DEFAULT_TABLE_SETTINGS, DEFAULT_BUBBLE_GRAPH_SETTINGS, RelationshipTierConfig, DEFAULT_RELATIONSHIP_TIERS, RelationshipFolderEntry, RelationshipViewStructure, RelationshipSortOrder, DictionaryFolderEntry, DictionarySubfolderMode } from './settings';
 import { handleArtifactRename, moveArtifactsBetweenFolders } from './features/sqlseal/utils/views';
-import { SplitViewManager } from './features/explorer/splitViewManager';
+import { SplitViewManager, FolderSuggestModal } from './features/explorer/splitViewManager';
 import { ExplorerSectionId, EXPLORER_SECTIONS_INFO, DEFAULT_EXPLORER_SECTION_ORDER } from './features/explorer/types';
 import { ImageTriageModal } from './features/carousel/ImageTriageModal';
 import { IMAGE_CAROUSEL_VIEW_TYPE, ImageCarouselView } from './features/carousel/ImageCarouselView';
@@ -628,10 +628,281 @@ export default class PakCLITablePlugin extends Plugin {
 
 		(this as any).openImageCarouselTab = openImageCarouselTab;
 
+		// Helper to patch native Obsidian menu items when multiple files are selected
+		const patchNativeMenuItems = (menu: Menu, targetFiles: TAbstractFile[]) => {
+			const count = targetFiles.length;
+			let patchedDelete = false;
+			let patchedMove = false;
+			let patchedCopy = false;
+
+			const menuItems = (menu as any).items;
+			if (Array.isArray(menuItems) && count > 1) {
+				for (const item of menuItems) {
+					const titleText = (item.title || item.titleEl?.textContent || item.dom?.textContent || '').trim();
+					const lowerTitle = titleText.toLowerCase();
+
+					// Native Delete
+					if (lowerTitle === 'delete' || lowerTitle === 'delete file' || lowerTitle.startsWith('delete (')) {
+						patchedDelete = true;
+						item.setTitle(`Delete ${count} selected items`);
+						item.onClick(async () => {
+							let delCount = 0;
+							for (const f of targetFiles) {
+								try {
+									await this.app.fileManager.trashFile(f);
+									delCount++;
+								} catch (err) {
+									console.error('[PakCLI] Error deleting item:', f.path, err);
+								}
+							}
+							new Notice(`Moved ${delCount} items to trash`);
+						});
+					}
+
+					// Native Move
+					if (lowerTitle === 'move file to...' || lowerTitle === 'move to...' || lowerTitle.startsWith('move file') || lowerTitle.startsWith('move folder')) {
+						patchedMove = true;
+						item.setTitle(`Move ${count} selected items to...`);
+						item.onClick(() => {
+							new FolderSuggestModal(this.app, async (targetFolder) => {
+								let moveCount = 0;
+								for (const f of targetFiles) {
+									try {
+										const destPath = targetFolder.path ? `${targetFolder.path}/${f.name}` : f.name;
+										await this.app.fileManager.renameFile(f, destPath);
+										moveCount++;
+									} catch (err) {
+										console.error('[PakCLI] Error moving item:', f.path, err);
+									}
+								}
+								new Notice(`Moved ${moveCount} items to "${targetFolder.path || 'root'}"`);
+							}).open();
+						});
+					}
+
+					// Native Make a copy
+					if (lowerTitle === 'make a copy' || lowerTitle === 'duplicate') {
+						patchedCopy = true;
+						item.setTitle(`Make a copy (${count} items)`);
+						item.onClick(async () => {
+							let copyCount = 0;
+							for (const f of targetFiles) {
+								if (f instanceof TFile) {
+									try {
+										const ext = f.extension ? `.${f.extension}` : '';
+										const base = f.extension ? f.name.slice(0, -(ext.length)) : f.name;
+										const parentDir = f.parent && f.parent.path !== '/' ? f.parent.path : '';
+										let copyName = `${base} 1${ext}`;
+										let copyPath = parentDir ? `${parentDir}/${copyName}` : copyName;
+										let counter = 1;
+										while (this.app.vault.getAbstractFileByPath(copyPath)) {
+											counter++;
+											copyName = `${base} ${counter}${ext}`;
+											copyPath = parentDir ? `${parentDir}/${copyName}` : copyName;
+										}
+										await this.app.vault.copy(f, copyPath);
+										copyCount++;
+									} catch (err) {
+										console.error('[PakCLI] Error copying item:', f.path, err);
+									}
+								}
+							}
+							new Notice(`Created ${copyCount} copies`);
+						});
+					}
+				}
+			}
+			return { patchedDelete, patchedMove, patchedCopy };
+		};
+
+		// Helper to populate multi-item batch menu actions
+		const populateMultiBatchMenuItems = (menu: Menu, targetFiles: TAbstractFile[], patched: { patchedDelete: boolean; patchedMove: boolean; patchedCopy: boolean }) => {
+			const count = targetFiles.length;
+
+			menu.addItem((item) => {
+				item.setTitle(`Move to Backlog (${count} items)`)
+					.setIcon('archive')
+					.onClick(() => {
+						this.splitViewManager?.moveToBacklog(targetFiles, false);
+					});
+			});
+
+			menu.addItem((item) => {
+				item.setTitle(`Move to Backlog (Rename YYYY-MM-DD_HH-mm) (${count} items)`)
+					.setIcon('clock')
+					.onClick(() => {
+						this.splitViewManager?.moveToBacklog(targetFiles, true);
+					});
+			});
+
+			if (!patched.patchedMove) {
+				menu.addItem((item) => {
+					item.setTitle(`Move ${count} items to...`)
+						.setIcon('folder-input')
+						.onClick(() => {
+							new FolderSuggestModal(this.app, async (targetFolder) => {
+								let moveCount = 0;
+								for (const f of targetFiles) {
+									try {
+										const destPath = targetFolder.path ? `${targetFolder.path}/${f.name}` : f.name;
+										await this.app.fileManager.renameFile(f, destPath);
+										moveCount++;
+									} catch (err) {
+										console.error('[PakCLI] Error moving file:', f.path, err);
+									}
+								}
+								new Notice(`Moved ${moveCount} items to "${targetFolder.path || 'root'}"`);
+							}).open();
+						});
+				});
+			}
+
+			if (!patched.patchedCopy) {
+				menu.addItem((item) => {
+					item.setTitle(`Make a copy (${count} items)`)
+						.setIcon('copy')
+						.onClick(async () => {
+							let copyCount = 0;
+							for (const f of targetFiles) {
+								if (f instanceof TFile) {
+									try {
+										const ext = f.extension ? `.${f.extension}` : '';
+										const base = f.extension ? f.name.slice(0, -(ext.length)) : f.name;
+										const parentDir = f.parent && f.parent.path !== '/' ? f.parent.path : '';
+										let copyName = `${base} 1${ext}`;
+										let copyPath = parentDir ? `${parentDir}/${copyName}` : copyName;
+										let counter = 1;
+										while (this.app.vault.getAbstractFileByPath(copyPath)) {
+											counter++;
+											copyName = `${base} ${counter}${ext}`;
+											copyPath = parentDir ? `${parentDir}/${copyName}` : copyName;
+										}
+										await this.app.vault.copy(f, copyPath);
+										copyCount++;
+									} catch (err) {
+										console.error('[PakCLI] Error copying item:', f.path, err);
+									}
+								}
+							}
+							new Notice(`Created ${copyCount} copies`);
+						});
+				});
+			}
+
+			menu.addItem((item) => {
+				item.setTitle(`Copy paths (${count} items)`)
+					.setIcon('clipboard')
+					.onClick(async () => {
+						const paths = targetFiles.map(f => f.path).join('\n');
+						await navigator.clipboard.writeText(paths);
+						new Notice(`Copied ${count} paths to clipboard`);
+					});
+			});
+
+			if (!patched.patchedDelete) {
+				menu.addItem((item) => {
+					item.setTitle(`Delete ${count} selected items`)
+						.setIcon('trash')
+						.onClick(async () => {
+							let delCount = 0;
+							for (const f of targetFiles) {
+								try {
+									await this.app.fileManager.trashFile(f);
+									delCount++;
+								} catch (err) {
+									console.error('[PakCLI] Error deleting item:', f.path, err);
+								}
+							}
+							new Notice(`Moved ${delCount} items to trash`);
+						});
+				});
+			}
+
+			// Audio handling for multi-selection
+			const audioFiles = targetFiles.filter((f): f is TFile => {
+				return f instanceof TFile && SUPPORTED_AUDIO_EXTENSIONS.has((f.extension || '').toLowerCase());
+			});
+
+			if (audioFiles.length > 0) {
+				menu.addSeparator();
+				menu.addItem((item) => {
+					item.setTitle(`PakCLI: Play First Now (${audioFiles.length} tracks)`)
+						.setIcon('play')
+						.onClick(() => {
+							this.audioEngine?.playClickSnap();
+							const tracks = audioFiles.map(file => ({
+								id: file.path,
+								name: file.basename,
+								path: file.path,
+								folder: file.parent?.path || '',
+								extension: (file.extension || '').toLowerCase(),
+								file: file,
+								duration: 0
+							}));
+							this.playlistManager?.playNow(tracks[0]);
+							for (let i = 1; i < tracks.length; i++) {
+								this.playlistManager?.addToQueue(tracks[i]);
+							}
+							this.audioPlayerPopup?.show();
+						});
+				});
+				menu.addItem((item) => {
+					item.setTitle(`PakCLI: Play Next (${audioFiles.length} tracks to Queue)`)
+						.setIcon('skip-forward')
+						.onClick(() => {
+							this.audioEngine?.playClickSnap();
+							for (let i = audioFiles.length - 1; i >= 0; i--) {
+								const file = audioFiles[i];
+								this.playlistManager?.playNext({
+									id: file.path,
+									name: file.basename,
+									path: file.path,
+									folder: file.parent?.path || '',
+									extension: (file.extension || '').toLowerCase(),
+									file: file,
+									duration: 0,
+									isPriority: true
+								});
+							}
+							new Notice(`Added ${audioFiles.length} tracks to play next`);
+						});
+				});
+				menu.addItem((item) => {
+					item.setTitle(`PakCLI: Add ${audioFiles.length} tracks to End of Queue`)
+						.setIcon('plus')
+						.onClick(() => {
+							this.audioEngine?.playClickSnap();
+							for (const file of audioFiles) {
+								this.playlistManager?.addToQueue({
+									id: file.path,
+									name: file.basename,
+									path: file.path,
+									folder: file.parent?.path || '',
+									extension: (file.extension || '').toLowerCase(),
+									file: file,
+									duration: 0,
+									isPriority: true
+								});
+							}
+							new Notice(`Added ${audioFiles.length} tracks to queue`);
+						});
+				});
+			}
+		};
+
 		// Context menu for files and folders
 		const addFolderMenuItems = (menu: any, folder: TFolder) => {
 			if (menu.__pakcli_folder_menu_added) return;
 			menu.__pakcli_folder_menu_added = true;
+
+			const targetFiles = this.splitViewManager?.getSelectedFiles(folder) || [folder];
+			const isMulti = targetFiles.length > 1;
+
+			if (isMulti) {
+				const patched = patchNativeMenuItems(menu, targetFiles);
+				populateMultiBatchMenuItems(menu, targetFiles, patched);
+				return;
+			}
 
 			const isFiltered = (this.settings.customRecentPaths || []).includes(folder.path);
 
@@ -648,6 +919,25 @@ export default class PakCLITablePlugin extends Plugin {
 					.setIcon('gallery-thumbnails')
 					.onClick(() => {
 						openImageCarouselTab(folder, 'edit');
+					});
+			});
+
+			const isExcluded = this.settings.excludedAssetDirectories?.includes(folder.path);
+			menu.addItem((item: any) => {
+				item.setTitle(isExcluded ? 'PakCLI: Include in Asset Router' : 'PakCLI: Exclude from Asset Router')
+					.setIcon(isExcluded ? 'folder-check' : 'folder-x')
+					.onClick(async () => {
+						if (!this.settings.excludedAssetDirectories) {
+							this.settings.excludedAssetDirectories = [];
+						}
+						if (isExcluded) {
+							this.settings.excludedAssetDirectories = this.settings.excludedAssetDirectories.filter(p => p !== folder.path);
+							new Notice(`Included "${folder.path}" in Asset Router`);
+						} else {
+							this.settings.excludedAssetDirectories.push(folder.path);
+							new Notice(`Excluded "${folder.path}" from Asset Router`);
+						}
+						await this.saveSettings();
 					});
 			});
 
@@ -729,6 +1019,15 @@ export default class PakCLITablePlugin extends Plugin {
 
 		this.registerEvent(
 			this.app.workspace.on('file-menu', (menu, file) => {
+				const targetFiles = this.splitViewManager?.getSelectedFiles(file) || [file];
+				const isMulti = targetFiles.length > 1;
+
+				if (isMulti) {
+					const patched = patchNativeMenuItems(menu, targetFiles);
+					populateMultiBatchMenuItems(menu, targetFiles, patched);
+					return;
+				}
+
 				if (file instanceof TFile) {
 					menu.addItem((item) => {
 						item.setTitle('Scope Bubble View to parent folder')
@@ -815,6 +1114,16 @@ export default class PakCLITablePlugin extends Plugin {
 					}
 				} else if (file instanceof TFolder) {
 					addFolderMenuItems(menu, file);
+				}
+			})
+		);
+
+		this.registerEvent(
+			(this.app.workspace as any).on('files-menu', (menu: Menu, files: TAbstractFile[]) => {
+				const targetFiles = files && files.length > 0 ? files : (this.splitViewManager?.getSelectedFiles() || []);
+				if (targetFiles.length > 1) {
+					const patched = patchNativeMenuItems(menu, targetFiles);
+					populateMultiBatchMenuItems(menu, targetFiles, patched);
 				}
 			})
 		);

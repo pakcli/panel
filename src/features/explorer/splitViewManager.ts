@@ -1,4 +1,4 @@
-import { App, Menu, Notice, setIcon, TFile, TFolder, TAbstractFile, WorkspaceLeaf, Keymap, HoverParent, HoverPopover } from 'obsidian';
+import { App, Menu, Notice, setIcon, TFile, TFolder, TAbstractFile, WorkspaceLeaf, Keymap, HoverParent, HoverPopover, FuzzySuggestModal } from 'obsidian';
 import type PakCLITablePlugin from '../../main';
 import { ExplorerSectionId, RecentTimeFilter, RECENT_TIME_FILTER_OPTIONS } from './types';
 import { ensureFolderExists } from '../sqlseal/utils/views';
@@ -117,6 +117,149 @@ export class SplitViewManager implements HoverParent {
         this.refreshFolderBadges();
       })
     );
+
+    // 4. Enable Ctrl+Click multi-select in File Explorer & Recent list
+    this.initCtrlMultiSelect();
+  }
+
+  private initCtrlMultiSelect() {
+    // 1. On mousedown: stop propagation if Ctrl is pressed so Obsidian does not clear selection or initiate tab split
+    this.plugin.registerDomEvent(
+      window,
+      'mousedown',
+      (e: MouseEvent) => {
+        const isCtrl = (e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.button === 0;
+        if (!isCtrl) return;
+
+        const target = e.target as HTMLElement;
+        if (!target) return;
+
+        // Exclude buttons, search inputs, collapse indicators, etc.
+        if (target.closest('.nav-buttons-container, .nav-action-button, .nav-folder-collapse-indicator, .pakcli-recent-item-remove, button, input, select')) {
+          return;
+        }
+
+        const itemSelf = target.closest(
+          '.workspace-leaf-content[data-type="file-explorer"] .nav-file-title, ' +
+          '.workspace-leaf-content[data-type="file-explorer"] .nav-folder-title, ' +
+          '.workspace-leaf-content[data-type="file-explorer"] .tree-item-self, ' +
+          '.pakcli-recent-item .tree-item-self'
+        ) as HTMLElement | null;
+
+        if (!itemSelf) return;
+
+        // Stop Obsidian's mousedown from clearing multi-selection or preparing a drag/split
+        e.stopPropagation();
+      },
+      { capture: true }
+    );
+
+    // 2. On click: toggle multi-selection for this item (same mechanic as Shift, but non-sequential)
+    this.plugin.registerDomEvent(
+      window,
+      'click',
+      (e: MouseEvent) => {
+        const isCtrl = (e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.button === 0;
+        if (!isCtrl) return;
+
+        const target = e.target as HTMLElement;
+        if (!target) return;
+
+        if (target.closest('.nav-buttons-container, .nav-action-button, .nav-folder-collapse-indicator, .pakcli-recent-item-remove, button, input, select')) {
+          return;
+        }
+
+        const itemSelf = target.closest(
+          '.workspace-leaf-content[data-type="file-explorer"] .nav-file-title, ' +
+          '.workspace-leaf-content[data-type="file-explorer"] .nav-folder-title, ' +
+          '.workspace-leaf-content[data-type="file-explorer"] .tree-item-self, ' +
+          '.pakcli-recent-item .tree-item-self'
+        ) as HTMLElement | null;
+
+        if (!itemSelf) return;
+
+        // Block Obsidian's default action (opening note in a new leaf/tab)
+        e.preventDefault();
+        e.stopPropagation();
+        e.stopImmediatePropagation();
+
+        // Get file or folder
+        const path = itemSelf.getAttribute('data-path') ||
+                     itemSelf.closest('[data-path]')?.getAttribute('data-path') ||
+                     itemSelf.getAttribute('aria-label');
+        const file = path ? this.app.vault.getAbstractFileByPath(path) : null;
+
+        // Toggle selection on this file/folder without deselecting others
+        this.toggleExplorerItemSelection(itemSelf, file);
+      },
+      { capture: true }
+    );
+  }
+
+  public toggleExplorerItemSelection(itemSelf: HTMLElement, file: TAbstractFile | null) {
+    const isSelected = itemSelf.classList.contains('is-selected');
+    const newState = !isSelected;
+
+    // Toggle DOM class on the clicked row element
+    itemSelf.classList.toggle('is-selected', newState);
+
+    const leaves = this.app.workspace.getLeavesOfType('file-explorer');
+    for (const leaf of leaves) {
+      const view = leaf.view as any;
+      if (!view) continue;
+
+      // Sync DOM elements tracked by Obsidian's FileExplorer view
+      if (file && view.fileItems && view.fileItems[file.path]) {
+        const item = view.fileItems[file.path];
+        if (item.selfEl) item.selfEl.classList.toggle('is-selected', newState);
+        if (item.titleEl) item.titleEl.classList.toggle('is-selected', newState);
+        if (item.el) item.el.classList.toggle('is-selected', newState);
+      }
+
+      // Sync with Obsidian's native selectedFiles collection (Set or Array)
+      if (view.selectedFiles && file) {
+        if (view.selectedFiles instanceof Set) {
+          // If set is currently empty, ensure any existing DOM-selected items are also captured
+          if (view.selectedFiles.size === 0) {
+            const container = view.containerEl as HTMLElement;
+            if (container) {
+              const alreadySelected = container.querySelectorAll('.is-selected');
+              alreadySelected.forEach((el) => {
+                const p = el.getAttribute('data-path') || el.closest('[data-path]')?.getAttribute('data-path') || el.getAttribute('aria-label');
+                if (p) {
+                  const af = this.app.vault.getAbstractFileByPath(p);
+                  if (af) view.selectedFiles.add(af);
+                }
+              });
+            }
+          }
+
+          if (newState) {
+            view.selectedFiles.add(file);
+          } else {
+            view.selectedFiles.delete(file);
+            view.selectedFiles.delete(file.path);
+          }
+        } else if (Array.isArray(view.selectedFiles)) {
+          if (newState) {
+            if (!view.selectedFiles.includes(file)) {
+              view.selectedFiles.push(file);
+            }
+          } else {
+            view.selectedFiles = view.selectedFiles.filter((f: any) => f !== file && f !== file.path && f?.path !== file.path);
+          }
+        }
+      }
+
+      // Keep lastSelectedFile / focusedItem in sync so subsequent Shift+Click uses this as anchor
+      if (file && newState) {
+        view.lastSelectedFile = file;
+        if (view.fileItems && view.fileItems[file.path]) {
+          view.activeDom = view.fileItems[file.path];
+          view.focusedItem = view.fileItems[file.path];
+        }
+      }
+    }
   }
 
   private async initRecentFiles() {
@@ -814,8 +957,36 @@ export class SplitViewManager implements HoverParent {
       // Tooltip with full path
       itemSelf.setAttribute('aria-label', file.path);
 
-      // Click to open file
+      // Click to open file or toggle multi-selection
       itemSelf.addEventListener('click', async (e: MouseEvent) => {
+        const isMulti = e.ctrlKey || e.metaKey || e.altKey;
+        if (isMulti) {
+          e.preventDefault();
+          e.stopPropagation();
+          itemSelf.toggleClass('is-selected', !itemSelf.hasClass('is-selected'));
+          return;
+        }
+
+        if (e.shiftKey) {
+          e.preventDefault();
+          e.stopPropagation();
+          const allItems = Array.from(listEl.querySelectorAll('.pakcli-recent-item .tree-item-self')) as HTMLElement[];
+          const lastIdx = allItems.findIndex(el => el.hasClass('is-selected'));
+          const curIdx = allItems.indexOf(itemSelf);
+          if (lastIdx !== -1 && curIdx !== -1) {
+            const start = Math.min(lastIdx, curIdx);
+            const end = Math.max(lastIdx, curIdx);
+            for (let i = start; i <= end; i++) {
+              allItems[i].addClass('is-selected');
+            }
+          } else {
+            itemSelf.addClass('is-selected');
+          }
+          return;
+        }
+
+        // Normal click: clear recent selection and open file
+        Array.from(listEl.querySelectorAll('.pakcli-recent-item .tree-item-self.is-selected')).forEach(el => el.removeClass('is-selected'));
         e.preventDefault();
         const modKey = Keymap.isModEvent(e);
         const leaf = this.app.workspace.getLeaf(modKey);
@@ -826,6 +997,33 @@ export class SplitViewManager implements HoverParent {
       // Context menu
       itemSelf.addEventListener('contextmenu', (e: MouseEvent) => {
         e.preventDefault();
+        const selectedEls = Array.from(listEl.querySelectorAll('.pakcli-recent-item .tree-item-self.is-selected')) as HTMLElement[];
+        const isThisSelected = itemSelf.hasClass('is-selected');
+
+        if (isThisSelected && selectedEls.length > 1) {
+          // Multi-file context menu
+          const selectedFiles = selectedEls.map(el => {
+            const p = el.getAttribute('aria-label');
+            return p ? this.app.vault.getAbstractFileByPath(p) : null;
+          }).filter((f): f is TFile => f instanceof TFile);
+
+          const menu = new Menu();
+          this.app.workspace.trigger('files-menu', menu, selectedFiles, 'file-explorer');
+          menu.addItem((item) => {
+            item.setTitle(`Remove ${selectedFiles.length} files from Recent Files`)
+              .setIcon('x')
+              .onClick(() => {
+                const pathsToRemove = new Set(selectedFiles.map(f => f.path));
+                this.recentFilesList = this.recentFilesList.filter(f => !pathsToRemove.has(f.path));
+                this.renderRecentList();
+                this.scheduleSaveRecentsCsv();
+              });
+          });
+          menu.showAtMouseEvent(e);
+          return;
+        }
+
+        // Single file context menu
         const menu = new Menu();
         this.app.workspace.trigger('file-menu', menu, file, 'file-explorer');
         menu.addItem((item) => {
@@ -1638,16 +1836,122 @@ views:
     return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}_${pad(d.getHours())}-${pad(d.getMinutes())}_`;
   }
 
-  public async moveToBacklog(item: TAbstractFile, useTimestamp: boolean = false) {
+  public getSelectedFiles(fallbackFile?: TAbstractFile): TAbstractFile[] {
+    const selected: TAbstractFile[] = [];
+    const seen = new Set<string>();
+
+    const leaves = this.app.workspace.getLeavesOfType('file-explorer');
+    for (const leaf of leaves) {
+      const view = leaf.view as any;
+      if (!view) continue;
+
+      // 1. Check if view natively exposes selectedFiles (Set or Array)
+      if (view.selectedFiles) {
+        const nativeSel = view.selectedFiles;
+        if (nativeSel instanceof Set || Array.isArray(nativeSel)) {
+          for (const item of nativeSel) {
+            const f = item instanceof TAbstractFile ? item : (typeof item === 'string' ? this.app.vault.getAbstractFileByPath(item) : item?.file);
+            if (f && !seen.has(f.path)) {
+              seen.add(f.path);
+              selected.push(f);
+            }
+          }
+        }
+      }
+
+      // 2. Check view.fileItems for elements with 'is-selected'
+      if (view.fileItems && typeof view.fileItems === 'object') {
+        for (const path in view.fileItems) {
+          const item = view.fileItems[path];
+          const isSel = item?.el?.classList?.contains('is-selected') ||
+                        item?.titleEl?.classList?.contains('is-selected') ||
+                        item?.selfEl?.classList?.contains('is-selected');
+          if (isSel && item?.file && !seen.has(item.file.path)) {
+            seen.add(item.file.path);
+            selected.push(item.file);
+          }
+        }
+      }
+
+      // 3. Fallback: DOM query
+      const container = view.containerEl as HTMLElement;
+      if (container) {
+        const selectedEls = container.querySelectorAll(
+          '.is-selected, .nav-file-title.is-selected, .nav-folder-title.is-selected, .tree-item-self.is-selected, .pakcli-recent-item .tree-item-self.is-selected'
+        );
+
+        selectedEls.forEach((el) => {
+          const path = el.getAttribute('data-path') ||
+                       el.closest('[data-path]')?.getAttribute('data-path') ||
+                       el.querySelector('[data-path]')?.getAttribute('data-path') ||
+                       el.getAttribute('aria-label');
+          if (path && !seen.has(path)) {
+            seen.add(path);
+            const af = this.app.vault.getAbstractFileByPath(path);
+            if (af) {
+              selected.push(af);
+            }
+          }
+        });
+      }
+    }
+
+    // Also check Recent pane if rendered outside leaf
+    if (this.recentPaneEl) {
+      const recentSelected = this.recentPaneEl.querySelectorAll('.tree-item-self.is-selected');
+      recentSelected.forEach((el) => {
+        const path = el.getAttribute('aria-label') || el.getAttribute('data-path');
+        if (path && !seen.has(path)) {
+          seen.add(path);
+          const af = this.app.vault.getAbstractFileByPath(path);
+          if (af) {
+            selected.push(af);
+          }
+        }
+      });
+    }
+
+    if (fallbackFile) {
+      if (selected.length > 1 && selected.some((f) => f.path === fallbackFile.path)) {
+        return selected;
+      }
+      return [fallbackFile];
+    }
+
+    return selected;
+  }
+
+  public async moveToBacklog(itemOrItems: TAbstractFile | TAbstractFile[], useTimestamp: boolean = false) {
+    const items = Array.isArray(itemOrItems) ? itemOrItems : [itemOrItems];
     try {
       const backlogFolder = (this.plugin.settings.backlogFolderPath || 'Backlog').trim().replace(/^\/+|\/+$/g, '') || 'Backlog';
       await ensureFolderExists(this.app, backlogFolder);
 
-      const prefix = useTimestamp ? this.getTimestampPrefix() : '';
-      const newPath = `${backlogFolder}/${prefix}${item.name}`;
+      let count = 0;
+      for (const item of items) {
+        const prefix = useTimestamp ? this.getTimestampPrefix() : '';
+        let targetName = `${prefix}${item.name}`;
+        let newPath = `${backlogFolder}/${targetName}`;
 
-      await this.app.fileManager.renameFile(item, newPath);
-      new Notice(`Moved "${item.name}" to "${newPath}"`);
+        if (this.app.vault.getAbstractFileByPath(newPath) && newPath !== item.path) {
+          const ext = item instanceof TFile && item.extension ? `.${item.extension}` : '';
+          const base = item instanceof TFile && item.extension ? targetName.slice(0, -(ext.length)) : targetName;
+          let counter = 1;
+          while (this.app.vault.getAbstractFileByPath(`${backlogFolder}/${base} ${counter}${ext}`)) {
+            counter++;
+          }
+          newPath = `${backlogFolder}/${base} ${counter}${ext}`;
+        }
+
+        await this.app.fileManager.renameFile(item, newPath);
+        count++;
+      }
+
+      if (items.length === 1) {
+        new Notice(`Moved "${items[0].name}" to "${backlogFolder}"`);
+      } else {
+        new Notice(`Moved ${count} files to "${backlogFolder}"`);
+      }
     } catch (err) {
       console.error('[PakCLI] Error moving to backlog:', err);
       new Notice(`Failed to move to backlog: ${String(err)}`);
@@ -1937,3 +2241,28 @@ views:
     return result;
   }
 }
+
+export class FolderSuggestModal extends FuzzySuggestModal<TFolder> {
+  private folders: TFolder[];
+  private onChoose: (folder: TFolder) => void;
+
+  constructor(app: App, onChoose: (folder: TFolder) => void) {
+    super(app);
+    this.folders = this.app.vault.getAllLoadedFiles().filter((f): f is TFolder => f instanceof TFolder);
+    this.onChoose = onChoose;
+    this.setPlaceholder('Type to search destination folder...');
+  }
+
+  getItems(): TFolder[] {
+    return this.folders;
+  }
+
+  getItemText(folder: TFolder): string {
+    return folder.path || '/ (Root)';
+  }
+
+  onChooseItem(folder: TFolder, evt: MouseEvent | KeyboardEvent): void {
+    this.onChoose(folder);
+  }
+}
+
