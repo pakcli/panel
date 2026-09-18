@@ -1,10 +1,17 @@
 import { TFile } from 'obsidian';
 
-export type AudioExtension = 'mp3' | 'm4a' | 'wav' | 'ogg' | 'flac';
+export type AudioExtension = 'mp3' | 'm4a' | 'wav' | 'ogg' | 'flac' | 'aac' | 'webm' | 'opus';
 
-export const SUPPORTED_AUDIO_EXTENSIONS = new Set<string>(['mp3', 'm4a', 'wav', 'ogg', 'flac']);
+export const SUPPORTED_AUDIO_EXTENSIONS = new Set<string>(['mp3', 'm4a', 'wav', 'ogg', 'flac', 'aac', 'webm', 'opus']);
 
 export type PlaybackMode = 'loop_all' | 'loop_one' | 'shuffle' | 'linear';
+
+export interface DetectedAudioFolder {
+    path: string;
+    name: string;
+    trackCount: number;
+    formats: string[];
+}
 
 export interface AudioTrack {
     id: string; // Unique path in vault
@@ -34,10 +41,12 @@ export interface AudioPlayerState {
     priorityQueue: AudioTrack[];
     historyStack: AudioTrack[];
     targetFolder: string; // '' or 'None' for entire vault
+    targetFolders?: string[]; // Multiple saved target folders
 }
 
 export interface AudioPluginSettings {
     audioTargetFolder: string;
+    audioTargetFolders?: string[];
     audioPlaybackMode: PlaybackMode;
     audioMasterVolume: number;
     audioIsMuted: boolean;
@@ -55,6 +64,7 @@ export interface AudioPluginSettings {
 
 export const DEFAULT_AUDIO_SETTINGS: AudioPluginSettings = {
     audioTargetFolder: '',
+    audioTargetFolders: [],
     audioPlaybackMode: 'loop_all',
     audioMasterVolume: 0.70,
     audioIsMuted: false,

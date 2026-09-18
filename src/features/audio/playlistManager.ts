@@ -1,5 +1,5 @@
 import { App, TFile, TFolder, normalizePath } from 'obsidian';
-import { AudioTrack, PlaybackMode, AudioPlayerState, SUPPORTED_AUDIO_EXTENSIONS } from './types';
+import { AudioTrack, PlaybackMode, AudioPlayerState, SUPPORTED_AUDIO_EXTENSIONS, DetectedAudioFolder } from './types';
 import { AudioEngine } from './audioEngine';
 
 /**
@@ -11,6 +11,7 @@ export class PlaylistManager {
     private audioEngine: AudioEngine;
 
     private targetFolder: string = '';
+    private targetFolders: string[] = [];
     private playbackMode: PlaybackMode = 'loop_all';
 
     private basePlaylist: AudioTrack[] = [];
@@ -29,11 +30,13 @@ export class PlaylistManager {
         audioEngine: AudioEngine, 
         initialTargetFolder: string = '', 
         initialMode: PlaybackMode = 'loop_all',
-        initialMusicLabel: string = 'Background Audio'
+        initialMusicLabel: string = 'Background Audio',
+        initialTargetFolders: string[] = []
     ) {
         this.app = app;
         this.audioEngine = audioEngine;
         this.targetFolder = initialTargetFolder;
+        this.targetFolders = [...initialTargetFolders];
         this.playbackMode = initialMode;
         this.musicLabel = initialMusicLabel || 'Background Audio';
 
@@ -62,12 +65,22 @@ export class PlaylistManager {
 
             const filePath = normalizePath(file.path);
             const parentFolder = file.parent ? normalizePath(file.parent.path) : '';
+            const parentNorm = (parentFolder && parentFolder !== '.' && parentFolder !== '/') ? parentFolder.toLowerCase() : '/';
 
             // Filter by target folder if specified and not empty
             if (normTarget && normTarget !== '/' && normTarget !== '.') {
-                const parentNorm = parentFolder.toLowerCase();
-                if (parentNorm !== normTarget && !parentNorm.startsWith(normTarget + '/')) {
-                    continue;
+                if (normTarget === '__all_targets__') {
+                    if (this.targetFolders.length > 0) {
+                        const matchesAny = this.targetFolders.some(tf => {
+                            const tfNorm = (tf && tf !== '/' && tf !== '.') ? normalizePath(tf).toLowerCase() : '/';
+                            return parentNorm === tfNorm || parentNorm.startsWith(tfNorm + '/');
+                        });
+                        if (!matchesAny) continue;
+                    }
+                } else {
+                    if (parentNorm !== normTarget && !parentNorm.startsWith(normTarget + '/')) {
+                        continue;
+                    }
                 }
             }
 
@@ -96,18 +109,49 @@ export class PlaylistManager {
         this.notifyState();
     }
 
-    public getAvailableFolders(): string[] {
-        const folders = new Set<string>();
+    public getDetectedAudioFolders(): DetectedAudioFolder[] {
+        const folderMap = new Map<string, { trackCount: number; formats: Set<string> }>();
         const files = this.app.vault.getFiles();
-        for (const f of files) {
-            if (SUPPORTED_AUDIO_EXTENSIONS.has((f.extension || '').toLowerCase()) && f.parent) {
-                const p = normalizePath(f.parent.path);
-                if (p && p !== '/' && p !== '.') {
-                    folders.add(p);
-                }
+        for (const file of files) {
+            const ext = (file.extension || '').toLowerCase();
+            if (!SUPPORTED_AUDIO_EXTENSIONS.has(ext)) continue;
+
+            const parentFolder = file.parent ? normalizePath(file.parent.path) : '';
+            const folderPath = (parentFolder && parentFolder !== '.' && parentFolder !== '/') ? parentFolder : '/';
+
+            if (!folderMap.has(folderPath)) {
+                folderMap.set(folderPath, { trackCount: 0, formats: new Set<string>() });
             }
+            const entry = folderMap.get(folderPath)!;
+            entry.trackCount++;
+            entry.formats.add(ext);
         }
-        return Array.from(folders).sort();
+
+        return Array.from(folderMap.entries())
+            .map(([folderPath, data]) => ({
+                path: folderPath,
+                name: folderPath === '/' ? 'Vault Root (/)' : folderPath,
+                trackCount: data.trackCount,
+                formats: Array.from(data.formats).sort()
+            }))
+            .sort((a, b) => a.path.localeCompare(b.path));
+    }
+
+    public getAvailableFolders(): string[] {
+        const detected = this.getDetectedAudioFolders();
+        return detected.map(d => d.path);
+    }
+
+    public getTargetFolders(): string[] {
+        return [...this.targetFolders];
+    }
+
+    public setTargetFolders(folders: string[]): void {
+        this.targetFolders = [...folders];
+        if (this.targetFolder === '__all_targets__') {
+            this.scanVaultAudioTracks();
+        }
+        this.notifyState();
     }
 
     public setMusicLabel(label: string): void {
@@ -136,7 +180,8 @@ export class PlaylistManager {
             basePlaylist: [...this.basePlaylist],
             priorityQueue: [...this.priorityQueue],
             historyStack: [...this.historyStack],
-            targetFolder: this.targetFolder
+            targetFolder: this.targetFolder,
+            targetFolders: [...this.targetFolders]
         };
     }
 

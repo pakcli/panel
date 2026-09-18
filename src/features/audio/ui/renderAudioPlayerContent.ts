@@ -88,10 +88,15 @@ export function renderAudioPlayerContent(ctx: AudioPlayerRenderContext): () => v
 
     const updateFolderOptions = () => {
         const folders = playlistManager.getAvailableFolders();
+        const targetFolders = playlistManager.getTargetFolders();
         scopeSelect.empty();
         scopeSelect.createEl('option', { value: '', text: 'Entire Vault' });
+        if (targetFolders && targetFolders.length > 1) {
+            scopeSelect.createEl('option', { value: '__all_targets__', text: `All Target Folders (${targetFolders.length})` });
+        }
         for (const f of folders) {
-            scopeSelect.createEl('option', { value: f, text: f });
+            const label = f === '/' ? 'Vault Root (/)' : f;
+            scopeSelect.createEl('option', { value: f, text: label });
         }
         scopeSelect.value = playlistManager.getState().targetFolder;
     };

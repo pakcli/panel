@@ -161,7 +161,8 @@ export default class PakCLITablePlugin extends Plugin {
 			this.audioEngine,
 			this.settings.audioTargetFolder || '',
 			this.settings.audioPlaybackMode || 'loop_all',
-			this.settings.audioMusicLabel || 'Background Audio'
+			this.settings.audioMusicLabel || 'Background Audio',
+			this.settings.audioTargetFolders || []
 		);
 		this.audioPlayerPopup = new AudioPlayerPopup(this, this.audioEngine, this.playlistManager);
 
@@ -4236,23 +4237,180 @@ export default class PakCLITablePlugin extends Plugin {
 							});
 					});
 
-				// Target Music Folder
+				// Target Music Folder & Multiple Target Directories
+				let defaultFolderDropdown: any = null;
+				let renderTargetFoldersList: () => void = () => {};
+
+				const updateDefaultDropdown = () => {
+					if (!defaultFolderDropdown) return;
+					const detected = this.playlistManager ? this.playlistManager.getDetectedAudioFolders() : [];
+					const savedTargets = this.settings.audioTargetFolders || [];
+					defaultFolderDropdown.selectEl.empty();
+					
+					defaultFolderDropdown.addOption('', 'None (Entire Vault)');
+					if (savedTargets.length > 1) {
+						defaultFolderDropdown.addOption('__all_targets__', `All Target Folders (${savedTargets.length})`);
+					}
+					for (const d of detected) {
+						const label = d.path === '/' ? 'Vault Root (/)' : d.path;
+						defaultFolderDropdown.addOption(d.path, label);
+					}
+					defaultFolderDropdown.setValue(this.settings.audioTargetFolder || '');
+				};
+
+				// 1. Dropdown for Default Target Folder
 				new Setting(containerEl)
-					.setName('Target Music Folder')
-					.setDesc('Select a specific folder in your vault for playlist music, or leave as None to search the entire vault.')
+					.setName('Default Target Music Folder')
+					.setDesc('Select the default folder for playlist playback, or leave as None to search the entire vault.')
 					.addDropdown((d) => {
-						const folders = this.playlistManager ? this.playlistManager.getAvailableFolders() : [];
-						d.addOption('', 'None (Entire Vault)');
-						for (const f of folders) {
-							d.addOption(f, f);
-						}
-						d.setValue(this.settings.audioTargetFolder || '');
+						defaultFolderDropdown = d;
+						updateDefaultDropdown();
 						d.onChange(async (v) => {
 							this.settings.audioTargetFolder = v;
 							await this.saveSettings();
 							this.playlistManager?.setTargetFolder(v);
+							renderTargetFoldersList();
 						});
 					});
+
+				// 2. Multiple Target Music Directories (Auto-Detected List)
+				const targetDirsBox = containerEl.createDiv({ cls: 'pakcli-target-dirs-box' });
+				targetDirsBox.style.cssText = 'background: var(--background-secondary); border: 1px solid var(--background-modifier-border); border-radius: 8px; padding: 14px 16px; margin: 8px 0 18px 0;';
+
+				const targetDirsHeader = targetDirsBox.createDiv();
+				targetDirsHeader.style.cssText = 'display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px; gap: 12px; flex-wrap: wrap;';
+
+				const titleWrap = targetDirsHeader.createDiv();
+				const titleEl = titleWrap.createEl('h4', { text: '📁 Target Music Directories (Auto-Detected)' });
+				titleEl.style.cssText = 'margin: 0 0 4px 0; font-size: 13px; font-weight: 600; color: var(--text-normal);';
+				const descEl = titleWrap.createEl('div', { 
+					text: 'Automatically parsed based on audio format detection (.mp3, .m4a, .wav, .ogg, .flac, .aac, .webm, .opus). Toggle which directories are saved as active music targets. Custom paths cannot be manually added or edited.' 
+				});
+				descEl.style.cssText = 'font-size: 11px; color: var(--text-muted); line-height: 1.4;';
+
+				const rescanBtn = targetDirsHeader.createEl('button', { text: '🔄 Re-scan Vault' });
+				rescanBtn.style.cssText = 'font-size: 11px; padding: 3px 10px; flex-shrink: 0; cursor: pointer;';
+				rescanBtn.onclick = () => {
+					this.playlistManager?.scanVaultAudioTracks();
+					updateDefaultDropdown();
+					renderTargetFoldersList();
+					new Notice('Vault audio folders re-scanned!');
+				};
+
+				const listContainer = targetDirsBox.createDiv({ cls: 'pakcli-target-dirs-list' });
+
+				renderTargetFoldersList = () => {
+					listContainer.empty();
+					const detected = this.playlistManager ? this.playlistManager.getDetectedAudioFolders() : [];
+
+					// Initialize audioTargetFolders if undefined or not an array
+					if (!Array.isArray(this.settings.audioTargetFolders)) {
+						this.settings.audioTargetFolders = detected.map(d => d.path);
+						this.saveSettings();
+					}
+
+					if (detected.length === 0) {
+						const emptyBox = listContainer.createDiv();
+						emptyBox.style.cssText = 'padding: 16px; text-align: center; color: var(--text-muted); font-size: 12px; border: 1px dashed var(--background-modifier-border); border-radius: 6px;';
+						emptyBox.setText('🔍 No audio files (.mp3, .m4a, .wav, .ogg, .flac, .aac) detected in the vault yet. Add audio files to any folder to auto-populate this list.');
+						return;
+					}
+
+					const table = listContainer.createEl('table');
+					table.style.cssText = 'width: 100%; border-collapse: collapse; font-size: 12px;';
+
+					// Table header
+					const thead = table.createEl('thead');
+					const headerTr = thead.createEl('tr');
+					headerTr.style.cssText = 'border-bottom: 1px solid var(--background-modifier-border); color: var(--text-muted); text-align: left;';
+					
+					const thSave = headerTr.createEl('th', { text: 'Target' });
+					thSave.style.cssText = 'padding: 6px 8px; width: 60px; text-align: center;';
+					
+					const thFolder = headerTr.createEl('th', { text: 'Detected Folder' });
+					thFolder.style.cssText = 'padding: 6px 8px;';
+					
+					const thTracks = headerTr.createEl('th', { text: 'Tracks' });
+					thTracks.style.cssText = 'padding: 6px 8px; width: 80px;';
+					
+					const thFormats = headerTr.createEl('th', { text: 'Formats' });
+					thFormats.style.cssText = 'padding: 6px 8px; width: 120px;';
+
+					const thAction = headerTr.createEl('th', { text: 'Default' });
+					thAction.style.cssText = 'padding: 6px 8px; width: 110px; text-align: right;';
+
+					const tbody = table.createEl('tbody');
+
+					for (const item of detected) {
+						const tr = tbody.createEl('tr');
+						tr.style.cssText = 'border-bottom: 1px solid var(--background-modifier-border);';
+
+						// 1. Target Checkbox (Save Target)
+						const tdCheck = tr.createEl('td');
+						tdCheck.style.cssText = 'padding: 8px; text-align: center;';
+						const cb = tdCheck.createEl('input', { type: 'checkbox' });
+						const isTargeted = (this.settings.audioTargetFolders || []).includes(item.path);
+						cb.checked = isTargeted;
+						cb.onchange = async () => {
+							let currentList = this.settings.audioTargetFolders || [];
+							if (cb.checked) {
+								if (!currentList.includes(item.path)) {
+									currentList.push(item.path);
+								}
+							} else {
+								currentList = currentList.filter(p => p !== item.path);
+							}
+							this.settings.audioTargetFolders = currentList;
+							await this.saveSettings();
+							this.playlistManager?.setTargetFolders(currentList);
+							updateDefaultDropdown();
+							new Notice(`${cb.checked ? 'Targeted' : 'Untargeted'} folder "${item.name}"`);
+						};
+
+						// 2. Folder Path
+						const tdFolder = tr.createEl('td');
+						tdFolder.style.cssText = 'padding: 8px; font-weight: 500; color: var(--text-normal);';
+						tdFolder.createSpan({ text: '📁 ' });
+						tdFolder.createSpan({ text: item.name });
+						
+						const isDefault = (this.settings.audioTargetFolder || '') === item.path;
+						if (isDefault) {
+							const defaultBadge = tdFolder.createSpan({ cls: 'pakcli-pill-badge', text: '⭐ Default' });
+							defaultBadge.style.cssText = 'margin-left: 8px; font-size: 10px; padding: 2px 6px; background: var(--interactive-accent); color: var(--text-on-accent); border-radius: 4px; font-weight: bold;';
+						}
+
+						// 3. Tracks Count
+						const tdTracks = tr.createEl('td');
+						tdTracks.style.cssText = 'padding: 8px; color: var(--text-muted);';
+						tdTracks.setText(`${item.trackCount} track${item.trackCount > 1 ? 's' : ''}`);
+
+						// 4. Formats
+						const tdFormats = tr.createEl('td');
+						tdFormats.style.cssText = 'padding: 8px; color: var(--text-faint); font-family: var(--font-monospace); font-size: 11px;';
+						tdFormats.setText(item.formats.join(', '));
+
+						// 5. Action: Set as Default
+						const tdAction = tr.createEl('td');
+						tdAction.style.cssText = 'padding: 8px; text-align: right;';
+						if (!isDefault) {
+							const setDefBtn = tdAction.createEl('button', { text: 'Set Default' });
+							setDefBtn.style.cssText = 'font-size: 11px; padding: 2px 8px; cursor: pointer;';
+							setDefBtn.onclick = async () => {
+								this.settings.audioTargetFolder = item.path;
+								await this.saveSettings();
+								this.playlistManager?.setTargetFolder(item.path);
+								updateDefaultDropdown();
+								renderTargetFoldersList();
+								new Notice(`Set "${item.name}" as default target folder.`);
+							};
+						} else {
+							const currentDefLabel = tdAction.createSpan({ text: 'Active' });
+							currentDefLabel.style.cssText = 'font-size: 11px; color: var(--text-accent); font-weight: 500;';
+						}
+					}
+				};
+
+				renderTargetFoldersList();
 
 				// Default Playback Mode
 				new Setting(containerEl)
