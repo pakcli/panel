@@ -1,7 +1,7 @@
 {
     "id":  "pakcli-panel",
     "name":  "PakCLI Panel",
-    "version":  "1.0.41",
+    "version":  "1.0.42",
     "minAppVersion":  "1.5.8",
     "description":  "Visual tables, interactive SQL database explorer, ASCII canvas drawing, and interactive Leaflet maps.",
     "author":  "PakCLI",
