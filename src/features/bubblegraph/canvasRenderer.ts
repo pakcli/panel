@@ -91,9 +91,6 @@ export class CanvasRenderer {
         // Save base state
         ctx.save();
 
-        // 1. Draw subtle grid in screen coordinates
-        this.drawBackgroundGrid(transform, width, height);
-
         // 2. Apply viewport transform (pan & zoom)
         ctx.translate(width / 2 + transform.panX, height / 2 + transform.panY);
         ctx.scale(transform.zoom, transform.zoom);
@@ -125,23 +122,6 @@ export class CanvasRenderer {
         // 6. Draw Screen-Space Tooltip
         if (state.hoveredNode) {
             this.drawTooltip(state.hoveredNode, transform, width, height);
-        }
-    }
-
-    private drawBackgroundGrid(transform: ViewportTransform, width: number, height: number): void {
-        const ctx = this.ctx;
-        const gridSize = 40 * transform.zoom;
-        if (gridSize < 12) return; // Too dense to render
-
-        const offsetX = (width / 2 + transform.panX) % gridSize;
-        const offsetY = (height / 2 + transform.panY) % gridSize;
-
-        const isDark = typeof document !== 'undefined' ? document.body.classList.contains('theme-dark') : true;
-        ctx.fillStyle = isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.06)';
-        for (let x = offsetX; x < width; x += gridSize) {
-            for (let y = offsetY; y < height; y += gridSize) {
-                ctx.fillRect(x - 0.75, y - 0.75, 1.5, 1.5);
-            }
         }
     }
 
