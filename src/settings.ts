@@ -144,7 +144,8 @@ export const DEFAULT_ASSET_ROUTER_SETTINGS: AssetRouterSettings = {
 	useNoteTitleGlobalNested: false,
 	rules: [],
 	delimiter: "_",
-	assetExtensions: ["png", "jpg", "jpeg", "gif", "svg", "pdf", "mp3", "mp4", "wav", "webm", "ogg", "m4a", "xls", "xlsx", "doc", "docx", "zip", "tar", "gz"]
+	assetExtensions: ["png", "jpg", "jpeg", "gif", "svg", "pdf", "mp3", "mp4", "wav", "webm", "ogg", "m4a", "xls", "xlsx", "doc", "docx", "zip", "tar", "gz"],
+	excludedFolders: []
 };
 
 export const DEFAULT_LEAFLET_SETTINGS: BasesLeafletViewSettings = {

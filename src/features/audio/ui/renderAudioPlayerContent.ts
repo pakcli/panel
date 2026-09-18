@@ -181,7 +181,7 @@ export function renderAudioPlayerContent(ctx: AudioPlayerRenderContext): () => v
         });
         const iconSpan = btn.createSpan({ cls: 'pakcli-mode-icon' });
         setIcon(iconSpan, m.icon);
-        btn.createSpan({ text: m.label });
+        btn.createSpan({ text: m.label, cls: 'pakcli-mode-text' });
 
         btn.onclick = () => {
             audioEngine.playClickSnap();

@@ -84,14 +84,25 @@ export default class PakCLITablePlugin extends Plugin {
 		const existing = this.app.workspace.getLeavesOfType(PAKCLI_AUDIO_VIEW_TYPE);
 		let targetLeaf = existing.length > 0 ? existing[0] : null;
 		if (targetLeaf) {
+			const root = targetLeaf.getRoot();
+			if (root === this.app.workspace.rightSplit && this.app.workspace.rightSplit.collapsed) {
+				this.app.workspace.rightSplit.expand();
+			} else if (root === this.app.workspace.leftSplit && this.app.workspace.leftSplit.collapsed) {
+				this.app.workspace.leftSplit.expand();
+			}
 			this.app.workspace.revealLeaf(targetLeaf);
+			this.app.workspace.setActiveLeaf(targetLeaf, { focus: true });
+			if (this.audioPlayerPopup?.isVisible()) {
+				this.audioPlayerPopup.hide();
+			}
 		} else {
-			targetLeaf = this.app.workspace.getRightLeaf(false) || this.app.workspace.getLeaf('tab');
+			targetLeaf = this.app.workspace.getLeaf('tab');
 			await targetLeaf.setViewState({
 				type: PAKCLI_AUDIO_VIEW_TYPE,
 				active: true
 			});
 			this.app.workspace.revealLeaf(targetLeaf);
+			this.app.workspace.setActiveLeaf(targetLeaf, { focus: true });
 		}
 	}
 
@@ -172,10 +183,10 @@ export default class PakCLITablePlugin extends Plugin {
 			(leaf) => new AudioPlayerView(leaf, this, this.audioEngine, this.playlistManager)
 		);
 
-		// Ribbon Icon: Headphones (toggle 50% popup)
-		this.audioRibbonEl = this.addRibbonIcon('headphones', 'PakCLI Audio & Ambient Player', () => {
+		// Ribbon Icon: Headphones (activates panel based on dock or sidebar, without forcing right sidebar)
+		this.audioRibbonEl = this.addRibbonIcon('headphones', 'PakCLI Audio & Ambient Player', async () => {
 			this.audioEngine.playClickSnap();
-			this.audioPlayerPopup?.toggle();
+			await this.openAudioPlayerTab();
 		});
 
 		// Status Bar item
@@ -3560,7 +3571,132 @@ export default class PakCLITablePlugin extends Plugin {
 					.setDesc('Automatic attachment routing, centralized media vault, Captain Folders nested mode, and note link auto-updating.')
 					.setHeading();
 
-				// 1. Centralized Mode
+				// 1. Global Asset Router
+				new Setting(containerEl)
+					.setName('Global Asset Router')
+					.setDesc('Universal routing rules, directory exclusions, and file settings for the entire vault.')
+					.setHeading();
+
+				// Exclude Directories
+				new Setting(containerEl)
+					.setName('Exclude Directories')
+					.setDesc('Directories excluded from asset routing. Notes and attachments inside these folders will never be routed or renamed.');
+
+				const excludeBox = containerEl.createDiv({ cls: 'pakcli-excluded-dirs-box' });
+				excludeBox.style.cssText = 'background: var(--background-secondary); border: 1px solid var(--background-modifier-border); border-radius: 8px; padding: 12px 14px; margin: 0 0 16px 0;';
+
+				const addExcludeRow = excludeBox.createDiv();
+				addExcludeRow.style.cssText = 'display: flex; gap: 8px; align-items: center; margin-bottom: 10px;';
+
+				const addExcludeInput = addExcludeRow.createEl('input', {
+					type: 'text',
+					placeholder: 'Select or enter folder (e.g. Templates, Archive)...'
+				});
+				addExcludeInput.style.cssText = 'flex: 1; min-width: 0; padding: 5px 10px; border-radius: 4px; border: 1px solid var(--background-modifier-border); background: var(--background-primary); color: var(--text-normal); font-size: 12px;';
+				new FolderSuggest(this.app, addExcludeInput);
+
+				const addExcludeBtn = addExcludeRow.createEl('button', { text: '+ Exclude Directory' });
+				addExcludeBtn.style.cssText = 'font-size: 11px; padding: 5px 12px; cursor: pointer; flex-shrink: 0;';
+
+				const excludedListContainer = excludeBox.createDiv({ cls: 'pakcli-excluded-list-container' });
+
+				const renderExcludedList = () => {
+					excludedListContainer.empty();
+					const excluded = pluginSettings.excludedFolders || [];
+
+					if (excluded.length === 0) {
+						const emptyEl = excludedListContainer.createDiv();
+						emptyEl.style.cssText = 'font-size: 11px; color: var(--text-muted); font-style: italic; padding: 4px 0;';
+						emptyEl.setText('No directories excluded. All vault folders are eligible for asset routing.');
+						return;
+					}
+
+					const tagWrap = excludedListContainer.createDiv();
+					tagWrap.style.cssText = 'display: flex; flex-wrap: wrap; gap: 6px; align-items: center;';
+
+					for (let i = 0; i < excluded.length; i++) {
+						const dir = excluded[i];
+						const tag = tagWrap.createDiv({ cls: 'pakcli-pill-badge' });
+						tag.style.cssText = 'display: inline-flex; align-items: center; gap: 6px; padding: 3px 8px; background: var(--background-primary); border: 1px solid var(--background-modifier-border); border-radius: 4px; font-size: 11px; color: var(--text-normal);';
+
+						tag.createSpan({ text: `📁 ${dir}` });
+
+						const removeBtn = tag.createEl('button', { text: '✕' });
+						removeBtn.style.cssText = 'background: transparent; border: none; padding: 0 2px; cursor: pointer; color: var(--text-muted); font-size: 10px; line-height: 1;';
+						removeBtn.title = `Remove ${dir} from exclusions`;
+						removeBtn.onclick = async () => {
+							pluginSettings.excludedFolders = (pluginSettings.excludedFolders || []).filter((_, idx) => idx !== i);
+							await saveSettings();
+							renderExcludedList();
+							new Notice(`Removed "${dir}" from excluded directories.`);
+						};
+					}
+				};
+
+				addExcludeBtn.onclick = async () => {
+					const val = addExcludeInput.value.trim();
+					if (!val) return;
+
+					const dirsToAdd = val.split(',').map(d => normalizePath(d.trim())).filter(Boolean);
+					const current = pluginSettings.excludedFolders || [];
+					let addedCount = 0;
+
+					for (const d of dirsToAdd) {
+						if (!current.includes(d)) {
+							current.push(d);
+							addedCount++;
+						}
+					}
+
+					if (addedCount > 0) {
+						pluginSettings.excludedFolders = current;
+						await saveSettings();
+						addExcludeInput.value = '';
+						renderExcludedList();
+						new Notice(`Excluded ${addedCount} director${addedCount > 1 ? 'ies' : 'y'}.`);
+					} else {
+						new Notice('Directory already excluded.');
+					}
+				};
+
+				addExcludeInput.addEventListener('keydown', (e) => {
+					if (e.key === 'Enter') {
+						e.preventDefault();
+						addExcludeBtn.click();
+					}
+				});
+
+				renderExcludedList();
+
+				// Path Delimiter
+				new Setting(containerEl)
+					.setName('Path Delimiter')
+					.setDesc('Character used to join directories and file titles.')
+					.addDropdown(dropdown => dropdown
+						.addOption('-', '-')
+						.addOption('_', '_')
+						.setValue(pluginSettings.delimiter || '-')
+						.onChange(async (value) => {
+							pluginSettings.delimiter = value;
+							await saveSettings();
+						}));
+
+				// Monitored File Extensions
+				new Setting(containerEl)
+					.setName('Monitored File Extensions')
+					.setDesc('Comma-separated list of file extensions that the plugin should route.')
+					.addTextArea(text => text
+						.setPlaceholder('png, jpg, jpeg, pdf')
+						.setValue((pluginSettings.assetExtensions || []).join(', '))
+						.onChange(async (value) => {
+							pluginSettings.assetExtensions = value
+								.split(',')
+								.map(ext => ext.trim().toLowerCase())
+								.filter(ext => ext !== '');
+							await saveSettings();
+						}));
+
+				// 2. Centralized Mode
 				new Setting(containerEl).setName('Centralized Mode (Default)').setHeading();
 
 				new Setting(containerEl)
@@ -3607,8 +3743,8 @@ export default class PakCLITablePlugin extends Plugin {
 							button.setDisabled(false);
 						}));
 
-				// 2. Global Nested Mode Settings
-				new Setting(containerEl).setName('Nested Mode Globals').setHeading();
+				// 3. Nested Mode (Captain Folders) Settings
+				new Setting(containerEl).setName('Nested Mode (Captain Folders)').setHeading();
 
 				new Setting(containerEl)
 					.setName('Use Note Title in Nested Mode (Default)')
@@ -3619,35 +3755,6 @@ export default class PakCLITablePlugin extends Plugin {
 							pluginSettings.useNoteTitleGlobalNested = value;
 							await saveSettings();
 						}));
-
-				new Setting(containerEl)
-					.setName('Path Delimiter')
-					.setDesc('Character used to join directories and file titles.')
-					.addDropdown(dropdown => dropdown
-						.addOption('-', '-')
-						.addOption('_', '_')
-						.setValue(pluginSettings.delimiter || '-')
-						.onChange(async (value) => {
-							pluginSettings.delimiter = value;
-							await saveSettings();
-						}));
-
-				new Setting(containerEl)
-					.setName('Monitored File Extensions')
-					.setDesc('Comma-separated list of file extensions that the plugin should route.')
-					.addTextArea(text => text
-						.setPlaceholder('png, jpg, jpeg, pdf')
-						.setValue((pluginSettings.assetExtensions || []).join(', '))
-						.onChange(async (value) => {
-							pluginSettings.assetExtensions = value
-								.split(',')
-								.map(ext => ext.trim().toLowerCase())
-								.filter(ext => ext !== '');
-							await saveSettings();
-						}));
-
-				// 3. Captain Folders (Rules) Settings
-				new Setting(containerEl).setName('Nested Mode Override Rules (Captain Folders)').setHeading();
 
 				const bulkContainer = containerEl.createDiv({ cls: 'asset-router-bulk-container' });
 				bulkContainer.style.marginBottom = '10px';

@@ -276,31 +276,41 @@
 
 /* Mode Buttons */
 .pakcli-mode-row {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    flex-wrap: wrap;
+    display: flex !important;
+    flex-direction: row !important;
+    align-items: center !important;
+    flex-wrap: nowrap !important;
+    gap: 5px;
+    width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
 }
 
 .pakcli-mode-label {
     font-size: 0.72rem;
     font-weight: 700;
     color: var(--text-muted);
-    margin-right: 4px;
+    flex-shrink: 0;
+    margin-right: 2px;
 }
 
 .pakcli-btn-mode {
+    flex: 1 1 0;
+    min-width: 0;
     background-color: var(--background-primary);
     border: 1px solid var(--background-modifier-border);
     color: var(--text-muted);
     border-radius: var(--radius-s);
     cursor: pointer;
-    padding: 4px 10px;
-    font-size: 0.78rem;
+    padding: 4px 6px;
+    font-size: 0.75rem;
     font-weight: 500;
     display: inline-flex;
     align-items: center;
-    gap: 6px;
+    justify-content: center;
+    gap: 4px;
+    white-space: nowrap;
+    overflow: hidden;
     transition: all 0.15s ease;
 
     &:hover {
@@ -316,9 +326,21 @@
     }
 }
 
+.pakcli-mode-text {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
 .pakcli-mode-icon {
     display: inline-flex;
     align-items: center;
+    flex-shrink: 0;
+
+    svg {
+        width: 13px;
+        height: 13px;
+    }
 }
 
 /* --- Volume Controls Card --- */

@@ -18,4 +18,5 @@ export interface AssetRouterSettings {
 	rules: FolderRule[];                 // List of folder overrides
 	delimiter: string;                   // e.g. "-"
 	assetExtensions: string[];           // e.g. ["png", "jpg", "jpeg", "pdf"]
+	excludedFolders?: string[];          // Excluded directories from asset routing
 }

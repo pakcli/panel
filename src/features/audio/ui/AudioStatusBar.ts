@@ -13,6 +13,7 @@ export class AudioStatusBar {
     private statusBarEl: HTMLElement;
     private textSpan: HTMLElement;
     private timeSpan: HTMLElement;
+    private prevBtn: HTMLElement;
     private playPauseBtn: HTMLElement;
     private nextBtn: HTMLElement;
 
@@ -41,6 +42,14 @@ export class AudioStatusBar {
         };
 
         this.timeSpan = pill.createSpan({ cls: 'pakcli-status-time', text: '[00:00]' });
+
+        this.prevBtn = pill.createEl('button', { cls: 'pakcli-status-btn', title: 'Previous Track' });
+        setIcon(this.prevBtn, 'skip-back');
+        this.prevBtn.onclick = (e) => {
+            e.stopPropagation();
+            this.audioEngine.playClickSnap();
+            this.playlistManager.previous();
+        };
 
         this.playPauseBtn = pill.createEl('button', { cls: 'pakcli-status-btn', title: 'Play/Pause' });
         setIcon(this.playPauseBtn, 'play');

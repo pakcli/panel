@@ -70,9 +70,19 @@ export class AssetRouter {
 			return false;
 		}
 
+		// Check if the asset file itself is inside an excluded directory
+		if (this.isPathExcluded(file.path) || (file.parent && this.isPathExcluded(file.parent.path))) {
+			return false;
+		}
+
 		// Locate target note
 		const activeFile = overrideActiveNote || this.app.workspace.getActiveFile();
 		if (!activeFile) return false;
+
+		// Check if active note is inside an excluded directory
+		if (this.isPathExcluded(activeFile.path) || (activeFile.parent && this.isPathExcluded(activeFile.parent.path))) {
+			return false;
+		}
 
 		// Find matching rule for the note's parent path
 		const noteParentPath = normalizePath(activeFile.parent ? activeFile.parent.path : "");
@@ -185,9 +195,33 @@ export class AssetRouter {
 	}
 
 	/**
+	 * Checks if a given path (note or asset) is inside an excluded directory.
+	 */
+	isPathExcluded(path: string): boolean {
+		if (!path) return false;
+		const settings = this.getSettings();
+		const excluded = settings.excludedFolders || [];
+		if (excluded.length === 0) return false;
+
+		const normPath = normalizePath(path).toLowerCase();
+		for (const folder of excluded) {
+			const normFolder = normalizePath(folder).toLowerCase();
+			if (!normFolder || normFolder === '.' || normFolder === '/') continue;
+
+			// Matches exact folder or any file/subfolder inside it
+			if (normPath === normFolder || normPath.startsWith(normFolder + '/')) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/**
 	 * Finds the most specific enabled rule matching the given note path.
 	 */
 	findMatchingRule(notePath: string): FolderRule | null {
+		if (this.isPathExcluded(notePath)) return null;
+
 		const settings = this.getSettings();
 		const activeRules = settings.rules.filter(r => r.enabled);
 		const matches: FolderRule[] = [];
@@ -238,6 +272,11 @@ export class AssetRouter {
 	}
 
 	async scanAndRouteAssetsForNote(noteFile: TFile) {
+		if (this.isPathExcluded(noteFile.path) || (noteFile.parent && this.isPathExcluded(noteFile.parent.path))) {
+			new Notice(`Skipping: "${noteFile.basename}" is in an excluded directory.`);
+			return;
+		}
+
 		const fileCache = this.app.metadataCache.getFileCache(noteFile);
 		if (!fileCache || !fileCache.embeds) {
 			new Notice(`No assets found in ${noteFile.basename}.`);
@@ -428,6 +467,9 @@ export class AssetRouter {
 		new Notice("Starting Centralized Mode rescan...");
 
 		for (const note of markdownFiles) {
+			if (this.isPathExcluded(note.path) || (note.parent && this.isPathExcluded(note.parent.path))) {
+				continue;
+			}
 			const parentPath = note.parent ? note.parent.path : "";
 			const rule = this.findMatchingRule(parentPath);
 			if (!rule) {
@@ -456,6 +498,9 @@ export class AssetRouter {
 		new Notice("Starting Nested Mode rescan...");
 
 		for (const note of markdownFiles) {
+			if (this.isPathExcluded(note.path) || (note.parent && this.isPathExcluded(note.parent.path))) {
+				continue;
+			}
 			const parentPath = note.parent ? note.parent.path : "";
 			const rule = this.findMatchingRule(parentPath);
 			if (rule) {
@@ -484,6 +529,9 @@ export class AssetRouter {
 		new Notice(`Starting rescan for rule: ${targetRule.path === "" ? "/" : targetRule.path}...`);
 
 		for (const note of markdownFiles) {
+			if (this.isPathExcluded(note.path) || (note.parent && this.isPathExcluded(note.parent.path))) {
+				continue;
+			}
 			const parentPath = note.parent ? note.parent.path : "";
 			const matchedRule = this.findMatchingRule(parentPath);
 			if (matchedRule && matchedRule.path === targetRule.path) {
