@@ -158,6 +158,22 @@ export class AudioEngine {
         }
     }
 
+    public async preloadTrack(srcUrl: string, initialTime: number = 0): Promise<void> {
+        this.initContext();
+        this.audioEl.src = srcUrl;
+        this.audioEl.load();
+
+        if (initialTime > 0) {
+            const onLoaded = () => {
+                this.seek(initialTime);
+                for (const listener of this.timeUpdateListeners) {
+                    listener(initialTime, this.audioEl.duration || 0);
+                }
+            };
+            this.audioEl.addEventListener('loadedmetadata', onLoaded, { once: true });
+        }
+    }
+
     public async play(): Promise<void> {
         this.initContext();
         try {

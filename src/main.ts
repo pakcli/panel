@@ -173,8 +173,26 @@ export default class PakCLITablePlugin extends Plugin {
 			this.settings.audioTargetFolder || '',
 			this.settings.audioPlaybackMode || 'loop_all',
 			this.settings.audioMusicLabel || 'Background Audio',
-			this.settings.audioTargetFolders || []
+			this.settings.audioTargetFolders || [],
+			this.settings.recentsArtifactFolderPath || 'artifacts/pakcli-panel'
 		);
+
+		const initAudioState = () => {
+			this.playlistManager.init().catch((err) => {
+				console.error('[PakCLI] Error initializing audio player state:', err);
+			});
+		};
+
+		if (this.app.workspace.layoutReady) {
+			initAudioState();
+		} else {
+			this.app.workspace.onLayoutReady(initAudioState);
+		}
+
+		this.registerDomEvent(window, 'beforeunload', () => {
+			this.playlistManager?.saveAudioStateArtifact().catch(() => {});
+		});
+
 		this.audioPlayerPopup = new AudioPlayerPopup(this, this.audioEngine, this.playlistManager);
 
 		// Register Audio Player View for docking as Tab leaf
@@ -1157,6 +1175,13 @@ export default class PakCLITablePlugin extends Plugin {
 		if (this.audioStatusBar) {
 			this.audioStatusBar.destroy();
 			this.audioStatusBar = null;
+		}
+		if (this.playlistManager) {
+			try {
+				await this.playlistManager.saveAudioStateArtifact();
+			} catch (e) {
+				console.warn('[PakCLI] Error saving audio state on unload:', e);
+			}
 		}
 		if (this.audioEngine) {
 			this.audioEngine.dispose();

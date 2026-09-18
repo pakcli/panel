@@ -296,15 +296,36 @@ export function renderAudioPlayerContent(ctx: AudioPlayerRenderContext): () => v
 
     // Sync State function
     const updateUIWithState = (state: AudioPlayerState) => {
+        // Synchronize Scope Select if changed externally or restored
+        if (scopeSelect && scopeSelect.value !== state.targetFolder) {
+            scopeSelect.value = state.targetFolder;
+        }
+
         // Update Now Playing Info
         if (state.currentTrack) {
             trackTitleEl.setText(state.currentTrack.name);
             trackTitleEl.title = state.currentTrack.path;
             trackFolderEl.setText(`Folder: ${state.currentTrack.folder}`);
+
+            if (!isDraggingScrubber) {
+                if (state.duration > 0) {
+                    timeDurEl.setText(formatAudioTime(state.duration));
+                    scrubberInput.max = state.duration.toString();
+                }
+                if (state.currentTime > 0) {
+                    timeCurEl.setText(formatAudioTime(state.currentTime));
+                    scrubberInput.value = state.currentTime.toString();
+                }
+            }
         } else {
             trackTitleEl.setText('No track playing');
             trackTitleEl.title = '';
             trackFolderEl.setText('Select a track to start playback');
+            if (!isDraggingScrubber) {
+                timeCurEl.setText('00:00');
+                timeDurEl.setText('00:00');
+                scrubberInput.value = '0';
+            }
         }
 
         // Disc rotation state

@@ -79,6 +79,9 @@ export class AudioStatusBar {
             if (state.currentTrack) {
                 this.textSpan.setText(state.currentTrack.name);
                 this.textSpan.title = `Now Playing: ${state.currentTrack.name} (${state.currentTrack.path})\nClick to open Player`;
+                if (state.currentTime > 0) {
+                    this.timeSpan.setText(`[${formatAudioTime(state.currentTime)}]`);
+                }
             } else {
                 this.textSpan.setText('Ambient Audio');
                 this.textSpan.title = 'Click to open PakCLI Audio Player';
