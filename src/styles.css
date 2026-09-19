@@ -887,6 +887,73 @@ pre:hover .pakcli-cb-copy-btn {
     }
   }
 
+  /* 2b. Folder Icons: When text_only (without icon), strictly prevent icons from being colored by Captain! Keep icons visible in theme color */
+  &.pakcli-mode-text-only {
+    --folder-color: var(--icon-color, var(--nav-item-color, var(--text-muted, inherit))) !important;
+    --folder-icon-color: var(--icon-color, var(--nav-item-color, var(--text-muted, inherit))) !important;
+    --nav-folder-icon-color: var(--icon-color, var(--nav-item-color, var(--text-muted, inherit))) !important;
+
+    .nav-folder-title-icon,
+    .nav-folder-icon,
+    .folder-icon,
+    .obsidian-icon-folder-icon,
+    .iconize-icon,
+    .tree-item-icon:not(.collapse-icon) {
+      color: var(--icon-color, var(--nav-item-color, var(--text-muted, inherit))) !important;
+      fill: var(--icon-color, var(--nav-item-color, var(--text-muted, inherit))) !important;
+      stroke: var(--icon-color, var(--nav-item-color, var(--text-muted, inherit))) !important;
+      -webkit-text-fill-color: var(--icon-color, var(--nav-item-color, var(--text-muted, inherit))) !important;
+
+      svg,
+      path,
+      circle,
+      rect,
+      polygon,
+      line {
+        color: var(--icon-color, var(--nav-item-color, var(--text-muted, inherit))) !important;
+        fill: currentColor !important;
+        stroke: currentColor !important;
+      }
+    }
+
+    .nav-folder-title-icon:not(svg):not(:has(svg)),
+    .nav-folder-icon:not(svg):not(:has(svg)),
+    .folder-icon:not(svg):not(:has(svg)),
+    .obsidian-icon-folder-icon:not(svg):not(:has(svg)),
+    .iconize-icon:not(svg):not(:has(svg)) {
+      background-color: var(--icon-color, var(--nav-item-color, var(--text-muted, currentColor))) !important;
+    }
+
+    .nav-folder-title-content > svg:not(.right-triangle):not([class*="chevron"]):not(.collapse-icon),
+    .tree-item-inner > svg:not(.right-triangle):not([class*="chevron"]):not(.collapse-icon) {
+      color: var(--icon-color, var(--nav-item-color, var(--text-muted, inherit))) !important;
+      fill: currentColor !important;
+      stroke: currentColor !important;
+      -webkit-text-fill-color: var(--icon-color, var(--nav-item-color, var(--text-muted, inherit))) !important;
+
+      path,
+      circle,
+      rect,
+      polygon,
+      line {
+        color: var(--icon-color, var(--nav-item-color, var(--text-muted, inherit))) !important;
+        fill: currentColor !important;
+        stroke: currentColor !important;
+      }
+    }
+
+    .nav-folder-title-content::before,
+    .nav-folder-title-content::after,
+    .tree-item-inner::before,
+    .tree-item-inner::after {
+      color: var(--icon-color, var(--nav-item-color, var(--text-muted, inherit))) !important;
+      -webkit-text-fill-color: var(--icon-color, var(--nav-item-color, var(--text-muted, inherit))) !important;
+      background-color: var(--icon-color, var(--nav-item-color, var(--text-muted, currentColor))) !important;
+      fill: var(--icon-color, var(--nav-item-color, var(--text-muted, inherit))) !important;
+      stroke: var(--icon-color, var(--nav-item-color, var(--text-muted, inherit))) !important;
+    }
+  }
+
   /* 3. Badges: In text_only and text_icon, badges are shielded (theme accent) */
   &:not(.pakcli-mode-text-icon-badge):not(.pakcli-mode-text-icon-badge-chevron):not(.pakcli-mode-all) {
     .pakcli-folder-index-badges {

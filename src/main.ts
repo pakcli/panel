@@ -2,7 +2,7 @@ import { Plugin, Notice, Setting, PluginSettingTab, ButtonComponent, DropdownCom
 import { PakCLITableSettings, DEFAULT_TABLE_SETTINGS, DEFAULT_BUBBLE_GRAPH_SETTINGS, RelationshipTierConfig, DEFAULT_RELATIONSHIP_TIERS, RelationshipFolderEntry, RelationshipViewStructure, RelationshipSortOrder, DictionaryFolderEntry, DictionarySubfolderMode } from './settings';
 import { handleArtifactRename, moveArtifactsBetweenFolders } from './features/sqlseal/utils/views';
 import { SplitViewManager, FolderSuggestModal } from './features/explorer/splitViewManager';
-import { ExplorerSectionId, EXPLORER_SECTIONS_INFO, DEFAULT_EXPLORER_SECTION_ORDER } from './features/explorer/types';
+import { ExplorerSectionId, EXPLORER_SECTIONS_INFO, DEFAULT_EXPLORER_SECTION_ORDER, ExplorerRowBgMode } from './features/explorer/types';
 import { ImageTriageModal } from './features/carousel/ImageTriageModal';
 import { IMAGE_CAROUSEL_VIEW_TYPE, ImageCarouselView } from './features/carousel/ImageCarouselView';
 import { RelationshipExplorerManager } from './features/relationship/relationshipExplorerManager';
@@ -1863,9 +1863,9 @@ export default class PakCLITablePlugin extends Plugin {
 				// Toggle 1: Explorer Relationship Virtual Folders
 				new Setting(containerEl)
 					.setName('Explorer Relationship Virtual Folders')
-					.setDesc('Group notes inside the relationship folder into virtual closeness folders in Obsidian\'s File Explorer (with [🔮 Virtual] badge). Non-destructive, does not modify actual files on disk. (Default: Disabled)')
+					.setDesc('Group notes inside the relationship folder into virtual closeness folders in Obsidian\'s File Explorer (with [🔮 Virtual] badge). Non-destructive, does not modify actual files on disk. (Default: Enabled)')
 					.addToggle((toggle) => {
-						toggle.setValue(this.settings.explorerRelationshipVirtualFolders === true)
+						toggle.setValue(this.settings.explorerRelationshipVirtualFolders !== false)
 							.onChange(async (val) => {
 								this.settings.explorerRelationshipVirtualFolders = val;
 								await this.saveSettings();
@@ -4121,6 +4121,40 @@ export default class PakCLITablePlugin extends Plugin {
 							await saveSettings();
 							this.splitViewManager?.applyCaptainFolderTextColors();
 						}));
+
+				let styleDropdownSetting: Setting | null = null;
+
+				new Setting(containerEl)
+					.setName('Desaturate Explorer Row Background')
+					.setDesc('Modular global override: desaturates loud folder and file row background fills across multiple Obsidian themes while preserving vibrant borders, icons, text, and badges.')
+					.addToggle(toggle => toggle
+						.setValue(pluginSettings.enableDesaturateExplorerRowBg === true)
+						.onChange(async (value) => {
+							pluginSettings.enableDesaturateExplorerRowBg = value;
+							await saveSettings();
+							if (styleDropdownSetting) {
+								styleDropdownSetting.settingEl.style.display = value ? '' : 'none';
+							}
+							this.splitViewManager?.applyCaptainFolderTextColors();
+						}));
+
+				styleDropdownSetting = new Setting(containerEl)
+					.setName('Explorer Row Background Style')
+					.setDesc('Choose the modular neutral fill style applied across active themes.')
+					.addDropdown(dropdown => dropdown
+						.addOption('desaturated', 'Neutral Card Background (Theme Secondary - Recommended)')
+						.addOption('transparent', 'Transparent (Border / Outline Only)')
+						.addOption('subtle', 'Subtle Tint (4% Low-Saturation)')
+						.setValue(pluginSettings.explorerRowBgMode || 'desaturated')
+						.onChange(async (value) => {
+							pluginSettings.explorerRowBgMode = value as ExplorerRowBgMode;
+							await saveSettings();
+							this.splitViewManager?.applyCaptainFolderTextColors();
+						}));
+
+				if (pluginSettings.enableDesaturateExplorerRowBg !== true && styleDropdownSetting) {
+					styleDropdownSetting.settingEl.style.display = 'none';
+				}
 
 				const bulkContainer = containerEl.createDiv({ cls: 'asset-router-bulk-container' });
 				bulkContainer.style.marginBottom = '10px';

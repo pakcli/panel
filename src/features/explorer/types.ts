@@ -104,7 +104,11 @@ export interface ExplorerSettings {
   enableDictionaryVirtualFolders?: boolean;
   enableCaptainFolderExplorerColor?: boolean;
   captainFolderExplorerOverrideMode?: CaptainFolderOverrideMode;
+  enableDesaturateExplorerRowBg?: boolean;
+  explorerRowBgMode?: ExplorerRowBgMode;
 }
+
+export type ExplorerRowBgMode = 'none' | 'desaturated' | 'transparent' | 'subtle';
 
 export type CaptainFolderOverrideMode =
   | 'none'
@@ -158,7 +162,7 @@ export const DEFAULT_EXPLORER_SETTINGS: ExplorerSettings = {
   dictionaryScope: 'specific',
   dictionaryFolderPath: 'Dictionary',
   dictionaryFolders: [
-    { id: 'dict_default', path: 'Digital Library/Dictionary', subfolderMode: 'own_az' }
+    { id: 'dict_default', path: 'Dictionary', subfolderMode: 'own_az' }
   ],
   dictionaryPinnedTerms: [],
   dictionaryActiveLetter: null,
@@ -166,5 +170,7 @@ export const DEFAULT_EXPLORER_SETTINGS: ExplorerSettings = {
   enableDictionaryVirtualFolders: true,
   enableCaptainFolderExplorerColor: true,
   captainFolderExplorerOverrideMode: 'text_icon',
+  enableDesaturateExplorerRowBg: false,
+  explorerRowBgMode: 'desaturated',
 };
 

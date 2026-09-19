@@ -142,25 +142,36 @@
   }
 
   &.has-file {
-    background: rgba(var(--interactive-accent-rgb, 120, 80, 200), 0.14);
-    background: color-mix(in srgb, var(--interactive-accent, var(--color-accent, #7852ff)) 14%, transparent);
-    border-color: var(--interactive-accent, var(--color-accent, #7852ff));
+    background: var(--background-modifier-form-field);
+    background: color-mix(in srgb, var(--interactive-accent, var(--color-accent, #7852ff)) 6%, var(--background-modifier-form-field));
+    border: 1px solid var(--background-modifier-border);
+    border-color: color-mix(in srgb, var(--interactive-accent, var(--color-accent, #7852ff)) 35%, var(--background-modifier-border));
     color: var(--text-accent, var(--interactive-accent, var(--color-accent, #7852ff)));
-    font-weight: 800;
+    -webkit-text-fill-color: var(--text-accent, var(--interactive-accent, var(--color-accent, #7852ff)));
+    font-weight: 600;
   }
 
   &.is-missing {
-    opacity: 0.35;
+    opacity: 0.38;
     border-style: dashed;
+    border-color: var(--background-modifier-border);
     color: var(--text-faint);
+    -webkit-text-fill-color: var(--text-faint);
+    background: transparent;
 
     &:hover {
-      opacity: 0.65;
+      opacity: 0.75;
+      color: var(--text-muted);
+      -webkit-text-fill-color: var(--text-muted);
     }
   }
 
   &:hover {
-    opacity: 0.85;
+    opacity: 1;
+    border-color: color-mix(in srgb, var(--interactive-accent, var(--color-accent, #7852ff)) 55%, var(--background-modifier-border));
+    background: color-mix(in srgb, var(--interactive-accent, var(--color-accent, #7852ff)) 10%, var(--background-modifier-form-field));
+    color: var(--text-accent, var(--interactive-accent, var(--color-accent, #7852ff)));
+    -webkit-text-fill-color: var(--text-accent, var(--interactive-accent, var(--color-accent, #7852ff)));
   }
 }
 
@@ -1309,10 +1320,6 @@ body.pakcli-resizing-y {
 
 /* ── Captain Folder File Explorer Color Override (Multi-Mode) ─── */
 .nav-folder-title.pakcli-captain-folder-colored {
-  --folder-color: var(--captain-folder-color) !important;
-  --folder-icon-color: var(--captain-folder-color) !important;
-  --nav-folder-icon-color: var(--captain-folder-color) !important;
-
   // 1. Folder Title Text (All modes: text_only, text_icon, text_icon_badge, all)
   .nav-folder-title-content,
   .tree-item-inner,
@@ -1326,6 +1333,10 @@ body.pakcli-resizing-y {
   &.pakcli-mode-text-icon-badge,
   &.pakcli-mode-text-icon-badge-chevron,
   &.pakcli-mode-all {
+    --folder-color: var(--captain-folder-color) !important;
+    --folder-icon-color: var(--captain-folder-color) !important;
+    --nav-folder-icon-color: var(--captain-folder-color) !important;
+
     .nav-folder-title-content::before,
     .nav-folder-title-content::after,
     .tree-item-inner::before,
@@ -1369,40 +1380,113 @@ body.pakcli-resizing-y {
     }
   }
 
-  // 3. Badges: In text_only and text_icon, badges are shielded (theme accent)
+  // 2b. Folder Icons: When text_only (without icon), strictly prevent icons from being colored by Captain!
+  // Keep the icons visible in their default theme uncolored state.
+  &.pakcli-mode-text-only {
+    --folder-color: var(--icon-color, var(--nav-item-color, var(--text-muted, inherit))) !important;
+    --folder-icon-color: var(--icon-color, var(--nav-item-color, var(--text-muted, inherit))) !important;
+    --nav-folder-icon-color: var(--icon-color, var(--nav-item-color, var(--text-muted, inherit))) !important;
+
+    .nav-folder-title-icon,
+    .nav-folder-icon,
+    .folder-icon,
+    .obsidian-icon-folder-icon,
+    .iconize-icon,
+    .tree-item-icon:not(.collapse-icon) {
+      color: var(--icon-color, var(--nav-item-color, var(--text-muted, inherit))) !important;
+      fill: var(--icon-color, var(--nav-item-color, var(--text-muted, inherit))) !important;
+      stroke: var(--icon-color, var(--nav-item-color, var(--text-muted, inherit))) !important;
+      -webkit-text-fill-color: var(--icon-color, var(--nav-item-color, var(--text-muted, inherit))) !important;
+
+      svg,
+      path,
+      circle,
+      rect,
+      polygon,
+      line {
+        color: var(--icon-color, var(--nav-item-color, var(--text-muted, inherit))) !important;
+        fill: currentColor !important;
+        stroke: currentColor !important;
+      }
+    }
+
+    .nav-folder-title-icon:not(svg):not(:has(svg)),
+    .nav-folder-icon:not(svg):not(:has(svg)),
+    .folder-icon:not(svg):not(:has(svg)),
+    .obsidian-icon-folder-icon:not(svg):not(:has(svg)),
+    .iconize-icon:not(svg):not(:has(svg)) {
+      background-color: var(--icon-color, var(--nav-item-color, var(--text-muted, currentColor))) !important;
+    }
+
+    .nav-folder-title-content > svg:not(.right-triangle):not([class*="chevron"]):not(.collapse-icon),
+    .tree-item-inner > svg:not(.right-triangle):not([class*="chevron"]):not(.collapse-icon) {
+      color: var(--icon-color, var(--nav-item-color, var(--text-muted, inherit))) !important;
+      fill: currentColor !important;
+      stroke: currentColor !important;
+      -webkit-text-fill-color: var(--icon-color, var(--nav-item-color, var(--text-muted, inherit))) !important;
+
+      path,
+      circle,
+      rect,
+      polygon,
+      line {
+        color: var(--icon-color, var(--nav-item-color, var(--text-muted, inherit))) !important;
+        fill: currentColor !important;
+        stroke: currentColor !important;
+      }
+    }
+
+    .nav-folder-title-content::before,
+    .nav-folder-title-content::after,
+    .tree-item-inner::before,
+    .tree-item-inner::after {
+      color: var(--icon-color, var(--nav-item-color, var(--text-muted, inherit))) !important;
+      -webkit-text-fill-color: var(--icon-color, var(--nav-item-color, var(--text-muted, inherit))) !important;
+      background-color: var(--icon-color, var(--nav-item-color, var(--text-muted, currentColor))) !important;
+      fill: var(--icon-color, var(--nav-item-color, var(--text-muted, inherit))) !important;
+      stroke: var(--icon-color, var(--nav-item-color, var(--text-muted, inherit))) !important;
+    }
+  }
+
+  // 3. Badges: In text_only and text_icon, badges use the refined subtle accent color
   &:not(.pakcli-mode-text-icon-badge):not(.pakcli-mode-text-icon-badge-chevron):not(.pakcli-mode-all) {
     .pakcli-folder-index-badges {
       color: initial !important;
       -webkit-text-fill-color: initial !important;
 
       .pakcli-folder-badge {
-        -webkit-text-fill-color: initial !important;
-
         &.has-file {
           color: var(--text-accent, var(--interactive-accent, var(--color-accent, #7852ff))) !important;
           -webkit-text-fill-color: var(--text-accent, var(--interactive-accent, var(--color-accent, #7852ff))) !important;
-          background-color: rgba(var(--interactive-accent-rgb, 120, 80, 200), 0.14) !important;
+          border-color: color-mix(in srgb, var(--interactive-accent, var(--color-accent, #7852ff)) 35%, var(--background-modifier-border)) !important;
+          background: color-mix(in srgb, var(--interactive-accent, var(--color-accent, #7852ff)) 6%, var(--background-modifier-form-field)) !important;
         }
 
         &.is-missing {
-          color: var(--text-faint, #888) !important;
-          -webkit-text-fill-color: var(--text-faint, #888) !important;
+          color: var(--text-faint) !important;
+          -webkit-text-fill-color: var(--text-faint) !important;
+          border-color: var(--background-modifier-border) !important;
+          background: transparent !important;
         }
       }
     }
   }
 
-  // 4. Badges: In text_icon_badge, text_icon_badge_chevron, and all, badges receive Captain Folder color
+  // 4. Badges: In text_icon_badge, text_icon_badge_chevron, and all, badges receive Captain Folder color with subtle tint
   &.pakcli-mode-text-icon-badge,
   &.pakcli-mode-text-icon-badge-chevron,
   &.pakcli-mode-all {
     .pakcli-folder-index-badges .pakcli-folder-badge {
       color: var(--captain-folder-color, inherit) !important;
       -webkit-text-fill-color: var(--captain-folder-color, inherit) !important;
-      border-color: var(--captain-folder-color, inherit) !important;
+      border-color: color-mix(in srgb, var(--captain-folder-color) 40%, var(--background-modifier-border)) !important;
+      background: color-mix(in srgb, var(--captain-folder-color) 7%, var(--background-modifier-form-field)) !important;
 
       &.has-file {
-        background-color: color-mix(in srgb, var(--captain-folder-color) 18%, transparent) !important;
+        color: var(--captain-folder-color, inherit) !important;
+        -webkit-text-fill-color: var(--captain-folder-color, inherit) !important;
+        border-color: color-mix(in srgb, var(--captain-folder-color) 40%, var(--background-modifier-border)) !important;
+        background: color-mix(in srgb, var(--captain-folder-color) 7%, var(--background-modifier-form-field)) !important;
       }
     }
   }
@@ -1463,6 +1547,192 @@ body.pakcli-resizing-y {
   }
 }
 
+/* ── Dynamic Light / Dark Mode Neutral Desaturated Row Calculations ── */
+:root,
+body {
+  --pakcli-row-bg-neutral: var(--background-secondary);
+  --pakcli-row-bg-hover: var(--background-modifier-hover);
+}
 
+.theme-light,
+body.theme-light,
+html.theme-light {
+  /* In Light Mode: Lighter than theme secondary background */
+  --pakcli-row-bg-neutral: color-mix(in srgb, var(--background-secondary), #ffffff 10%);
+  --pakcli-row-bg-hover: color-mix(in srgb, var(--background-modifier-hover, rgba(0, 0, 0, 0.05)), #ffffff 10%);
+}
 
+.theme-dark,
+body.theme-dark,
+html.theme-dark {
+  /* In Dark Mode: Exactly 10% darker than theme secondary background */
+  --pakcli-row-bg-neutral: color-mix(in srgb, var(--background-secondary), #000000 10%);
+  --pakcli-row-bg-hover: color-mix(in srgb, var(--background-modifier-hover, rgba(255, 255, 255, 0.05)), #000000 10%);
+}
+
+/* ── Desaturate Explorer Row Background (Modular Multi-Theme Override) ── */
+html body.pakcli-desaturate-explorer-bg,
+body.pakcli-desaturate-explorer-bg,
+.workspace-leaf-content[data-type="file-explorer"].pakcli-desaturate-row-bg,
+.nav-files-container.pakcli-desaturate-row-bg {
+
+  // Universal CSS custom properties bindings for theme-agnostic resolution
+  &.pakcli-row-bg-desaturated {
+    --pakcli-row-bg-resolved: var(--pakcli-row-bg-neutral);
+    --nav-item-background: var(--pakcli-row-bg-neutral);
+    --nav-folder-background: var(--pakcli-row-bg-neutral);
+    --folder-background: var(--pakcli-row-bg-neutral);
+    --card-background: var(--pakcli-row-bg-neutral);
+  }
+
+  &.pakcli-row-bg-transparent {
+    --pakcli-row-bg-resolved: transparent;
+    --nav-item-background: transparent;
+    --nav-folder-background: transparent;
+    --folder-background: transparent;
+    --card-background: transparent;
+  }
+
+  &.pakcli-row-bg-subtle {
+    --pakcli-row-bg-resolved: color-mix(in srgb, var(--captain-folder-color, var(--folder-color, var(--text-normal))) 4%, var(--background-primary));
+    --nav-item-background: var(--pakcli-row-bg-resolved);
+    --nav-folder-background: var(--pakcli-row-bg-resolved);
+    --folder-background: var(--pakcli-row-bg-resolved);
+    --card-background: var(--pakcli-row-bg-resolved);
+  }
+
+  // Mode: Desaturated (Neutral Theme Card Background - adapts to Light = Lighter, Dark = 10% Darker)
+  &.pakcli-row-bg-desaturated {
+    // All rows EXCEPT rows where Captain Table dropdown is explicitly set to 'all'
+    .nav-folder-title:not(.pakcli-mode-all),
+    .tree-item-self.nav-folder-title:not(.pakcli-mode-all),
+    .nav-file-title,
+    .tree-item-self.nav-file-title,
+    .tree-item-self:not(.pakcli-mode-all),
+    .nav-folder:not(:has(> .pakcli-mode-all)) > .nav-folder-title,
+    .nav-file > .nav-file-title,
+    [data-path] > .nav-folder-title:not(.pakcli-mode-all),
+    [data-path] > .nav-file-title,
+    .nav-folder-title[data-path]:not(.pakcli-mode-all),
+    .nav-file-title[data-path] {
+      background-color: var(--pakcli-row-bg-neutral) !important;
+      background: var(--pakcli-row-bg-neutral) !important;
+      background-image: none !important;
+
+      &:hover {
+        background-color: var(--pakcli-row-bg-hover, var(--background-modifier-hover)) !important;
+        background: var(--pakcli-row-bg-hover, var(--background-modifier-hover)) !important;
+        background-image: none !important;
+      }
+
+      &.is-selected {
+        background-color: var(--nav-item-background-active, var(--background-modifier-selected)) !important;
+        background: var(--nav-item-background-active, var(--background-modifier-selected)) !important;
+        background-image: none !important;
+      }
+    }
+
+    // Specific exception: rows where Captain Table dropdown is set to 'all' (all overridden)
+    .nav-folder-title.pakcli-mode-all,
+    .tree-item-self.nav-folder-title.pakcli-mode-all,
+    .tree-item-self.pakcli-mode-all {
+      background-color: color-mix(in srgb, var(--captain-folder-color, var(--folder-color)) 15%, var(--background-primary)) !important;
+      background: color-mix(in srgb, var(--captain-folder-color, var(--folder-color)) 15%, var(--background-primary)) !important;
+      background-image: none !important;
+
+      &:hover {
+        background-color: color-mix(in srgb, var(--captain-folder-color, var(--folder-color)) 25%, var(--background-primary)) !important;
+        background: color-mix(in srgb, var(--captain-folder-color, var(--folder-color)) 25%, var(--background-primary)) !important;
+      }
+
+      &.is-selected {
+        background-color: var(--nav-item-background-active, var(--background-modifier-selected)) !important;
+        background: var(--nav-item-background-active, var(--background-modifier-selected)) !important;
+      }
+    }
+
+    .nav-folder-title-content,
+    .tree-item-inner {
+      background-color: transparent !important;
+      background: transparent !important;
+      background-image: none !important;
+    }
+  }
+
+  // Mode: Transparent (Outline / Border Only, Clean Minimal Look)
+  &.pakcli-row-bg-transparent {
+    .nav-folder-title,
+    .tree-item-self.nav-folder-title,
+    .nav-file-title,
+    .tree-item-self.nav-file-title,
+    .tree-item-self,
+    .nav-folder > .nav-folder-title,
+    .nav-file > .nav-file-title,
+    [data-path] > .nav-folder-title,
+    [data-path] > .nav-file-title,
+    .nav-folder-title[data-path],
+    .nav-file-title[data-path] {
+      background-color: transparent !important;
+      background: transparent !important;
+      background-image: none !important;
+
+      &:hover {
+        background-color: var(--background-modifier-hover, var(--nav-item-background-hover)) !important;
+        background: var(--background-modifier-hover, var(--nav-item-background-hover)) !important;
+        background-image: none !important;
+      }
+
+      &.is-selected {
+        background-color: var(--nav-item-background-active, var(--background-modifier-selected)) !important;
+        background: var(--nav-item-background-active, var(--background-modifier-selected)) !important;
+        background-image: none !important;
+      }
+    }
+
+    .nav-folder-title-content,
+    .tree-item-inner {
+      background-color: transparent !important;
+      background: transparent !important;
+      background-image: none !important;
+    }
+  }
+
+  // Mode: Subtle (Ultra-low Saturation Tint: 4% hue, 96% background)
+  &.pakcli-row-bg-subtle {
+    .nav-folder-title,
+    .tree-item-self.nav-folder-title,
+    .nav-file-title,
+    .tree-item-self.nav-file-title,
+    .tree-item-self,
+    .nav-folder > .nav-folder-title,
+    .nav-file > .nav-file-title,
+    [data-path] > .nav-folder-title,
+    [data-path] > .nav-file-title,
+    .nav-folder-title[data-path],
+    .nav-file-title[data-path] {
+      background-color: color-mix(in srgb, var(--captain-folder-color, var(--folder-color, var(--text-normal))) 4%, var(--background-primary)) !important;
+      background: color-mix(in srgb, var(--captain-folder-color, var(--folder-color, var(--text-normal))) 4%, var(--background-primary)) !important;
+      background-image: none !important;
+
+      &:hover {
+        background-color: var(--background-modifier-hover, var(--nav-item-background-hover)) !important;
+        background: var(--background-modifier-hover, var(--nav-item-background-hover)) !important;
+        background-image: none !important;
+      }
+
+      &.is-selected {
+        background-color: var(--nav-item-background-active, var(--background-modifier-selected)) !important;
+        background: var(--nav-item-background-active, var(--background-modifier-selected)) !important;
+        background-image: none !important;
+      }
+    }
+
+    .nav-folder-title-content,
+    .tree-item-inner {
+      background-color: transparent !important;
+      background: transparent !important;
+      background-image: none !important;
+    }
+  }
+}
 

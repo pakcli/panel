@@ -1,6 +1,6 @@
 import { App, Menu, Notice, setIcon, TFile, TFolder, TAbstractFile, WorkspaceLeaf, Keymap, HoverParent, HoverPopover, FuzzySuggestModal } from 'obsidian';
 import type PakCLITablePlugin from '../../main';
-import { ExplorerSectionId, RecentTimeFilter, RECENT_TIME_FILTER_OPTIONS } from './types';
+import { ExplorerSectionId, RecentTimeFilter, RECENT_TIME_FILTER_OPTIONS, ExplorerRowBgMode, CaptainFolderOverrideMode } from './types';
 import { ensureFolderExists } from '../sqlseal/utils/views';
 import { DictionaryPopupModal } from '../dictionary/dictionaryPopupModal';
 import { matchFolderRule } from '../bubblegraph/graphBuilder';
@@ -123,7 +123,14 @@ export class SplitViewManager implements HoverParent {
       })
     );
 
-    // 4. Enable Ctrl+Click multi-select in File Explorer & Recent list
+    // 5. Listen to theme and snippet changes (css-change) to dynamically adapt modular row styling
+    this.plugin.registerEvent(
+      this.app.workspace.on('css-change', () => {
+        this.applyCaptainFolderTextColors();
+      })
+    );
+
+    // 6. Enable Ctrl+Click multi-select in File Explorer & Recent list
     this.initCtrlMultiSelect();
   }
 
@@ -416,6 +423,12 @@ export class SplitViewManager implements HoverParent {
     this.applyBaseExplorerFilter();
     this.refreshFolderBadges(containerEl);
     this.applyCaptainFolderTextColors(containerEl);
+    if (this.plugin.dictionaryExplorerManager) {
+      this.plugin.dictionaryExplorerManager.scheduleRefresh();
+    }
+    if (this.plugin.relationshipExplorerManager) {
+      this.plugin.relationshipExplorerManager.scheduleRefresh();
+    }
   }
 
   private injectHeaderButton(containerEl: HTMLElement) {
@@ -518,6 +531,9 @@ export class SplitViewManager implements HoverParent {
       this.updateButtonState();
       if (this.plugin.dictionaryExplorerManager) {
         this.plugin.dictionaryExplorerManager.refreshVirtualFolders();
+      }
+      if (this.plugin.relationshipExplorerManager) {
+        this.plugin.relationshipExplorerManager.refreshVirtualFolders();
       }
       new Notice(`Virtual Folders in Explorer: ${next ? 'Enabled' : 'Disabled'}`);
     });
@@ -1899,7 +1915,16 @@ views:
       ? [customContainer]
       : leaves.map((l) => (l.view as any)?.containerEl).filter(Boolean);
 
+    const bgClasses = ['pakcli-row-bg-desaturated', 'pakcli-row-bg-transparent', 'pakcli-row-bg-subtle', 'pakcli-row-bg-none'];
+    document.body.removeClass('pakcli-desaturate-explorer-bg', ...bgClasses);
+
     for (const container of containers) {
+      container.removeClass('pakcli-desaturate-row-bg', ...bgClasses);
+      const navFiles = container.querySelector('.nav-files-container');
+      if (navFiles) {
+        navFiles.removeClass('pakcli-desaturate-row-bg', ...bgClasses);
+      }
+
       const colored = container.querySelectorAll<HTMLElement>(
         '.pakcli-captain-folder-colored, .pakcli-captain-colored-text, .pakcli-captain-colored-icon'
       );
@@ -1920,6 +1945,7 @@ views:
         el.style.removeProperty('fill');
         el.style.removeProperty('stroke');
         el.style.removeProperty('background-color');
+        el.style.removeProperty('background');
         el.removeClass('pakcli-captain-folder-colored');
         el.removeClass('pakcli-captain-colored-text');
         el.removeClass('pakcli-captain-colored-icon');
@@ -1947,6 +1973,29 @@ views:
   }
 
   private applyCaptainFolderTextColorsToContainer(containerEl: HTMLElement) {
+    const isDesaturateEnabled = this.plugin.settings.enableDesaturateExplorerRowBg === true;
+    const rowBgMode: ExplorerRowBgMode = isDesaturateEnabled
+      ? (this.plugin.settings.explorerRowBgMode || 'desaturated')
+      : 'none';
+
+    // Modular multi-theme row background management
+    const bgClasses = ['pakcli-row-bg-desaturated', 'pakcli-row-bg-transparent', 'pakcli-row-bg-subtle', 'pakcli-row-bg-none'];
+    containerEl.removeClass('pakcli-desaturate-row-bg', ...bgClasses);
+    document.body.removeClass('pakcli-desaturate-explorer-bg', ...bgClasses);
+
+    const navFilesContainer = containerEl.querySelector('.nav-files-container');
+    if (navFilesContainer) {
+      navFilesContainer.removeClass('pakcli-desaturate-row-bg', ...bgClasses);
+    }
+
+    if (rowBgMode !== 'none') {
+      containerEl.addClass('pakcli-desaturate-row-bg', `pakcli-row-bg-${rowBgMode}`);
+      document.body.addClass('pakcli-desaturate-explorer-bg', `pakcli-row-bg-${rowBgMode}`);
+      if (navFilesContainer) {
+        navFilesContainer.addClass('pakcli-desaturate-row-bg', `pakcli-row-bg-${rowBgMode}`);
+      }
+    }
+
     const globalMode: CaptainFolderOverrideMode = this.plugin.settings.captainFolderExplorerOverrideMode ||
       (this.plugin.settings.enableCaptainFolderExplorerColor === false ? 'none' : 'text_icon');
 
@@ -1982,6 +2031,9 @@ views:
         titleEl.style.removeProperty('--icon-color');
         titleEl.style.removeProperty('--icon-color-hover');
         titleEl.style.removeProperty('--icon-color-active');
+        titleEl.style.removeProperty('background-color');
+        titleEl.style.removeProperty('background');
+        titleEl.style.removeProperty('--nav-item-background');
         titleEl.removeClass(
           'pakcli-captain-folder-colored',
           'pakcli-mode-text-only',
@@ -2011,6 +2063,8 @@ views:
           b.style.removeProperty('color');
           b.style.removeProperty('-webkit-text-fill-color');
           b.style.removeProperty('border-color');
+          b.style.removeProperty('background-color');
+          b.style.removeProperty('background');
         });
 
         const chevrons = titleEl.querySelectorAll<HTMLElement>('.collapse-icon, .nav-folder-collapse-indicator');
@@ -2057,10 +2111,6 @@ views:
         titleEl.addClass('pakcli-captain-folder-colored', 'pakcli-mode-' + mode.replace(/_/g, '-'));
 
         titleEl.style.setProperty('--captain-folder-color', color, 'important');
-        titleEl.style.setProperty('--folder-color', color, 'important');
-        titleEl.style.setProperty('--folder-icon-color', color, 'important');
-        titleEl.style.setProperty('--nav-folder-icon-color', color, 'important');
-        titleEl.style.removeProperty('--tree-item-icon-color');
 
         // 1. Text filename: Always colored in all non-none modes
         if (contentEl) {
@@ -2106,6 +2156,11 @@ views:
         const shouldColorIcon = (mode === 'text_icon' || mode === 'text_icon_badge' || mode === 'text_icon_badge_chevron' || mode === 'all');
 
         if (shouldColorIcon) {
+          titleEl.style.setProperty('--folder-color', color, 'important');
+          titleEl.style.setProperty('--folder-icon-color', color, 'important');
+          titleEl.style.setProperty('--nav-folder-icon-color', color, 'important');
+          titleEl.style.removeProperty('--tree-item-icon-color');
+
           const applyIconColor = (el: HTMLElement) => {
             if (isProtected(el) || isCollapseIndicator(el)) return;
             el.addClass('pakcli-captain-colored-icon');
@@ -2169,8 +2224,17 @@ views:
             });
           }
         } else {
-          // If text_only, ensure icons are not colored
-          const existingIcons = titleEl.querySelectorAll<HTMLElement>('.pakcli-captain-colored-icon');
+          // If text_only (without icon), ensure icons and icon CSS variables are strictly NOT colored
+          titleEl.style.removeProperty('--folder-color');
+          titleEl.style.removeProperty('--folder-icon-color');
+          titleEl.style.removeProperty('--nav-folder-icon-color');
+          titleEl.style.removeProperty('--tree-item-icon-color');
+
+          const existingIcons = titleEl.querySelectorAll<HTMLElement>(
+            '.pakcli-captain-colored-icon, .nav-folder-title-icon, .nav-folder-icon, .folder-icon, ' +
+            '.obsidian-icon-folder-icon, .iconize-icon, [data-icon]:not(.collapse-icon):not([class*="collapse"]), ' +
+            '.tree-item-icon:not(.collapse-icon)'
+          );
           existingIcons.forEach((ic) => {
             ic.style.removeProperty('color');
             ic.style.removeProperty('fill');
@@ -2184,6 +2248,46 @@ views:
               s.style.removeProperty('color');
             });
           });
+
+          for (let i = 0; i < titleEl.children.length; i++) {
+            const child = titleEl.children[i] as HTMLElement;
+            if (!child || isProtected(child) || isCollapseIndicator(child) || child === contentEl) continue;
+            if (child.classList.contains('tree-item-icon') || child.classList.contains('collapse-icon')) continue;
+            const isIcon = child.matches('.nav-folder-title-icon, .nav-folder-icon, .folder-icon, .obsidian-icon-folder-icon, .iconize-icon, [data-icon]') ||
+                           (/icon|folder/i.test(child.className) && !/collapse/i.test(child.className));
+            if (isIcon) {
+              child.style.removeProperty('color');
+              child.style.removeProperty('fill');
+              child.style.removeProperty('stroke');
+              child.style.removeProperty('background-color');
+              child.style.removeProperty('-webkit-text-fill-color');
+              child.removeClass('pakcli-captain-colored-icon');
+              child.querySelectorAll<SVGElement>('path, circle, rect, polygon, line, svg').forEach((s) => {
+                s.style.removeProperty('fill');
+                s.style.removeProperty('stroke');
+                s.style.removeProperty('color');
+              });
+            }
+          }
+
+          if (contentEl) {
+            const innerIcons = contentEl.querySelectorAll<HTMLElement>(
+              '.nav-folder-title-icon, .nav-folder-icon, .folder-icon, .obsidian-icon-folder-icon, .iconize-icon, [data-icon], span[class*="icon"], div[class*="icon"]'
+            );
+            innerIcons.forEach((inIcon) => {
+              inIcon.style.removeProperty('color');
+              inIcon.style.removeProperty('fill');
+              inIcon.style.removeProperty('stroke');
+              inIcon.style.removeProperty('background-color');
+              inIcon.style.removeProperty('-webkit-text-fill-color');
+              inIcon.removeClass('pakcli-captain-colored-icon');
+              inIcon.querySelectorAll<SVGElement>('path, circle, rect, polygon, line, svg').forEach((s) => {
+                s.style.removeProperty('fill');
+                s.style.removeProperty('stroke');
+                s.style.removeProperty('color');
+              });
+            });
+          }
         }
 
         // 3. Badges: Apply ONLY if mode is 'text_icon_badge', 'text_icon_badge_chevron', or 'all'
@@ -2198,6 +2302,8 @@ views:
             b.style.removeProperty('color');
             b.style.removeProperty('-webkit-text-fill-color');
             b.style.removeProperty('border-color');
+            b.style.removeProperty('background-color');
+            b.style.removeProperty('background');
           }
         });
 
@@ -2234,6 +2340,15 @@ views:
             f.style.removeProperty('-webkit-text-fill-color');
           }
         });
+
+        // 6. Background: If mode is 'all', apply folder colored background; otherwise clear so neutral desaturated background applies
+        if (mode === 'all') {
+          titleEl.style.setProperty('background-color', `color-mix(in srgb, ${color} 15%, var(--background-primary))`, 'important');
+          titleEl.style.setProperty('background', `color-mix(in srgb, ${color} 15%, var(--background-primary))`, 'important');
+        } else {
+          titleEl.style.removeProperty('background-color');
+          titleEl.style.removeProperty('background');
+        }
 
       } else {
         cleanup();
@@ -2396,6 +2511,12 @@ views:
         this.refreshFolderBadges();
       }
       this.applyCaptainFolderTextColors();
+      if (this.plugin.dictionaryExplorerManager) {
+        this.plugin.dictionaryExplorerManager.scheduleRefresh();
+      }
+      if (this.plugin.relationshipExplorerManager) {
+        this.plugin.relationshipExplorerManager.scheduleRefresh();
+      }
     });
     if (!this.plugin.settings.enableAutoFolderIndex) return;
     const target = (e.target as HTMLElement)?.closest('.nav-folder-title') as HTMLElement;

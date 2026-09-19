@@ -201,7 +201,7 @@ export const DEFAULT_BUBBLE_GRAPH_SETTINGS: BubbleGraphSettings = {
     relationshipMode: '1dir',
     relationshipPropertyKey: 'closeness',
     relationshipTiers: DEFAULT_RELATIONSHIP_TIERS,
-    explorerRelationshipVirtualFolders: false,
+    explorerRelationshipVirtualFolders: true,
     relationshipViewStructure: 'concentric',
     relationshipSortOrder: 'closeness_desc',
     relationshipFolders: [

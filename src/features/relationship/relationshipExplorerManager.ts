@@ -1,11 +1,13 @@
 import { App, Notice, TFile, TFolder, normalizePath, setIcon } from 'obsidian';
 import type PakCLITablePlugin from '../../main';
-import { DEFAULT_RELATIONSHIP_TIERS, RelationshipTierConfig, RelationshipViewStructure, RelationshipSortOrder } from '../../settings';
+import { DEFAULT_RELATIONSHIP_TIERS, RelationshipTierConfig, RelationshipViewStructure, RelationshipSortOrder, RelationshipFolderEntry } from '../../settings';
 
 export class RelationshipExplorerManager {
     private app: App;
     private plugin: PakCLITablePlugin;
     private collapsedTierIds: Set<string> = new Set();
+    private relChildrenContainers: Set<HTMLElement> = new Set();
+    private isOrganizing: boolean = false;
     private mutationObserver: MutationObserver | null = null;
     private rafId: number | null = null;
     private needsFollowUpPass = false;
@@ -48,13 +50,19 @@ export class RelationshipExplorerManager {
         this.removeVirtualFolders();
     }
 
+    private isRenamingInExplorer(): boolean {
+        const explorerEl = document.querySelector('.nav-files-container');
+        if (!explorerEl) return false;
+        return !!explorerEl.querySelector('input:not([type="checkbox"]), .nav-folder-title[contenteditable="true"], .nav-file-title[contenteditable="true"], .nav-folder-title [contenteditable="true"], .nav-file-title [contenteditable="true"], .tree-item-inner[contenteditable="true"]');
+    }
+
     public scheduleRefresh() {
         this.needsFollowUpPass = true;
         if (this.rafId === null) {
             this.rafId = requestAnimationFrame(() => {
                 this.rafId = null;
                 this.needsFollowUpPass = false;
-                if (document.querySelector('.nav-files-container input, .nav-files-container [contenteditable="true"], .nav-folder-title input, .nav-file-title input, [contenteditable="true"]')) {
+                if (this.isRenamingInExplorer()) {
                     return;
                 }
                 this.refreshVirtualFolders();
@@ -69,7 +77,7 @@ export class RelationshipExplorerManager {
         }
         this.trailingTimer = window.setTimeout(() => {
             this.trailingTimer = null;
-            if (document.querySelector('.nav-files-container input, .nav-files-container [contenteditable="true"], .nav-folder-title input, .nav-file-title input, [contenteditable="true"]')) {
+            if (this.isRenamingInExplorer()) {
                 return;
             }
             this.refreshVirtualFolders();
@@ -81,6 +89,8 @@ export class RelationshipExplorerManager {
         this.mutationObserver.observe(this.navFilesContainer, {
             childList: true,
             subtree: true,
+            attributes: true,
+            attributeFilter: ['class'],
         });
     }
 
@@ -90,6 +100,50 @@ export class RelationshipExplorerManager {
         }
     }
 
+    public getRelationshipFolderEntries(): RelationshipFolderEntry[] {
+        const folders = this.plugin.settings.relationshipFolders;
+        if (folders && folders.length > 0) {
+            return folders.filter(f => !!f.path && !!f.path.trim()).map(f => ({
+                id: f.id || `rel_${f.path}`,
+                path: normalizePath(f.path.trim()),
+                mode: f.mode || '1dir',
+                viewStructure: f.viewStructure || 'concentric',
+                sortOrder: f.sortOrder || 'closeness_desc',
+                label: f.label
+            }));
+        }
+        return [{
+            id: 'rel_default',
+            path: normalizePath(this.plugin.settings.familyCirclesRootFolder || 'Relationships'),
+            mode: this.plugin.settings.relationshipMode || '1dir',
+            viewStructure: this.plugin.settings.relationshipViewStructure || 'concentric',
+            sortOrder: this.plugin.settings.relationshipSortOrder || 'closeness_desc',
+            label: 'Primary Relationships'
+        }];
+    }
+
+    private isMatchingRelFolder(path: string): boolean {
+        if (!path) return false;
+        const p = normalizePath(path).toLowerCase();
+        const entries = this.getRelationshipFolderEntries();
+        return entries.some(e => {
+            const root = normalizePath(e.path).toLowerCase();
+            const base = root.split('/').pop() || root;
+            if (p === root || p.startsWith(root + '/')) return true;
+            if (p === base || p.startsWith(base + '/')) return true;
+            if (p.endsWith('/' + root) || p.includes('/' + root + '/')) return true;
+            if (p.endsWith('/' + base) || p.includes('/' + base + '/')) return true;
+
+            const folderAbstract = this.app.vault.getAbstractFileByPath(e.path);
+            if (folderAbstract) {
+                const actual = folderAbstract.path.toLowerCase();
+                if (p === actual || p.startsWith(actual + '/') || p.endsWith('/' + actual) || p.includes('/' + actual + '/')) {
+                    return true;
+                }
+            }
+            return false;
+        });
+    }
 
     private registerEvents() {
         this.plugin.registerEvent(
@@ -100,27 +154,32 @@ export class RelationshipExplorerManager {
         );
 
         this.plugin.registerEvent(
-            this.app.vault.on('rename', () => {
-                this.scheduleRefresh();
+            this.app.vault.on('rename', (file, oldPath) => {
+                if (this.isMatchingRelFolder(file.path) || (oldPath && this.isMatchingRelFolder(oldPath))) {
+                    this.scheduleRefresh();
+                }
             })
         );
 
         this.plugin.registerEvent(
-            this.app.vault.on('delete', () => {
-                this.scheduleRefresh();
+            this.app.vault.on('delete', (file) => {
+                if (this.isMatchingRelFolder(file.path)) {
+                    this.scheduleRefresh();
+                }
             })
         );
 
         this.plugin.registerEvent(
-            this.app.vault.on('create', () => {
-                this.scheduleRefresh();
+            this.app.vault.on('create', (file) => {
+                if (this.isMatchingRelFolder(file.path)) {
+                    this.scheduleRefresh();
+                }
             })
         );
 
         this.plugin.registerEvent(
             this.app.metadataCache.on('changed', (file) => {
-                const root = normalizePath(this.plugin.settings.familyCirclesRootFolder || 'Relationships');
-                if (file.path.startsWith(root)) {
+                if (this.isMatchingRelFolder(file.path)) {
                     this.scheduleRefresh();
                 }
             })
@@ -148,9 +207,8 @@ export class RelationshipExplorerManager {
         }
 
         if (!this.mutationObserver) {
-            const relRoot = normalizePath(this.plugin.settings.familyCirclesRootFolder || 'Relationships');
             this.mutationObserver = new MutationObserver((mutations) => {
-                if (document.querySelector('.nav-files-container input, .nav-files-container [contenteditable="true"], .nav-folder-title input, .nav-file-title input, [contenteditable="true"]')) return;
+                if (this.isRenamingInExplorer()) return;
 
                 let shouldRefresh = false;
 
@@ -159,7 +217,30 @@ export class RelationshipExplorerManager {
                     if (!targetEl) continue;
 
                     // Ignore mutations inside our virtual folders
-                    if (targetEl.closest?.('.pakcli-virtual-folder')) continue;
+                    if (targetEl.classList?.contains('pakcli-virtual-folder') || targetEl.closest?.('.pakcli-virtual-folder')) continue;
+
+                    // Fast-path: Mutation inside or directly on any tracked relationship folder's children container
+                    const isInsideRel = Array.from(this.relChildrenContainers).some(
+                        c => targetEl === c || c.contains(targetEl)
+                    );
+                    if (isInsideRel) {
+                        shouldRefresh = true;
+                        break;
+                    }
+
+                    // Check attribute changes (e.g. is-collapsed toggled on folder expand/collapse)
+                    if (mut.type === 'attributes' && mut.attributeName === 'class') {
+                        if (targetEl && !targetEl.classList.contains('pakcli-virtual-folder') && !targetEl.closest?.('.pakcli-virtual-folder')) {
+                            if (targetEl.classList.contains('nav-folder') || targetEl.classList.contains('tree-item')) {
+                                const p = normalizePath(targetEl.getAttribute?.('data-path') ||
+                                    targetEl.querySelector?.('.nav-folder-title, .tree-item-self')?.getAttribute('data-path') || '');
+                                if (!p || this.isMatchingRelFolder(p) || targetEl.querySelector?.('.nav-folder-children, .tree-item-children')) {
+                                    shouldRefresh = true;
+                                    break;
+                                }
+                            }
+                        }
+                    }
 
                     // Check added nodes
                     if (mut.addedNodes?.length > 0) {
@@ -167,8 +248,15 @@ export class RelationshipExplorerManager {
                             const node = mut.addedNodes[i] as HTMLElement;
                             if (node.nodeType !== Node.ELEMENT_NODE) continue;
                             if (node.classList?.contains('pakcli-virtual-folder')) continue;
-                            const p = normalizePath(node.getAttribute?.('data-path') || '');
-                            if (p === relRoot || p.startsWith(relRoot + '/')) { shouldRefresh = true; break; }
+                            const p = normalizePath(node.getAttribute?.('data-path') ||
+                                node.querySelector?.('.nav-file-title, .nav-folder-title, .tree-item-self')?.getAttribute('data-path') || '');
+                            if (this.isMatchingRelFolder(p)) { shouldRefresh = true; break; }
+                            const pf = node.closest?.('.nav-folder:not(.pakcli-virtual-folder)');
+                            if (pf) {
+                                const t = pf.querySelector(':scope > .nav-folder-title, :scope > .tree-item-self');
+                                const fp = normalizePath(t?.getAttribute('data-path') || pf.getAttribute('data-path') || '');
+                                if (this.isMatchingRelFolder(fp)) { shouldRefresh = true; break; }
+                            }
                         }
                     }
                     if (shouldRefresh) break;
@@ -179,8 +267,9 @@ export class RelationshipExplorerManager {
                             const node = mut.removedNodes[i] as HTMLElement;
                             if (node.nodeType !== Node.ELEMENT_NODE) continue;
                             if (node.classList?.contains('pakcli-virtual-folder')) continue;
-                            const p = normalizePath(node.getAttribute?.('data-path') || '');
-                            if (p === relRoot || p.startsWith(relRoot + '/')) { shouldRefresh = true; break; }
+                            const p = normalizePath(node.getAttribute?.('data-path') ||
+                                node.querySelector?.('.nav-file-title, .nav-folder-title, .tree-item-self')?.getAttribute('data-path') || '');
+                            if (this.isMatchingRelFolder(p)) { shouldRefresh = true; break; }
                         }
                     }
                     if (shouldRefresh) break;
@@ -232,62 +321,155 @@ export class RelationshipExplorerManager {
         return null;
     }
 
+    private findRelationshipFolderEl(container: HTMLElement, relPath: string): HTMLElement | null {
+        if (!container || !relPath) return null;
+        const normalizedTarget = normalizePath(relPath).toLowerCase();
+        const targetName = relPath.split('/').pop()?.toLowerCase();
+
+        // 1. Direct query on folder elements or direct folder titles
+        let folderEl = container.querySelector(
+            `.nav-folder[data-path="${relPath}"], .tree-item.nav-folder[data-path="${relPath}"]`
+        ) as HTMLElement;
+
+        if (!folderEl) {
+            const titleEl = container.querySelector(
+                `.nav-folder > .nav-folder-title[data-path="${relPath}"], .tree-item.nav-folder > .tree-item-self[data-path="${relPath}"]`
+            ) as HTMLElement;
+            if (titleEl) {
+                folderEl = (titleEl.closest('.nav-folder, .tree-item.nav-folder') || titleEl.parentElement) as HTMLElement;
+            }
+        }
+
+        // 2. Scan only actual folder elements (.nav-folder / .tree-item.nav-folder)
+        const allFolders = Array.from(container.querySelectorAll('.nav-folder:not(.pakcli-virtual-folder), .tree-item.nav-folder:not(.pakcli-virtual-folder)')) as HTMLElement[];
+
+        if (!folderEl) {
+            // First pass: exact normalized path match
+            folderEl = (allFolders.find(f => {
+                const p = normalizePath(
+                    f.getAttribute('data-path') ||
+                    f.querySelector(':scope > .nav-folder-title, :scope > .tree-item-self')?.getAttribute('data-path') ||
+                    ''
+                ).toLowerCase();
+                return p === normalizedTarget;
+            }) as HTMLElement) || null;
+        }
+
+        if (!folderEl) {
+            // Second pass: path ends with normalized target (e.g. target is "Relationships" and folder is "Digital Library/Relationships")
+            folderEl = (allFolders.find(f => {
+                const p = normalizePath(
+                    f.getAttribute('data-path') ||
+                    f.querySelector(':scope > .nav-folder-title, :scope > .tree-item-self')?.getAttribute('data-path') ||
+                    ''
+                ).toLowerCase();
+                return p.endsWith('/' + normalizedTarget);
+            }) as HTMLElement) || null;
+        }
+
+        if (!folderEl && targetName) {
+            // Third pass: folder title or path matches targetName
+            folderEl = (allFolders.find(f => {
+                const p = normalizePath(
+                    f.getAttribute('data-path') ||
+                    f.querySelector(':scope > .nav-folder-title, :scope > .tree-item-self')?.getAttribute('data-path') ||
+                    ''
+                ).toLowerCase();
+                if (p === targetName || p.endsWith('/' + targetName)) return true;
+                const titleContent = f.querySelector(':scope > .nav-folder-title .nav-folder-title-content, :scope > .tree-item-self .tree-item-inner')
+                    ?.textContent?.trim().toLowerCase();
+                return titleContent === targetName;
+            }) as HTMLElement) || null;
+        }
+
+        if (folderEl) {
+            const title = (folderEl.querySelector(':scope > .nav-folder-title, :scope > .tree-item-self') || folderEl) as HTMLElement;
+            if (title && !(title as any).__pakcli_rel_click_bound) {
+                (title as any).__pakcli_rel_click_bound = true;
+                title.addEventListener('click', () => {
+                    window.setTimeout(() => this.scheduleRefresh(), 60);
+                });
+            }
+            return folderEl;
+        }
+
+        return null;
+    }
+
     public refreshVirtualFolders() {
         if (this.isOrganizing) return;
 
-        const relRoot = normalizePath(this.plugin.settings.familyCirclesRootFolder || 'Relationships');
-        const folders = this.plugin.settings.relationshipFolders || [];
-        const folderEntry = folders.find(f => normalizePath(f.path) === relRoot);
-        const viewStructure: RelationshipViewStructure = folderEntry?.viewStructure || this.plugin.settings.relationshipViewStructure || 'concentric';
-        const sortOrder: RelationshipSortOrder = folderEntry?.sortOrder || this.plugin.settings.relationshipSortOrder || 'closeness_desc';
-
-        if (viewStructure === 'flat') {
+        const isEnabled = this.plugin.settings.explorerRelationshipVirtualFolders !== false;
+        if (!isEnabled) {
             this.removeVirtualFolders();
             return;
         }
 
-        this.applyVirtualFolders(viewStructure, sortOrder);
-    }
-
-    private applyVirtualFolders(viewStructure: RelationshipViewStructure, sortOrder: RelationshipSortOrder) {
         const leaves = this.app.workspace.getLeavesOfType('file-explorer');
         if (!leaves || leaves.length === 0) return;
         const container = (leaves[0].view as any)?.containerEl as HTMLElement;
         if (!container) return;
 
-        if (document.querySelector('.nav-files-container input, .nav-files-container [contenteditable="true"], .nav-folder-title input, .nav-file-title input, [contenteditable="true"]')) return;
+        if (this.isRenamingInExplorer()) return;
 
-        const relRoot = normalizePath(this.plugin.settings.familyCirclesRootFolder || 'Relationships');
+        const entries = this.getRelationshipFolderEntries();
+        if (entries.length === 0) return;
 
-        // Robust folder title element lookup (Obsidian puts data-path on .nav-folder-title)
-        let titleEl = container.querySelector(`.nav-folder-title[data-path="${relRoot}"], .tree-item-self[data-path="${relRoot}"]`) as HTMLElement;
-        if (!titleEl) {
-            const allElements = Array.from(container.querySelectorAll('[data-path]'));
-            titleEl = (allElements.find(el => {
-                const p = normalizePath(el.getAttribute('data-path') || '');
-                return p === relRoot;
-            }) as HTMLElement) || null;
+        this.disconnectObserver();
+        this.relChildrenContainers.clear();
+        this.isOrganizing = true;
+
+        try {
+            for (const entry of entries) {
+                if (entry.viewStructure === 'flat') {
+                    this.removeVirtualFoldersForEntry(container, entry.path);
+                } else {
+                    this.applyVirtualFoldersToEntry(container, entry);
+                }
+            }
+        } catch (err) {
+            console.error('[PakCLI Relationship] Error refreshing virtual folders:', err);
+        } finally {
+            this.isOrganizing = false;
+            window.setTimeout(() => this.connectObserver(), 30);
         }
-        if (!titleEl) return;
+    }
 
-        // Ensure clicking the folder chevron/title refreshes virtual folders
-        if (!(titleEl as any).__pakcli_rel_click_bound) {
-            (titleEl as any).__pakcli_rel_click_bound = true;
-            titleEl.addEventListener('click', () => {
-                window.setTimeout(() => this.scheduleRefresh(), 60);
-            });
+    private applyVirtualFoldersToEntry(container: HTMLElement, entry: RelationshipFolderEntry) {
+        const normPath = normalizePath(entry.path);
+        let folderAbstract = this.app.vault.getAbstractFileByPath(normPath);
+        if (!(folderAbstract instanceof TFolder)) {
+            const lower = normPath.toLowerCase();
+            const allFiles = this.app.vault.getAllLoadedFiles();
+            const matched = allFiles.find(f => f instanceof TFolder && f.path.toLowerCase() === lower);
+            if (matched instanceof TFolder) {
+                folderAbstract = matched;
+            } else {
+                const baseName = normPath.split('/').pop()?.toLowerCase();
+                if (baseName) {
+                    const matchedByName = allFiles.find(f => f instanceof TFolder && (f.path.toLowerCase() === baseName || f.name.toLowerCase() === baseName));
+                    if (matchedByName instanceof TFolder) {
+                        folderAbstract = matchedByName;
+                    }
+                }
+            }
         }
 
-        const folderEl = (titleEl.closest('.nav-folder, .tree-item.nav-folder') || titleEl.parentElement) as HTMLElement;
+        const actualPath = folderAbstract instanceof TFolder ? folderAbstract.path : normPath;
+        const folderEl = this.findRelationshipFolderEl(container, actualPath) || this.findRelationshipFolderEl(container, normPath);
         if (!folderEl) return;
 
-        const childrenContainer = folderEl.querySelector(':scope > .nav-folder-children, :scope > .tree-item-children') as HTMLElement;
+        const childrenContainer = (folderEl.querySelector(':scope > .nav-folder-children, :scope > .tree-item-children') ||
+            folderEl.querySelector('.nav-folder-children, .tree-item-children')) as HTMLElement;
         if (!childrenContainer) return;
+
+        this.relChildrenContainers.add(childrenContainer);
 
         if (folderEl.classList.contains('is-collapsed')) return;
 
-        // Disconnect observer for the entire DOM operation window — no isOrganizing race
-        this.disconnectObserver();
+        const viewStructure: RelationshipViewStructure = entry.viewStructure || 'concentric';
+        const sortOrder: RelationshipSortOrder = entry.sortOrder || 'closeness_desc';
+
         try {
             const configuredTiers: RelationshipTierConfig[] = this.plugin.settings.relationshipTiers || DEFAULT_RELATIONSHIP_TIERS;
             const tiers: RelationshipTierConfig[] = configuredTiers
@@ -316,7 +498,7 @@ export class RelationshipExplorerManager {
             if (currentStructure !== viewStructure || currentTiersKey !== tiersKey || currentSortOrder !== sortOrder) {
                 const existingVFs = childrenContainer.querySelectorAll('.pakcli-virtual-folder');
                 existingVFs.forEach((vf) => {
-                    const files = Array.from(vf.querySelectorAll('.nav-file, .tree-item.nav-file'));
+                    const files = Array.from(vf.querySelectorAll('.nav-file, .tree-item.nav-file, .tree-item:not(.nav-folder):not(.pakcli-virtual-folder)'));
                     for (const f of files) {
                         childrenContainer.appendChild(f);
                     }
@@ -327,14 +509,38 @@ export class RelationshipExplorerManager {
                 childrenContainer.setAttribute('data-pakcli-sort-order', sortOrder);
             }
 
-            // 2. Collect all .nav-file elements anywhere inside childrenContainer
-            const allNavFileEls = Array.from(childrenContainer.querySelectorAll('.nav-file, .tree-item.nav-file')) as HTMLElement[];
+            // 2. Collect all candidate file elements in this folder
+            const directFiles = Array.from(
+                childrenContainer.querySelectorAll(':scope > .nav-file, :scope > .tree-item.nav-file, :scope > .tree-item:not(.nav-folder):not(.pakcli-virtual-folder)')
+            ) as HTMLElement[];
+            const subfolderFiles = Array.from(
+                childrenContainer.querySelectorAll(':scope > .nav-folder:not(.pakcli-virtual-folder) .nav-file, :scope > .tree-item.nav-folder:not(.pakcli-virtual-folder) .tree-item.nav-file')
+            ) as HTMLElement[];
+            const virtualFiles = Array.from(
+                childrenContainer.querySelectorAll('.pakcli-virtual-folder .nav-file, .pakcli-virtual-folder .tree-item.nav-file, .pakcli-virtual-folder .tree-item:not(.nav-folder):not(.pakcli-virtual-folder)')
+            ) as HTMLElement[];
+            const allNavFileEls = Array.from(new Set([...directFiles, ...subfolderFiles, ...virtualFiles]));
 
             // Map file paths to DOM elements
             const fileElMap = new Map<string, HTMLElement>();
+            const normFolderPath = normalizePath(actualPath);
             for (const fileEl of allNavFileEls) {
-                const path = fileEl.getAttribute('data-path') || 
+                let path = fileEl.getAttribute('data-path') || 
                              fileEl.querySelector('.nav-file-title, .tree-item-self')?.getAttribute('data-path') || '';
+                if (!path) {
+                    const textName = fileEl.querySelector('.nav-file-title-content, .tree-item-inner')?.textContent?.trim() || '';
+                    if (textName) {
+                        const targetPath = normFolderPath + '/' + (textName.endsWith('.md') ? textName : textName + '.md');
+                        const f = this.app.vault.getAbstractFileByPath(targetPath);
+                        if (f) {
+                            path = f.path;
+                        } else {
+                            const allMd = this.app.vault.getMarkdownFiles();
+                            const matched = allMd.find(m => (m.path.startsWith(normFolderPath) || m.parent?.path === normFolderPath) && (m.basename === textName || m.name === textName));
+                            if (matched) path = matched.path;
+                        }
+                    }
+                }
                 if (path) {
                     fileElMap.set(normalizePath(path), fileEl);
                 }
@@ -763,48 +969,48 @@ export class RelationshipExplorerManager {
         }
     }
 
+    public removeVirtualFoldersForEntry(container: HTMLElement, relPath: string) {
+        const folderEl = this.findRelationshipFolderEl(container, relPath);
+        if (!folderEl) return;
+
+        const childrenContainer = (folderEl.querySelector(':scope > .nav-folder-children, :scope > .tree-item-children') ||
+            folderEl.querySelector('.nav-folder-children, .tree-item-children')) as HTMLElement;
+        if (!childrenContainer) return;
+
+        // 1. Restore any hidden raw folders
+        const hiddenRawFolders = childrenContainer.querySelectorAll('.pakcli-raw-folder-hidden');
+        hiddenRawFolders.forEach((el) => {
+            el.removeClass('pakcli-raw-folder-hidden');
+            (el as HTMLElement).style.removeProperty('display');
+        });
+
+        // 2. Extract any files inside virtual folders back out to root childrenContainer
+        const virtualFolders = Array.from(childrenContainer.querySelectorAll('.pakcli-virtual-folder'));
+        for (const vf of virtualFolders) {
+            const files = Array.from(vf.querySelectorAll('.nav-file, .tree-item.nav-file, .tree-item:not(.nav-folder):not(.pakcli-virtual-folder)'));
+            for (const f of files) childrenContainer.appendChild(f);
+            vf.remove();
+        }
+
+        childrenContainer.removeAttribute('data-pakcli-view-structure');
+        childrenContainer.removeAttribute('data-pakcli-tiers');
+        childrenContainer.removeAttribute('data-pakcli-sort-order');
+    }
+
     public removeVirtualFolders() {
         const leaves = this.app.workspace.getLeavesOfType('file-explorer');
         if (!leaves || leaves.length === 0) return;
         const container = (leaves[0].view as any)?.containerEl as HTMLElement;
         if (!container) return;
 
-        const relRoot = normalizePath(this.plugin.settings.familyCirclesRootFolder || 'Relationships');
-        
-        let titleEl = container.querySelector(`.nav-folder-title[data-path="${relRoot}"], .tree-item-self[data-path="${relRoot}"]`) as HTMLElement;
-        if (!titleEl) {
-            const allElements = Array.from(container.querySelectorAll('[data-path]'));
-            titleEl = (allElements.find(el => normalizePath(el.getAttribute('data-path') || '') === relRoot) as HTMLElement) || null;
-        }
-        if (!titleEl) return;
-
-        const folderEl = (titleEl.closest('.nav-folder, .tree-item.nav-folder') || titleEl.parentElement) as HTMLElement;
-        if (!folderEl) return;
-
-        const childrenContainer = folderEl.querySelector(':scope > .nav-folder-children, :scope > .tree-item-children') as HTMLElement;
-        if (!childrenContainer) return;
-
+        const entries = this.getRelationshipFolderEntries();
         this.disconnectObserver();
         try {
-            // 1. Restore any hidden raw folders
-            const hiddenRawFolders = childrenContainer.querySelectorAll('.pakcli-raw-folder-hidden');
-            hiddenRawFolders.forEach((el) => {
-                el.removeClass('pakcli-raw-folder-hidden');
-                (el as HTMLElement).style.removeProperty('display');
-            });
-
-            // 2. Extract any files inside virtual folders back out to root childrenContainer
-            const virtualFolders = childrenContainer.querySelectorAll('.pakcli-virtual-folder');
-            virtualFolders.forEach((vf) => {
-                const files = Array.from(vf.querySelectorAll('.nav-file, .tree-item.nav-file'));
-                for (const f of files) childrenContainer.appendChild(f);
-                vf.remove();
-            });
-
-            childrenContainer.removeAttribute('data-pakcli-view-structure');
-            childrenContainer.removeAttribute('data-pakcli-tiers');
-            childrenContainer.removeAttribute('data-pakcli-sort-order');
+            for (const entry of entries) {
+                this.removeVirtualFoldersForEntry(container, entry.path);
+            }
         } finally {
+            this.relChildrenContainers.clear();
             window.setTimeout(() => this.connectObserver(), 30);
         }
     }

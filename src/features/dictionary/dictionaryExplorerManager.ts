@@ -49,13 +49,19 @@ export class DictionaryExplorerManager {
     this.removeVirtualFolders();
   }
 
+  private isRenamingInExplorer(): boolean {
+    const explorerEl = document.querySelector('.nav-files-container');
+    if (!explorerEl) return false;
+    return !!explorerEl.querySelector('input:not([type="checkbox"]), .nav-folder-title[contenteditable="true"], .nav-file-title[contenteditable="true"], .nav-folder-title [contenteditable="true"], .nav-file-title [contenteditable="true"], .tree-item-inner[contenteditable="true"]');
+  }
+
   public scheduleRefresh() {
     this.needsFollowUpPass = true;
     if (this.rafId === null) {
       this.rafId = requestAnimationFrame(() => {
         this.rafId = null;
         this.needsFollowUpPass = false;
-        if (document.querySelector('.nav-files-container input, .nav-files-container [contenteditable="true"], .nav-folder-title input, .nav-file-title input, [contenteditable="true"]')) {
+        if (this.isRenamingInExplorer()) {
           return;
         }
         this.refreshVirtualFolders();
@@ -70,7 +76,7 @@ export class DictionaryExplorerManager {
     }
     this.trailingTimer = window.setTimeout(() => {
       this.trailingTimer = null;
-      if (document.querySelector('.nav-files-container input, .nav-files-container [contenteditable="true"], .nav-folder-title input, .nav-file-title input, [contenteditable="true"]')) {
+      if (this.isRenamingInExplorer()) {
         return;
       }
       this.refreshVirtualFolders();
@@ -84,6 +90,8 @@ export class DictionaryExplorerManager {
     this.mutationObserver.observe(this.navFilesContainer, {
       childList: true,
       subtree: true,
+      attributes: true,
+      attributeFilter: ['class'],
     });
   }
 
@@ -127,8 +135,21 @@ export class DictionaryExplorerManager {
     const p = normalizePath(path).toLowerCase();
     const entries = this.getDictionaryFolderEntries();
     return entries.some(e => {
-      const root = e.path.toLowerCase();
-      return p === root || p.startsWith(root + '/') || p.endsWith('/' + root);
+      const root = normalizePath(e.path).toLowerCase();
+      const base = root.split('/').pop() || root;
+      if (p === root || p.startsWith(root + '/')) return true;
+      if (p === base || p.startsWith(base + '/')) return true;
+      if (p.endsWith('/' + root) || p.includes('/' + root + '/')) return true;
+      if (p.endsWith('/' + base) || p.includes('/' + base + '/')) return true;
+
+      const folderAbstract = this.app.vault.getAbstractFileByPath(e.path);
+      if (folderAbstract) {
+        const actual = folderAbstract.path.toLowerCase();
+        if (p === actual || p.startsWith(actual + '/') || p.endsWith('/' + actual) || p.includes('/' + actual + '/')) {
+          return true;
+        }
+      }
+      return false;
     });
   }
 
@@ -184,7 +205,7 @@ export class DictionaryExplorerManager {
 
     if (!this.mutationObserver) {
       this.mutationObserver = new MutationObserver((mutations) => {
-        if (document.querySelector('.nav-files-container input, .nav-files-container [contenteditable="true"], .nav-folder-title input, .nav-file-title input, [contenteditable="true"]')) return;
+        if (this.isRenamingInExplorer()) return;
 
         let shouldRefresh = false;
 
@@ -203,6 +224,20 @@ export class DictionaryExplorerManager {
           if (isInsideDict) {
             shouldRefresh = true;
             break;
+          }
+
+          // Check attribute changes (e.g. is-collapsed toggled on folder expand/collapse)
+          if (mut.type === 'attributes' && mut.attributeName === 'class') {
+            if (targetEl && !targetEl.classList.contains('pakcli-virtual-folder') && !targetEl.closest?.('.pakcli-virtual-folder')) {
+              if (targetEl.classList.contains('nav-folder') || targetEl.classList.contains('tree-item')) {
+                const p = normalizePath(targetEl.getAttribute?.('data-path') ||
+                  targetEl.querySelector?.('.nav-folder-title, .tree-item-self')?.getAttribute('data-path') || '');
+                if (!p || this.isMatchingDictFolder(p) || targetEl.querySelector?.('.nav-folder-children, .tree-item-children')) {
+                  shouldRefresh = true;
+                  break;
+                }
+              }
+            }
           }
 
           // Check added nodes
@@ -280,32 +315,77 @@ export class DictionaryExplorerManager {
   // ── Find the dictionary folder DOM element ────────────────────────────────
 
   private findDictionaryFolderEl(container: HTMLElement, dictRoot: string): HTMLElement | null {
+    if (!container || !dictRoot) return null;
     const normalizedTarget = normalizePath(dictRoot).toLowerCase();
+    const targetName = dictRoot.split('/').pop()?.toLowerCase();
 
-    let titleEl = container.querySelector(`.nav-folder-title[data-path="${normalizedTarget}"], .tree-item-self[data-path="${normalizedTarget}"]`) as HTMLElement;
-    if (!titleEl) {
-      const allElements = Array.from(container.querySelectorAll('[data-path]'));
-      titleEl = (allElements.find(el => {
-        const p = normalizePath(el.getAttribute('data-path') || '').toLowerCase();
-        return p === normalizedTarget || p.endsWith('/' + normalizedTarget);
+    // 1. Direct query on folder elements or direct folder titles
+    let folderEl = container.querySelector(
+      `.nav-folder[data-path="${dictRoot}"], .tree-item.nav-folder[data-path="${dictRoot}"]`
+    ) as HTMLElement;
+
+    if (!folderEl) {
+      const titleEl = container.querySelector(
+        `.nav-folder > .nav-folder-title[data-path="${dictRoot}"], .tree-item.nav-folder > .tree-item-self[data-path="${dictRoot}"]`
+      ) as HTMLElement;
+      if (titleEl) {
+        folderEl = (titleEl.closest('.nav-folder, .tree-item.nav-folder') || titleEl.parentElement) as HTMLElement;
+      }
+    }
+
+    // 2. Scan only actual folder elements (.nav-folder / .tree-item.nav-folder)
+    const allFolders = Array.from(container.querySelectorAll('.nav-folder:not(.pakcli-virtual-folder), .tree-item.nav-folder:not(.pakcli-virtual-folder)')) as HTMLElement[];
+
+    if (!folderEl) {
+      // First pass: exact normalized path match
+      folderEl = (allFolders.find(f => {
+        const p = normalizePath(
+          f.getAttribute('data-path') ||
+          f.querySelector(':scope > .nav-folder-title, :scope > .tree-item-self')?.getAttribute('data-path') ||
+          ''
+        ).toLowerCase();
+        return p === normalizedTarget;
       }) as HTMLElement) || null;
     }
 
-    if (titleEl) {
-      if (!(titleEl as any).__pakcli_dict_click_bound) {
-        (titleEl as any).__pakcli_dict_click_bound = true;
-        titleEl.addEventListener('click', () => {
+    if (!folderEl) {
+      // Second pass: path ends with normalized target (e.g. target is "Dictionary" and folder is "Digital Library/Dictionary")
+      folderEl = (allFolders.find(f => {
+        const p = normalizePath(
+          f.getAttribute('data-path') ||
+          f.querySelector(':scope > .nav-folder-title, :scope > .tree-item-self')?.getAttribute('data-path') ||
+          ''
+        ).toLowerCase();
+        return p.endsWith('/' + normalizedTarget);
+      }) as HTMLElement) || null;
+    }
+
+    if (!folderEl && targetName) {
+      // Third pass: folder title or path matches targetName
+      folderEl = (allFolders.find(f => {
+        const p = normalizePath(
+          f.getAttribute('data-path') ||
+          f.querySelector(':scope > .nav-folder-title, :scope > .tree-item-self')?.getAttribute('data-path') ||
+          ''
+        ).toLowerCase();
+        if (p === targetName || p.endsWith('/' + targetName)) return true;
+        const titleContent = f.querySelector(':scope > .nav-folder-title .nav-folder-title-content, :scope > .tree-item-self .tree-item-inner')
+          ?.textContent?.trim().toLowerCase();
+        return titleContent === targetName;
+      }) as HTMLElement) || null;
+    }
+
+    if (folderEl) {
+      const title = (folderEl.querySelector(':scope > .nav-folder-title, :scope > .tree-item-self') || folderEl) as HTMLElement;
+      if (title && !(title as any).__pakcli_dict_click_bound) {
+        (title as any).__pakcli_dict_click_bound = true;
+        title.addEventListener('click', () => {
           window.setTimeout(() => this.scheduleRefresh(), 60);
         });
       }
-      return (titleEl.closest('.nav-folder, .tree-item.nav-folder') || titleEl.parentElement) as HTMLElement;
+      return folderEl;
     }
 
-    const allFolders = Array.from(container.querySelectorAll('.nav-folder, .tree-item.nav-folder')) as HTMLElement[];
-    for (const f of allFolders) {
-      const p = normalizePath(f.getAttribute('data-path') || f.querySelector('.nav-folder-title, .tree-item-self')?.getAttribute('data-path') || '').toLowerCase();
-      if (p === normalizedTarget || p.endsWith('/' + normalizedTarget)) return f;
-    }
     return null;
   }
 
@@ -323,7 +403,7 @@ export class DictionaryExplorerManager {
     const container = (leaves[0].view as any)?.containerEl as HTMLElement;
     if (!container) return;
 
-    if (document.querySelector('.nav-files-container input, .nav-files-container [contenteditable="true"], .nav-folder-title input, .nav-file-title input, [contenteditable="true"]')) return;
+    if (this.isRenamingInExplorer()) return;
 
     const entries = this.getDictionaryFolderEntries();
     if (entries.length === 0) return;
@@ -344,10 +424,27 @@ export class DictionaryExplorerManager {
 
   private applyVirtualFoldersToEntry(container: HTMLElement, entry: DictionaryFolderEntry) {
     const normPath = normalizePath(entry.path);
-    const folderAbstract = this.app.vault.getAbstractFileByPath(normPath);
+    let folderAbstract = this.app.vault.getAbstractFileByPath(normPath);
+    if (!(folderAbstract instanceof TFolder)) {
+      const lower = normPath.toLowerCase();
+      const allFiles = this.app.vault.getAllLoadedFiles();
+      const matched = allFiles.find(f => f instanceof TFolder && f.path.toLowerCase() === lower);
+      if (matched instanceof TFolder) {
+        folderAbstract = matched;
+      } else {
+        const baseName = normPath.split('/').pop()?.toLowerCase();
+        if (baseName) {
+          const matchedByName = allFiles.find(f => f instanceof TFolder && (f.path.toLowerCase() === baseName || f.name.toLowerCase() === baseName));
+          if (matchedByName instanceof TFolder) {
+            folderAbstract = matchedByName;
+          }
+        }
+      }
+    }
     if (!(folderAbstract instanceof TFolder)) return;
 
-    const folderEl = this.findDictionaryFolderEl(container, normPath);
+    const actualPath = folderAbstract.path;
+    const folderEl = this.findDictionaryFolderEl(container, actualPath) || this.findDictionaryFolderEl(container, normPath);
     if (!folderEl) return;
 
     const childrenContainer = (folderEl.querySelector(':scope > .nav-folder-children, :scope > .tree-item-children') ||
@@ -356,7 +453,9 @@ export class DictionaryExplorerManager {
 
     this.dictChildrenContainers.add(childrenContainer);
 
-    if (folderEl.classList.contains('is-collapsed')) return;
+    const isFolderCollapsed = folderEl.classList.contains('is-collapsed') ||
+      folderEl.querySelector(':scope > .nav-folder-title, :scope > .tree-item-self')?.classList.contains('is-collapsed');
+    if (isFolderCollapsed) return;
 
     const subfolderMode: DictionarySubfolderMode = entry.subfolderMode || 'own_az';
 
@@ -369,7 +468,7 @@ export class DictionaryExplorerManager {
         (el as HTMLElement).style.removeProperty('display');
         el.classList.remove('pakcli-merged-folder-hidden');
       });
-      this.buildVirtualFoldersForContainer(container, childrenContainer, normPath, directFiles, false);
+      this.buildVirtualFoldersForContainer(container, childrenContainer, actualPath, directFiles, false);
 
     } else if (subfolderMode === 'include') {
       // 2. All files recursively into single A-Z list
@@ -389,7 +488,7 @@ export class DictionaryExplorerManager {
         el.classList.add('pakcli-merged-folder-hidden');
       });
 
-      this.buildVirtualFoldersForContainer(container, childrenContainer, normPath, allFiles, true);
+      this.buildVirtualFoldersForContainer(container, childrenContainer, actualPath, allFiles, true);
 
     } else if (subfolderMode === 'own_az') {
       // 3. Direct files get A-Z virtual folders, AND each physical subfolder gets its own A-Z virtual folders!
@@ -401,7 +500,7 @@ export class DictionaryExplorerManager {
         el.classList.remove('pakcli-merged-folder-hidden');
       });
 
-      this.buildVirtualFoldersForContainer(container, childrenContainer, normPath, directFiles, false);
+      this.buildVirtualFoldersForContainer(container, childrenContainer, actualPath, directFiles, false);
 
       // Recursively find and build virtual folders for subfolders
       const processSubfolders = (parentFolder: TFolder) => {
@@ -413,7 +512,9 @@ export class DictionaryExplorerManager {
                 subFolderEl.querySelector('.nav-folder-children, .tree-item-children')) as HTMLElement;
               if (subChildren) {
                 this.dictChildrenContainers.add(subChildren);
-                if (!subFolderEl.classList.contains('is-collapsed')) {
+                const isSubCollapsed = subFolderEl.classList.contains('is-collapsed') ||
+                  subFolderEl.querySelector(':scope > .nav-folder-title, :scope > .tree-item-self')?.classList.contains('is-collapsed');
+                if (!isSubCollapsed) {
                   const subDirectFiles = child.children.filter((c): c is TFile => c instanceof TFile);
                   this.buildVirtualFoldersForContainer(container, subChildren, child.path, subDirectFiles, false);
                 }
