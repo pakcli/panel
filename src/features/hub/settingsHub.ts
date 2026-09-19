@@ -159,6 +159,7 @@ export class VaultConfigActionModal extends Modal {
 
 export class MasterDetailSettingsTab extends PluginSettingTab {
   private isMobileSidebarOpen: boolean = false;
+  private isSidebarCollapsed: boolean = false;
   plugin: Plugin;
   activeSectionId = "";
   searchQuery = "";
@@ -171,6 +172,11 @@ export class MasterDetailSettingsTab extends PluginSettingTab {
     super(app, plugin);
     this.plugin = plugin;
     this.activeSectionId = plugin.manifest.id === "pakcli-panel" ? "table-csv" : (plugin.manifest.id === "pakcli-agent" ? "agent-antigravity" : "local-wizard");
+    try {
+      this.isSidebarCollapsed = localStorage.getItem("pakcli_settings_sidebar_collapsed") === "true";
+    } catch {
+      this.isSidebarCollapsed = false;
+    }
     const pluginWithSettings = plugin as PluginWithSettings;
     this.recordMemorySnapshot(pluginWithSettings.settings || {});
   }
@@ -203,6 +209,22 @@ export class MasterDetailSettingsTab extends PluginSettingTab {
 
   getSettingDefinitions(): SettingDefinitionItem[] {
     return [];
+  }
+
+  public getActiveTitle(): string {
+    const mod = ECOSYSTEM_MODULES.find((m) => m.id === this.activeSectionId);
+    if (mod) return mod.title;
+    const localH = this.localHandlers.get(this.activeSectionId);
+    if (localH) return localH.title;
+    return "Settings";
+  }
+
+  public toggleSidebar(): void {
+    this.isSidebarCollapsed = !this.isSidebarCollapsed;
+    try {
+      localStorage.setItem("pakcli_settings_sidebar_collapsed", String(this.isSidebarCollapsed));
+    } catch {}
+    void this.refreshDisplay();
   }
 
   private isPluginInstalled(pluginId: string): boolean {
@@ -421,6 +443,24 @@ export class MasterDetailSettingsTab extends PluginSettingTab {
       selectEl.setAttribute("disabled", "true");
     }
 
+    // 4. Toggle Sidebar (Full Width / Expanded)
+    const toggleSidebarBtn = topActions.createEl("button", {
+      cls: `pakcli-action-btn pakcli-sidebar-toggle-btn ${this.isSidebarCollapsed ? "is-collapsed" : ""}`,
+    });
+    toggleSidebarBtn.title = this.isSidebarCollapsed
+      ? "Show sidebar menu"
+      : "Collapse sidebar (Full width mode)";
+    try {
+      setIcon(toggleSidebarBtn, this.isSidebarCollapsed ? "panel-left-open" : "panel-left-close");
+    } catch {
+      toggleSidebarBtn.setText(this.isSidebarCollapsed ? "▶" : "◀");
+    }
+    toggleSidebarBtn.createSpan({
+      text: this.isSidebarCollapsed ? "Show menu" : "Full width",
+      cls: "pakcli-btn-label",
+    });
+    toggleSidebarBtn.onclick = () => this.toggleSidebar();
+
     // Mobile Toggle Bar
     const activeModObj = ECOSYSTEM_MODULES.find((m) => m.id === this.activeSectionId);
     const activeTitle = activeModObj
@@ -447,7 +487,7 @@ export class MasterDetailSettingsTab extends PluginSettingTab {
     };
 
     const layoutContainer = containerEl.createDiv({
-      cls: `pakcli-master-detail-layout ${this.isMobileSidebarOpen ? "mobile-sidebar-open" : ""}`
+      cls: `pakcli-master-detail-layout ${this.isMobileSidebarOpen ? "mobile-sidebar-open" : ""} ${this.isSidebarCollapsed ? "sidebar-collapsed" : ""}`
     });
 
     // 1. LEFT SIDEBAR
@@ -460,18 +500,30 @@ export class MasterDetailSettingsTab extends PluginSettingTab {
   }
 
   private renderSidebar(sidebarEl: HTMLElement, layoutContainer: HTMLElement): void {
-    const searchWrap = sidebarEl.createDiv({ cls: "pakcli-search-box" });
+    const headerRow = sidebarEl.createDiv({ cls: "pakcli-sidebar-header-row" });
+    const searchWrap = headerRow.createDiv({ cls: "pakcli-search-box" });
     const searchInput = searchWrap.createEl("input", {
       type: "search",
       placeholder: "🔍 Search settings...",
       value: this.searchQuery,
     });
-    searchInput.oninput = () => {
-      this.searchQuery = searchInput.value.toLowerCase().trim();
-      this.updateSidebarItems(sidebarEl, layoutContainer);
-    };
+
+    const collapseBtn = headerRow.createEl("button", {
+      cls: "pakcli-sidebar-collapse-btn",
+      title: "Collapse sidebar (Full width mode)",
+    });
+    try {
+      setIcon(collapseBtn, "panel-left-close");
+    } catch {
+      collapseBtn.setText("◀");
+    }
+    collapseBtn.onclick = () => this.toggleSidebar();
 
     const navContainer = sidebarEl.createDiv({ cls: "pakcli-nav-list" });
+    searchInput.oninput = () => {
+      this.searchQuery = searchInput.value.toLowerCase().trim();
+      this.updateSidebarItems(navContainer, layoutContainer);
+    };
     this.updateSidebarItems(navContainer, layoutContainer);
   }
 
@@ -594,6 +646,26 @@ export class MasterDetailSettingsTab extends PluginSettingTab {
 
   private renderContent(contentEl: HTMLElement): void {
     contentEl.empty();
+
+    // Desktop banner when sidebar is collapsed (allows 1-click restore/expand)
+    if (this.isSidebarCollapsed) {
+      const collapsedBanner = contentEl.createDiv({ cls: "pakcli-collapsed-banner" });
+      const leftSide = collapsedBanner.createDiv({ cls: "pakcli-expand-left" });
+      const expandBtn = leftSide.createEl("button", {
+        cls: "pakcli-expand-btn",
+      });
+      try {
+        setIcon(expandBtn, "panel-left-open");
+      } catch {
+        expandBtn.setText("▶");
+      }
+      expandBtn.createSpan({ text: "Show menu" });
+      expandBtn.onclick = () => this.toggleSidebar();
+
+      const activeTitle = this.getActiveTitle();
+      leftSide.createSpan({ text: activeTitle, cls: "pakcli-expand-badge" });
+      collapsedBanner.createSpan({ text: "Full width mode", cls: "pakcli-expand-hint" });
+    }
 
     // Quick switch button on mobile
     const quickSwitch = contentEl.createDiv({ cls: "pakcli-mobile-switch-btn" });

@@ -1,21 +1,21 @@
 /* ========================================================================= */
-/* PakCLI Master-Detail Settings Hub - Capped at 1100px Max-Width            */
+/* PakCLI Master-Detail Settings Hub - Full Width Responsive Layout           */
 /* ========================================================================= */
 
 .vertical-tab-content.pakcli-settings-hub {
   padding: 14px 18px;
 }
 
-/* Entire UI Root strictly capped at 1100px max width */
+/* Entire UI Root - Full width layout */
 .pakcli-master-detail-root {
   display: flex;
   flex-direction: column;
   width: 100%;
-  max-width: 1100px;
+  max-width: 100%;
   margin: 0;
   gap: 12px;
   box-sizing: border-box;
-  padding: 0;
+  padding: 0 0 60px 0;
 }
 
 /* 1. Top Bar Header & Action Buttons */
@@ -28,7 +28,7 @@
   border: 1px solid var(--background-modifier-border);
   border-radius: var(--radius-m);
   width: 100%;
-  max-width: 1100px;
+  max-width: 100%;
   box-sizing: border-box;
 
   .setting-item {
@@ -80,6 +80,22 @@
         border-color: var(--interactive-accent);
         color: var(--interactive-accent);
       }
+
+      &.pakcli-sidebar-toggle-btn {
+        gap: 6px;
+
+        &.is-collapsed {
+          border-color: var(--interactive-accent);
+          color: var(--interactive-accent);
+          background: rgba(var(--color-blue-rgb), 0.12);
+        }
+
+        svg {
+          width: 14px;
+          height: 14px;
+          vertical-align: middle;
+        }
+      }
     }
   }
 }
@@ -90,7 +106,7 @@
   align-items: center;
   justify-content: space-between;
   width: 100%;
-  max-width: 1100px;
+  max-width: 100%;
   padding: 8px 12px;
   background: var(--background-secondary);
   border: 1px solid var(--background-modifier-border);
@@ -139,16 +155,31 @@
   display: none;
 }
 
-/* 3. Master-Detail Layout (1100px Max-Width: 260px Sidebar + Full Content) */
+/* 3. Master-Detail Layout (Full Width: 260px Sidebar + Full Content, or 100% when Collapsed) */
 .pakcli-master-detail-layout {
   display: flex;
   flex-direction: row;
   align-items: flex-start;
   gap: 14px;
   width: 100%;
-  max-width: 1100px;
+  max-width: 100%;
   min-height: 480px;
   box-sizing: border-box;
+
+  /* Collapsed Sidebar Mode -> Full Width Content */
+  &.sidebar-collapsed {
+    .pakcli-sidebar {
+      display: none !important;
+    }
+
+    .pakcli-content-pane,
+    .pakcli-detail-panel {
+      flex: 1 1 100% !important;
+      width: 100% !important;
+      max-width: 100% !important;
+      animation: pakcli-fade-in 0.15s ease-out;
+    }
+  }
 
   /* Left Master Sidebar (260px Fixed Width) */
   .pakcli-sidebar {
@@ -164,6 +195,45 @@
     border-radius: var(--radius-m);
     padding: 10px;
     box-sizing: border-box;
+
+    .pakcli-sidebar-header-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      width: 100%;
+
+      .pakcli-search-box {
+        flex: 1;
+        min-width: 0;
+      }
+
+      .pakcli-sidebar-collapse-btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 28px;
+        height: 28px;
+        padding: 0;
+        border-radius: 4px;
+        background: var(--background-primary);
+        border: 1px solid var(--background-modifier-border);
+        color: var(--text-muted);
+        cursor: pointer;
+        flex-shrink: 0;
+        transition: all 0.15s ease;
+
+        &:hover {
+          background: var(--background-modifier-hover);
+          border-color: var(--interactive-accent);
+          color: var(--interactive-accent);
+        }
+
+        svg {
+          width: 15px;
+          height: 15px;
+        }
+      }
+    }
 
     .pakcli-search-box {
       width: 100%;
@@ -325,8 +395,68 @@
     background: var(--background-secondary);
     border: 1px solid var(--background-modifier-border);
     border-radius: var(--radius-m);
-    padding: 14px 18px;
+    padding: 14px 18px 40px 18px;
     box-sizing: border-box;
+
+    .pakcli-collapsed-banner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 6px 12px;
+      background: var(--background-primary);
+      border: 1px solid var(--background-modifier-border);
+      border-radius: var(--radius-s);
+      margin-bottom: 6px;
+      box-sizing: border-box;
+      width: 100%;
+
+      .pakcli-expand-left {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+
+        .pakcli-expand-btn {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          padding: 4px 10px;
+          font-size: 0.76rem;
+          font-weight: 600;
+          border-radius: 4px;
+          background: var(--background-secondary);
+          border: 1px solid var(--background-modifier-border);
+          color: var(--text-normal);
+          cursor: pointer;
+          transition: all 0.15s ease;
+
+          &:hover {
+            background: var(--background-modifier-hover);
+            border-color: var(--interactive-accent);
+            color: var(--interactive-accent);
+          }
+
+          svg {
+            width: 14px;
+            height: 14px;
+          }
+        }
+
+        .pakcli-expand-badge {
+          font-size: 0.74rem;
+          padding: 2px 8px;
+          border-radius: 3px;
+          background: rgba(var(--color-blue-rgb), 0.12);
+          color: var(--text-accent);
+          font-weight: 600;
+        }
+      }
+
+      .pakcli-expand-hint {
+        font-size: 0.72rem;
+        color: var(--text-muted);
+        font-style: italic;
+      }
+    }
 
     .setting-item {
       padding: 10px 0;
@@ -518,6 +648,17 @@
   from {
     opacity: 0;
     transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes pakcli-fade-in {
+  from {
+    opacity: 0.88;
+    transform: translateY(-2px);
   }
   to {
     opacity: 1;

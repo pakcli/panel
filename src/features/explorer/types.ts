@@ -102,7 +102,17 @@ export interface ExplorerSettings {
   dictionaryActiveLetter?: string | null;
   dictionaryDisplayMode?: 'list' | 'grouped';
   enableDictionaryVirtualFolders?: boolean;
+  enableCaptainFolderExplorerColor?: boolean;
+  captainFolderExplorerOverrideMode?: CaptainFolderOverrideMode;
 }
+
+export type CaptainFolderOverrideMode =
+  | 'none'
+  | 'text_only'
+  | 'text_icon'
+  | 'text_icon_badge'
+  | 'text_icon_badge_chevron'
+  | 'all';
 
 export type FolderIndexContentFormat = 'frontmatter_only' | 'both' | 'heading_only';
 
@@ -154,5 +164,7 @@ export const DEFAULT_EXPLORER_SETTINGS: ExplorerSettings = {
   dictionaryActiveLetter: null,
   dictionaryDisplayMode: 'list',
   enableDictionaryVirtualFolders: true,
+  enableCaptainFolderExplorerColor: true,
+  captainFolderExplorerOverrideMode: 'text_icon',
 };
 

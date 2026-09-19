@@ -1,5 +1,13 @@
 export type TitleOverrideOption = 'inherit' | 'always' | 'never';
 
+export type CaptainFolderOverrideMode =
+	| 'none'
+	| 'text_only'
+	| 'text_icon'
+	| 'text_icon_badge'
+	| 'text_icon_badge_chevron'
+	| 'all';
+
 export interface FolderRule {
 	path: string;            // Vault relative path (e.g. "folderb" or "folderb/*")
 	isNested: boolean;       // If true, this is a Nested (Captain Folder)
@@ -8,6 +16,7 @@ export interface FolderRule {
 	useNoteTitle: TitleOverrideOption; // 'inherit' from global, or force override
 	enabled: boolean;        // Individual rule toggle
 	color?: string;          // Hex color code for Captain Folder (defaults to dark gray #4a5568)
+	explorerOverride?: CaptainFolderOverrideMode; // Explorer tree override mode
 }
 
 export interface AssetRouterSettings {

@@ -3,6 +3,7 @@ import type PakCLITablePlugin from '../../main';
 import { ExplorerSectionId, RecentTimeFilter, RECENT_TIME_FILTER_OPTIONS } from './types';
 import { ensureFolderExists } from '../sqlseal/utils/views';
 import { DictionaryPopupModal } from '../dictionary/dictionaryPopupModal';
+import { matchFolderRule } from '../bubblegraph/graphBuilder';
 
 export class SplitViewManager implements HoverParent {
   public hoverPopover: HoverPopover | null = null;
@@ -89,6 +90,7 @@ export class SplitViewManager implements HoverParent {
         this.attachToFileExplorer();
         this.applyBaseExplorerFilter();
         this.refreshFolderBadges();
+        this.applyCaptainFolderTextColors();
       })
     );
 
@@ -98,6 +100,7 @@ export class SplitViewManager implements HoverParent {
         this.refreshRecentFiles();
         this.applyBaseExplorerFilter();
         this.refreshFolderBadges();
+        this.applyCaptainFolderTextColors();
       })
     );
 
@@ -106,6 +109,7 @@ export class SplitViewManager implements HoverParent {
         this.refreshRecentFiles();
         this.applyBaseExplorerFilter();
         this.refreshFolderBadges();
+        this.applyCaptainFolderTextColors();
       })
     );
 
@@ -115,6 +119,7 @@ export class SplitViewManager implements HoverParent {
           this.applyBaseExplorerFilter();
         }
         this.refreshFolderBadges();
+        this.applyCaptainFolderTextColors();
       })
     );
 
@@ -410,6 +415,7 @@ export class SplitViewManager implements HoverParent {
     this.attachFolderClickListener(containerEl);
     this.applyBaseExplorerFilter();
     this.refreshFolderBadges(containerEl);
+    this.applyCaptainFolderTextColors(containerEl);
   }
 
   private injectHeaderButton(containerEl: HTMLElement) {
@@ -1147,7 +1153,8 @@ export class SplitViewManager implements HoverParent {
 
     const isActive = !!this.plugin.settings.baseExplorerActive;
     const isMergeEnabled = this.plugin.settings.enableMergeFolderIndex !== false;
-    if (!isActive && !isMergeEnabled) return;
+    const isCaptainColorEnabled = this.plugin.settings.enableCaptainFolderExplorerColor !== false;
+    if (!isActive && !isMergeEnabled && !isCaptainColorEnabled) return;
 
     const targetEl = containerEl.querySelector('.nav-files-container:not(.pakcli-recent-list)') || containerEl;
     if (!targetEl) return;
@@ -1195,6 +1202,7 @@ export class SplitViewManager implements HoverParent {
             if (this.plugin.settings.enableMergeFolderIndex !== false) {
               this.refreshFolderBadges();
             }
+            this.applyCaptainFolderTextColors();
           }, 50);
         });
       }
@@ -1880,6 +1888,357 @@ views:
         }
       });
     }
+
+    this.applyCaptainFolderTextColors(containerEl);
+  }
+
+  public removeCaptainFolderTextColors(customContainer?: HTMLElement) {
+    const leaves = this.app.workspace.getLeavesOfType('file-explorer');
+    if (!leaves || leaves.length === 0) return;
+    const containers: HTMLElement[] = customContainer
+      ? [customContainer]
+      : leaves.map((l) => (l.view as any)?.containerEl).filter(Boolean);
+
+    for (const container of containers) {
+      const colored = container.querySelectorAll<HTMLElement>(
+        '.pakcli-captain-folder-colored, .pakcli-captain-colored-text, .pakcli-captain-colored-icon'
+      );
+      colored.forEach((el) => {
+        el.style.removeProperty('color');
+        el.style.removeProperty('-webkit-text-fill-color');
+        el.style.removeProperty('--nav-item-color');
+        el.style.removeProperty('--nav-item-color-hover');
+        el.style.removeProperty('--nav-item-color-active');
+        el.style.removeProperty('--captain-folder-color');
+        el.style.removeProperty('--folder-color');
+        el.style.removeProperty('--folder-icon-color');
+        el.style.removeProperty('--nav-folder-icon-color');
+        el.style.removeProperty('--tree-item-icon-color');
+        el.style.removeProperty('--icon-color');
+        el.style.removeProperty('--icon-color-hover');
+        el.style.removeProperty('--icon-color-active');
+        el.style.removeProperty('fill');
+        el.style.removeProperty('stroke');
+        el.style.removeProperty('background-color');
+        el.removeClass('pakcli-captain-folder-colored');
+        el.removeClass('pakcli-captain-colored-text');
+        el.removeClass('pakcli-captain-colored-icon');
+        el.querySelectorAll<SVGElement>('path, circle, rect, polygon, line, svg').forEach((s) => {
+          if (s.closest('.collapse-icon, .nav-folder-collapse-indicator, [class*="collapse"], .right-triangle')) return;
+          s.style.removeProperty('fill');
+          s.style.removeProperty('stroke');
+          s.style.removeProperty('color');
+        });
+      });
+    }
+  }
+
+  public applyCaptainFolderTextColors(customContainer?: HTMLElement) {
+    const leaves = this.app.workspace.getLeavesOfType('file-explorer');
+    if (!leaves || leaves.length === 0) return;
+
+    const containers: HTMLElement[] = customContainer
+      ? [customContainer]
+      : leaves.map((l) => (l.view as any)?.containerEl).filter(Boolean);
+
+    for (const containerEl of containers) {
+      this.applyCaptainFolderTextColorsToContainer(containerEl);
+    }
+  }
+
+  private applyCaptainFolderTextColorsToContainer(containerEl: HTMLElement) {
+    const globalMode: CaptainFolderOverrideMode = this.plugin.settings.captainFolderExplorerOverrideMode ||
+      (this.plugin.settings.enableCaptainFolderExplorerColor === false ? 'none' : 'text_icon');
+
+    const folderTitleElements = containerEl.querySelectorAll<HTMLElement>('.nav-folder-title, .tree-item-self.nav-folder-title');
+
+    folderTitleElements.forEach((titleEl) => {
+      if (titleEl.closest('.pakcli-explorer-recent-pane')) return;
+      if (titleEl.closest('.mod-root:not(.nav-folder)')) return;
+
+      // Skip this folder row if user is currently renaming it
+      if (titleEl.querySelector('input, [contenteditable="true"]') || titleEl.getAttribute('contenteditable') === 'true') {
+        return;
+      }
+
+      const contentEl = (titleEl.querySelector('.nav-folder-title-content, .tree-item-inner') as HTMLElement) || titleEl;
+
+      const cleanup = () => {
+        if (contentEl && contentEl !== titleEl) {
+          contentEl.style.removeProperty('color');
+          contentEl.style.removeProperty('-webkit-text-fill-color');
+          contentEl.removeClass('pakcli-captain-colored-text');
+        }
+        titleEl.style.removeProperty('color');
+        titleEl.style.removeProperty('-webkit-text-fill-color');
+        titleEl.style.removeProperty('--nav-item-color');
+        titleEl.style.removeProperty('--nav-item-color-hover');
+        titleEl.style.removeProperty('--nav-item-color-active');
+        titleEl.style.removeProperty('--captain-folder-color');
+        titleEl.style.removeProperty('--folder-color');
+        titleEl.style.removeProperty('--folder-icon-color');
+        titleEl.style.removeProperty('--nav-folder-icon-color');
+        titleEl.style.removeProperty('--tree-item-icon-color');
+        titleEl.style.removeProperty('--icon-color');
+        titleEl.style.removeProperty('--icon-color-hover');
+        titleEl.style.removeProperty('--icon-color-active');
+        titleEl.removeClass(
+          'pakcli-captain-folder-colored',
+          'pakcli-mode-text-only',
+          'pakcli-mode-text-icon',
+          'pakcli-mode-text-icon-badge',
+          'pakcli-mode-text-icon-badge-chevron',
+          'pakcli-mode-all'
+        );
+
+        const icons = titleEl.querySelectorAll<HTMLElement>('.pakcli-captain-colored-icon');
+        icons.forEach((ic) => {
+          ic.style.removeProperty('color');
+          ic.style.removeProperty('fill');
+          ic.style.removeProperty('stroke');
+          ic.style.removeProperty('background-color');
+          ic.style.removeProperty('-webkit-text-fill-color');
+          ic.removeClass('pakcli-captain-colored-icon');
+          ic.querySelectorAll<SVGElement>('path, circle, rect, polygon, line, svg').forEach((s) => {
+            s.style.removeProperty('fill');
+            s.style.removeProperty('stroke');
+            s.style.removeProperty('color');
+          });
+        });
+
+        const badges = titleEl.querySelectorAll<HTMLElement>('.pakcli-folder-index-badges .pakcli-folder-badge');
+        badges.forEach((b) => {
+          b.style.removeProperty('color');
+          b.style.removeProperty('-webkit-text-fill-color');
+          b.style.removeProperty('border-color');
+        });
+
+        const chevrons = titleEl.querySelectorAll<HTMLElement>('.collapse-icon, .nav-folder-collapse-indicator');
+        chevrons.forEach((c) => {
+          c.style.removeProperty('color');
+          c.style.removeProperty('stroke');
+          c.querySelectorAll<SVGElement>('svg, path, polygon').forEach((s) => {
+            s.style.removeProperty('color');
+            s.style.removeProperty('stroke');
+          });
+        });
+
+        const flairs = titleEl.querySelectorAll<HTMLElement>('.tree-item-flair, .nav-folder-title-extra');
+        flairs.forEach((f) => {
+          f.style.removeProperty('color');
+          f.style.removeProperty('-webkit-text-fill-color');
+        });
+      };
+
+      const path = titleEl.getAttribute('data-path') ||
+                   titleEl.closest('.nav-folder')?.getAttribute('data-path') ||
+                   titleEl.closest('[data-path]')?.getAttribute('data-path') ||
+                   '';
+      if (!path || path === '/') {
+        cleanup();
+        return;
+      }
+
+      const matchedRule = matchFolderRule(path, this.plugin.settings.rules, this.plugin.settings.fileConfigs);
+      const color = matchedRule?.color?.trim();
+      const mode: CaptainFolderOverrideMode = 
+        matchedRule?.explorerOverride !== undefined 
+          ? matchedRule.explorerOverride 
+          : (matchedRule ? globalMode : 'none');
+
+      if (color && mode !== 'none') {
+        titleEl.removeClass(
+          'pakcli-mode-text-only',
+          'pakcli-mode-text-icon',
+          'pakcli-mode-text-icon-badge',
+          'pakcli-mode-text-icon-badge-chevron',
+          'pakcli-mode-all'
+        );
+        titleEl.addClass('pakcli-captain-folder-colored', 'pakcli-mode-' + mode.replace(/_/g, '-'));
+
+        titleEl.style.setProperty('--captain-folder-color', color, 'important');
+        titleEl.style.setProperty('--folder-color', color, 'important');
+        titleEl.style.setProperty('--folder-icon-color', color, 'important');
+        titleEl.style.setProperty('--nav-folder-icon-color', color, 'important');
+        titleEl.style.removeProperty('--tree-item-icon-color');
+
+        // 1. Text filename: Always colored in all non-none modes
+        if (contentEl) {
+          contentEl.addClass('pakcli-captain-colored-text');
+          contentEl.style.setProperty('color', color, 'important');
+          contentEl.style.setProperty('-webkit-text-fill-color', color, 'important');
+        }
+
+        const isCollapseIndicator = (el: Element | null): boolean => {
+          if (!el) return false;
+          if (
+            el.matches(
+              '.collapse-icon, .nav-folder-collapse-indicator, [class*="collapse"], ' +
+              '.right-triangle, svg.right-triangle, svg.chevron-right, svg.chevron-down, ' +
+              'svg[class*="chevron"], [data-icon*="chevron"], [data-icon*="triangle"]'
+            ) ||
+            el.closest(
+              '.collapse-icon, .nav-folder-collapse-indicator, [class*="collapse"], .right-triangle'
+            ) ||
+            el.querySelector(
+              '.collapse-icon, .nav-folder-collapse-indicator, svg.right-triangle, svg[class*="chevron"]'
+            ) !== null
+          ) {
+            return true;
+          }
+          return false;
+        };
+
+        const isProtected = (element: Element | null): boolean => {
+          if (!element) return true;
+          if (isCollapseIndicator(element)) return true;
+          if (
+            element.closest(
+              '.pakcli-folder-index-badges, .tree-item-flair, .tree-item-flair-outer, .nav-folder-title-extra'
+            )
+          ) {
+            return true;
+          }
+          return false;
+        };
+
+        // 2. Folder Icon: Apply ONLY if mode is 'text_icon', 'text_icon_badge', 'text_icon_badge_chevron', or 'all'
+        const shouldColorIcon = (mode === 'text_icon' || mode === 'text_icon_badge' || mode === 'text_icon_badge_chevron' || mode === 'all');
+
+        if (shouldColorIcon) {
+          const applyIconColor = (el: HTMLElement) => {
+            if (isProtected(el) || isCollapseIndicator(el)) return;
+            el.addClass('pakcli-captain-colored-icon');
+            el.style.setProperty('color', color, 'important');
+            el.style.setProperty('fill', color, 'important');
+            el.style.setProperty('stroke', color, 'important');
+            el.style.setProperty('-webkit-text-fill-color', color, 'important');
+
+            const comp = window.getComputedStyle(el);
+            const isSvg = el.tagName.toLowerCase() === 'svg' || el.querySelector('svg') !== null;
+            const hasMask = (comp.webkitMaskImage && comp.webkitMaskImage !== 'none') ||
+                            (comp.maskImage && comp.maskImage !== 'none') ||
+                            el.classList.contains('obsidian-icon-folder-icon') ||
+                            el.classList.contains('iconize-icon') ||
+                            el.hasAttribute('data-icon');
+
+            if (hasMask || !isSvg) {
+              el.style.setProperty('background-color', color, 'important');
+            }
+            if (el.tagName.toLowerCase() === 'svg') {
+              el.style.setProperty('fill', color, 'important');
+              el.style.setProperty('stroke', color, 'important');
+            }
+            el.querySelectorAll<SVGElement>('path, circle, rect, polygon, line, svg').forEach((shape) => {
+              if (isProtected(shape) || isCollapseIndicator(shape)) return;
+              shape.style.setProperty('fill', color, 'important');
+              shape.style.setProperty('stroke', color, 'important');
+              shape.style.setProperty('color', color, 'important');
+            });
+          };
+
+          const iconEls = titleEl.querySelectorAll<HTMLElement>(
+            '.nav-folder-title-icon, .nav-folder-icon, .folder-icon, ' +
+            '.obsidian-icon-folder-icon, .iconize-icon, [data-icon]:not(.collapse-icon):not([class*="collapse"])'
+          );
+          iconEls.forEach((iconEl) => applyIconColor(iconEl));
+
+          for (let i = 0; i < titleEl.children.length; i++) {
+            const child = titleEl.children[i] as HTMLElement;
+            if (!child || isProtected(child) || isCollapseIndicator(child) || child === contentEl) {
+              continue;
+            }
+            if (child.classList.contains('tree-item-icon') || child.classList.contains('collapse-icon')) {
+              continue;
+            }
+            const isIcon = child.matches('.nav-folder-title-icon, .nav-folder-icon, .folder-icon, .obsidian-icon-folder-icon, .iconize-icon, [data-icon]') ||
+                           (/icon|folder/i.test(child.className) && !/collapse/i.test(child.className));
+            if (isIcon) {
+              applyIconColor(child);
+            }
+          }
+
+          if (contentEl) {
+            const innerIcons = contentEl.querySelectorAll<HTMLElement>(
+              '.nav-folder-title-icon, .nav-folder-icon, .folder-icon, .obsidian-icon-folder-icon, .iconize-icon, [data-icon], span[class*="icon"], div[class*="icon"]'
+            );
+            innerIcons.forEach((inIcon) => {
+              if (!isProtected(inIcon) && !isCollapseIndicator(inIcon)) {
+                applyIconColor(inIcon);
+              }
+            });
+          }
+        } else {
+          // If text_only, ensure icons are not colored
+          const existingIcons = titleEl.querySelectorAll<HTMLElement>('.pakcli-captain-colored-icon');
+          existingIcons.forEach((ic) => {
+            ic.style.removeProperty('color');
+            ic.style.removeProperty('fill');
+            ic.style.removeProperty('stroke');
+            ic.style.removeProperty('background-color');
+            ic.style.removeProperty('-webkit-text-fill-color');
+            ic.removeClass('pakcli-captain-colored-icon');
+            ic.querySelectorAll<SVGElement>('path, circle, rect, polygon, line, svg').forEach((s) => {
+              s.style.removeProperty('fill');
+              s.style.removeProperty('stroke');
+              s.style.removeProperty('color');
+            });
+          });
+        }
+
+        // 3. Badges: Apply ONLY if mode is 'text_icon_badge', 'text_icon_badge_chevron', or 'all'
+        const shouldColorBadges = (mode === 'text_icon_badge' || mode === 'text_icon_badge_chevron' || mode === 'all');
+        const badgeEls = titleEl.querySelectorAll<HTMLElement>('.pakcli-folder-index-badges .pakcli-folder-badge');
+        badgeEls.forEach((b) => {
+          if (shouldColorBadges) {
+            b.style.setProperty('color', color, 'important');
+            b.style.setProperty('-webkit-text-fill-color', color, 'important');
+            b.style.setProperty('border-color', color, 'important');
+          } else {
+            b.style.removeProperty('color');
+            b.style.removeProperty('-webkit-text-fill-color');
+            b.style.removeProperty('border-color');
+          }
+        });
+
+        // 4. Chevron: Apply ONLY if mode is 'text_icon_badge_chevron' or 'all'
+        const shouldColorChevron = (mode === 'text_icon_badge_chevron' || mode === 'all');
+        const chevronEls = titleEl.querySelectorAll<HTMLElement>('.collapse-icon, .nav-folder-collapse-indicator');
+        chevronEls.forEach((c) => {
+          if (shouldColorChevron) {
+            c.style.setProperty('color', color, 'important');
+            c.style.setProperty('stroke', color, 'important');
+            c.querySelectorAll<SVGElement>('svg, path, polygon').forEach((s) => {
+              s.style.setProperty('color', color, 'important');
+              s.style.setProperty('stroke', color, 'important');
+            });
+          } else {
+            c.style.removeProperty('color');
+            c.style.removeProperty('stroke');
+            c.querySelectorAll<SVGElement>('svg, path, polygon').forEach((s) => {
+              s.style.removeProperty('color');
+              s.style.removeProperty('stroke');
+            });
+          }
+        });
+
+        // 5. Flair: Apply ONLY if mode is 'all'
+        const shouldColorFlair = (mode === 'all');
+        const flairEls = titleEl.querySelectorAll<HTMLElement>('.tree-item-flair, .nav-folder-title-extra');
+        flairEls.forEach((f) => {
+          if (shouldColorFlair) {
+            f.style.setProperty('color', color, 'important');
+            f.style.setProperty('-webkit-text-fill-color', color, 'important');
+          } else {
+            f.style.removeProperty('color');
+            f.style.removeProperty('-webkit-text-fill-color');
+          }
+        });
+
+      } else {
+        cleanup();
+      }
+    });
   }
 
   public getTimestampPrefix(): string {
@@ -2028,15 +2387,16 @@ views:
         this.applyBaseExplorerFilter();
       });
     }
-    if (this.plugin.settings.enableMergeFolderIndex !== false) {
-      if (this.badgeDebounce !== null) {
-        cancelAnimationFrame(this.badgeDebounce);
-      }
-      this.badgeDebounce = requestAnimationFrame(() => {
-        this.badgeDebounce = null;
-        this.refreshFolderBadges();
-      });
+    if (this.badgeDebounce !== null) {
+      cancelAnimationFrame(this.badgeDebounce);
     }
+    this.badgeDebounce = requestAnimationFrame(() => {
+      this.badgeDebounce = null;
+      if (this.plugin.settings.enableMergeFolderIndex !== false) {
+        this.refreshFolderBadges();
+      }
+      this.applyCaptainFolderTextColors();
+    });
     if (!this.plugin.settings.enableAutoFolderIndex) return;
     const target = (e.target as HTMLElement)?.closest('.nav-folder-title') as HTMLElement;
     if (!target) return;
@@ -2106,6 +2466,7 @@ views:
       this.badgeDebounce = null;
     }
     this.removeFolderBadges();
+    this.removeCaptainFolderTextColors();
     if (this.splitBtnEl) {
       this.splitBtnEl.remove();
       this.splitBtnEl = null;

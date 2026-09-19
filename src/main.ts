@@ -1,4 +1,4 @@
-import { Plugin, Notice, Setting, PluginSettingTab, ButtonComponent, TFile, TFolder, TAbstractFile, Menu, TextComponent, setIcon, normalizePath } from 'obsidian';
+import { Plugin, Notice, Setting, PluginSettingTab, ButtonComponent, DropdownComponent, TFile, TFolder, TAbstractFile, Menu, TextComponent, setIcon, normalizePath } from 'obsidian';
 import { PakCLITableSettings, DEFAULT_TABLE_SETTINGS, DEFAULT_BUBBLE_GRAPH_SETTINGS, RelationshipTierConfig, DEFAULT_RELATIONSHIP_TIERS, RelationshipFolderEntry, RelationshipViewStructure, RelationshipSortOrder, DictionaryFolderEntry, DictionarySubfolderMode } from './settings';
 import { handleArtifactRename, moveArtifactsBetweenFolders } from './features/sqlseal/utils/views';
 import { SplitViewManager, FolderSuggestModal } from './features/explorer/splitViewManager';
@@ -17,7 +17,7 @@ import { saveVaultConfig, loadVaultConfig } from './features/hub/vaultConfig';
 
 // Tree & Asset Router Imports
 import { AssetRouter } from './features/tree/router';
-import { TitleOverrideOption } from './features/tree/types';
+import { TitleOverrideOption, CaptainFolderOverrideMode } from './features/tree/types';
 import { DiagramRenderer } from './features/tree/renderers/DiagramRenderer';
 import { registerCommands as registerTreeCommands } from './features/tree/commands/index';
 import { FolderSuggest } from './features/tree/ui/folder-suggest';
@@ -4104,6 +4104,24 @@ export default class PakCLITablePlugin extends Plugin {
 							await saveSettings();
 						}));
 
+				new Setting(containerEl)
+					.setName('Captain Folder Explorer Override')
+					.setDesc('How Captain Folder colors affect the file explorer tree (Default mode).')
+					.addDropdown(dropdown => dropdown
+						.addOption('none', 'none')
+						.addOption('text_only', 'text filename only')
+						.addOption('text_icon', 'text filename, icon')
+						.addOption('text_icon_badge', 'text filename, icon , badge')
+						.addOption('text_icon_badge_chevron', 'text filename, icon , badge, Chevron')
+						.addOption('all', 'all overided')
+						.setValue(pluginSettings.captainFolderExplorerOverrideMode || 'text_icon')
+						.onChange(async (value) => {
+							pluginSettings.captainFolderExplorerOverrideMode = value as CaptainFolderOverrideMode;
+							pluginSettings.enableCaptainFolderExplorerColor = (value !== 'none');
+							await saveSettings();
+							this.splitViewManager?.applyCaptainFolderTextColors();
+						}));
+
 				const bulkContainer = containerEl.createDiv({ cls: 'asset-router-bulk-container' });
 				bulkContainer.style.marginBottom = '10px';
 
@@ -4115,9 +4133,13 @@ export default class PakCLITablePlugin extends Plugin {
 							this.app,
 							'Are you sure you want to enable ALL Captain Folder rules?',
 							async () => {
-								(pluginSettings.rules || []).forEach(r => r.enabled = true);
+								(pluginSettings.rules || []).forEach(r => {
+									r.enabled = true;
+									r.explorerOverride = pluginSettings.captainFolderExplorerOverrideMode || 'text_icon';
+								});
 								await saveSettings();
 								renderRulesTable();
+								this.splitViewManager?.applyCaptainFolderTextColors();
 								new Notice('All rules enabled');
 							}
 						).open();
@@ -4130,9 +4152,13 @@ export default class PakCLITablePlugin extends Plugin {
 							this.app,
 							'Are you sure you want to disable ALL Captain Folder rules?',
 							async () => {
-								(pluginSettings.rules || []).forEach(r => r.enabled = false);
+								(pluginSettings.rules || []).forEach(r => {
+									r.enabled = false;
+									r.explorerOverride = 'none';
+								});
 								await saveSettings();
 								renderRulesTable();
+								this.splitViewManager?.applyCaptainFolderTextColors();
 								new Notice('All rules disabled');
 							}
 						).open();
@@ -4161,6 +4187,7 @@ export default class PakCLITablePlugin extends Plugin {
 				let newSubCaptain = false;
 				let newTitleOverride: TitleOverrideOption = 'inherit';
 				let newColor = '#4a5568';
+				let newExplorerOverride: CaptainFolderOverrideMode = pluginSettings.captainFolderExplorerOverrideMode || 'text_icon';
 
 				new Setting(addRuleDiv)
 					.setName('Folder Path')
@@ -4197,6 +4224,19 @@ export default class PakCLITablePlugin extends Plugin {
 						.setValue(newTitleOverride)
 						.onChange((value: string) => newTitleOverride = value as TitleOverrideOption));
 
+				new Setting(addRuleDiv)
+					.setName('Explorer Override')
+					.setDesc('How Captain Folder colors affect the file explorer tree for this folder.')
+					.addDropdown(dropdown => dropdown
+						.addOption('none', 'none')
+						.addOption('text_only', 'text filename only')
+						.addOption('text_icon', 'text filename, icon')
+						.addOption('text_icon_badge', 'text filename, icon , badge')
+						.addOption('text_icon_badge_chevron', 'text filename, icon , badge, Chevron')
+						.addOption('all', 'all overided')
+						.setValue(newExplorerOverride)
+						.onChange(value => newExplorerOverride = value as CaptainFolderOverrideMode));
+
 				const colorPickerSetting = addRuleDiv.createDiv({ cls: 'setting-item' });
 				const colorPickerInfo = colorPickerSetting.createDiv({ cls: 'setting-item-info' });
 				colorPickerInfo.createDiv({ cls: 'setting-item-name', text: 'Captain Folder Color' });
@@ -4225,6 +4265,7 @@ export default class PakCLITablePlugin extends Plugin {
 				addBtnContainer.style.marginTop = '10px';
 
 				const rulesTableContainer = containerEl.createDiv({ cls: 'asset-router-rules-table-container' });
+				rulesTableContainer.style.cssText = 'overflow-x: auto; width: 100%; margin-top: 14px; margin-bottom: 50px; padding: 10px; border-radius: 8px; border: 1px solid var(--background-modifier-border); background: var(--background-primary);';
 
 				const renderRulesTable = () => {
 					rulesTableContainer.empty();
@@ -4234,71 +4275,102 @@ export default class PakCLITablePlugin extends Plugin {
 					}
 
 					const table = rulesTableContainer.createEl('table');
-					table.style.width = '100%';
+					table.style.cssText = 'width: 100%; min-width: 640px; border-collapse: collapse;';
 					const thead = table.createEl('thead');
 					const headerRow = thead.createEl('tr');
-					headerRow.createEl('th', { text: 'Active' });
-					headerRow.createEl('th', { text: 'Folder Path' });
-					headerRow.createEl('th', { text: 'Scope' });
-					headerRow.createEl('th', { text: 'Sub-Captain' });
-					headerRow.createEl('th', { text: 'Title' });
-					headerRow.createEl('th', { text: 'Color' });
-					headerRow.createEl('th', { text: 'Actions' });
+					headerRow.style.borderBottom = '2px solid var(--background-modifier-border)';
+					[
+						'Explorer Override',
+						'Folder Path',
+						'Scope',
+						'Sub-Captain',
+						'Title',
+						'Color',
+						'Actions'
+					].forEach(h => {
+						const th = headerRow.createEl('th', { text: h });
+						th.style.cssText = 'padding: 8px 10px; text-align: left; font-size: 12px; font-weight: 600; color: var(--text-normal);';
+					});
 
 					const tbody = table.createEl('tbody');
 					pluginSettings.rules.forEach((rule, idx) => {
-						const row = tbody.createEl('tr');
-						const activeTd = row.createEl('td');
-						const toggle = activeTd.createEl('input');
-						toggle.type = 'checkbox';
-						toggle.checked = rule.enabled;
-						toggle.onchange = async () => {
-							rule.enabled = toggle.checked;
-							await saveSettings();
-						};
+						try {
+							const row = tbody.createEl('tr');
+							row.style.borderBottom = '1px solid var(--background-modifier-border)';
 
-						row.createEl('td', { text: rule.path === '' ? '/' : rule.path });
-						row.createEl('td', { text: rule.includeChildren ? 'Children' : 'Folder' });
-						row.createEl('td', { text: rule.subCaptainMode ? 'Yes' : 'No' });
-						row.createEl('td', { text: rule.useNoteTitle });
+							const overrideTd = row.createEl('td');
+							overrideTd.style.cssText = 'padding: 8px 10px; vertical-align: middle;';
+							const modeDropdown = new DropdownComponent(overrideTd)
+								.addOption('none', 'none')
+								.addOption('text_only', 'text filename only')
+								.addOption('text_icon', 'text filename, icon')
+								.addOption('text_icon_badge', 'text filename, icon , badge')
+								.addOption('text_icon_badge_chevron', 'text filename, icon , badge, Chevron')
+								.addOption('all', 'all overided');
 
-						// Color picker cell
-						const colorTd = row.createEl('td');
-						colorTd.style.cssText = 'text-align:center;vertical-align:middle;';
-						const colorSwatch = colorTd.createEl('span');
-						const currentColor = rule.color || '#4a5568';
-						colorSwatch.style.cssText = `display:inline-block;width:18px;height:18px;border-radius:3px;border:1px solid var(--background-modifier-border);background:${currentColor};margin-right:4px;vertical-align:middle;cursor:pointer;`;
-						const rowColorInput = colorTd.createEl('input');
-						rowColorInput.type = 'color';
-						rowColorInput.value = currentColor;
-						rowColorInput.title = 'Set Captain Folder color for Bubble Graph';
-						rowColorInput.style.cssText = 'width:28px;height:22px;cursor:pointer;border:none;background:none;padding:0;vertical-align:middle;';
-						rowColorInput.oninput = async () => {
-							rule.color = rowColorInput.value;
-							colorSwatch.style.background = rowColorInput.value;
-							await saveSettings();
-						};
-						// Click swatch to open picker
-						colorSwatch.onclick = () => rowColorInput.click();
-
-						const actionsTd = row.createEl('td');
-						const rescanBtn = new ButtonComponent(actionsTd)
-							.setButtonText('Rescan')
-							.onClick(async () => {
-								rescanBtn.setDisabled(true);
-								await this.router.rescanFolderRuleAssets(rule);
-								rescanBtn.setDisabled(false);
-							});
-						rescanBtn.buttonEl.style.marginRight = '8px';
-
-						const delBtn = new ButtonComponent(actionsTd)
-							.setButtonText('Delete')
-							.setWarning()
-							.onClick(async () => {
-								pluginSettings.rules.splice(idx, 1);
+							const currentMode = rule.explorerOverride || (rule.enabled ? (pluginSettings.captainFolderExplorerOverrideMode || 'text_icon') : 'none');
+							modeDropdown.setValue(currentMode);
+							modeDropdown.onChange(async (val) => {
+								rule.explorerOverride = val as CaptainFolderOverrideMode;
+								rule.enabled = val !== 'none';
 								await saveSettings();
-								renderRulesTable();
+								this.splitViewManager?.applyCaptainFolderTextColors();
 							});
+
+							const pathTd = row.createEl('td', { text: rule.path === '' ? '/' : rule.path });
+							pathTd.style.cssText = 'padding: 8px 10px; font-weight: 500;';
+
+							const scopeTd = row.createEl('td', { text: rule.includeChildren ? 'Children' : 'Folder' });
+							scopeTd.style.cssText = 'padding: 8px 10px; color: var(--text-muted);';
+
+							const subTd = row.createEl('td', { text: rule.subCaptainMode ? 'Yes' : 'No' });
+							subTd.style.cssText = 'padding: 8px 10px;';
+
+							const titleTd = row.createEl('td', { text: rule.useNoteTitle });
+							titleTd.style.cssText = 'padding: 8px 10px; color: var(--text-muted);';
+
+							// Color picker cell
+							const colorTd = row.createEl('td');
+							colorTd.style.cssText = 'padding: 8px 10px; text-align: center; vertical-align: middle;';
+							const colorSwatch = colorTd.createEl('span');
+							const currentColor = rule.color || '#4a5568';
+							colorSwatch.style.cssText = `display:inline-block;width:18px;height:18px;border-radius:3px;border:1px solid var(--background-modifier-border);background:${currentColor};margin-right:4px;vertical-align:middle;cursor:pointer;`;
+							const rowColorInput = colorTd.createEl('input');
+							rowColorInput.type = 'color';
+							rowColorInput.value = currentColor;
+							rowColorInput.title = 'Set Captain Folder color for Bubble Graph';
+							rowColorInput.style.cssText = 'width:28px;height:22px;cursor:pointer;border:none;background:none;padding:0;vertical-align:middle;';
+							rowColorInput.oninput = async () => {
+								rule.color = rowColorInput.value;
+								colorSwatch.style.background = rowColorInput.value;
+								await saveSettings();
+								this.splitViewManager?.applyCaptainFolderTextColors();
+							};
+							colorSwatch.onclick = () => rowColorInput.click();
+
+							const actionsTd = row.createEl('td');
+							actionsTd.style.cssText = 'padding: 8px 10px; vertical-align: middle; white-space: nowrap;';
+							const rescanBtn = new ButtonComponent(actionsTd)
+								.setButtonText('Rescan')
+								.onClick(async () => {
+									rescanBtn.setDisabled(true);
+									await this.router.rescanFolderRuleAssets(rule);
+									rescanBtn.setDisabled(false);
+								});
+							rescanBtn.buttonEl.style.marginRight = '8px';
+
+							const delBtn = new ButtonComponent(actionsTd)
+								.setButtonText('Delete')
+								.setWarning()
+								.onClick(async () => {
+									pluginSettings.rules.splice(idx, 1);
+									await saveSettings();
+									renderRulesTable();
+									this.splitViewManager?.applyCaptainFolderTextColors();
+								});
+						} catch (rowErr) {
+							console.error('[PakCLI] Error rendering Captain Folder rule row:', rowErr);
+						}
 					});
 				};
 
@@ -4313,11 +4385,13 @@ export default class PakCLITablePlugin extends Plugin {
 							includeChildren: newScope === 'children',
 							subCaptainMode: newSubCaptain,
 							useNoteTitle: newTitleOverride,
-							enabled: true,
+							enabled: newExplorerOverride !== 'none',
 							color: newColor,
+							explorerOverride: newExplorerOverride,
 						});
 						await saveSettings();
 						renderRulesTable();
+						this.splitViewManager?.applyCaptainFolderTextColors();
 						new Notice(`Rule added: ${newPath || '/'}`);
 					});
 

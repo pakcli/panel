@@ -824,3 +824,161 @@ pre:hover .pakcli-cb-copy-btn {
 .pakcli-cb-ps-select {
   width: 100%;
 }
+
+/* Captain Folder File Explorer Color Override (Multi-Mode) */
+.nav-folder-title.pakcli-captain-folder-colored {
+  --folder-color: var(--captain-folder-color) !important;
+  --folder-icon-color: var(--captain-folder-color) !important;
+  --nav-folder-icon-color: var(--captain-folder-color) !important;
+
+  /* 1. Folder Title Text (All modes: text_only, text_icon, text_icon_badge, all) */
+  .nav-folder-title-content,
+  .tree-item-inner,
+  .pakcli-captain-colored-text {
+    color: var(--captain-folder-color, inherit) !important;
+    -webkit-text-fill-color: var(--captain-folder-color, inherit) !important;
+  }
+
+  /* 2. Folder Icons: ONLY for text_icon, text_icon_badge, text_icon_badge_chevron, and all */
+  &.pakcli-mode-text-icon,
+  &.pakcli-mode-text-icon-badge,
+  &.pakcli-mode-text-icon-badge-chevron,
+  &.pakcli-mode-all {
+    .nav-folder-title-content::before,
+    .nav-folder-title-content::after,
+    .tree-item-inner::before,
+    .tree-item-inner::after {
+      color: var(--captain-folder-color, inherit) !important;
+      background-color: var(--captain-folder-color, inherit) !important;
+      -webkit-text-fill-color: var(--captain-folder-color, inherit) !important;
+      fill: var(--captain-folder-color, inherit) !important;
+      stroke: var(--captain-folder-color, inherit) !important;
+    }
+
+    .nav-folder-title-icon,
+    .nav-folder-icon,
+    .folder-icon,
+    .obsidian-icon-folder-icon,
+    .iconize-icon,
+    .pakcli-captain-colored-icon {
+      color: var(--captain-folder-color, inherit) !important;
+      fill: var(--captain-folder-color, inherit) !important;
+      stroke: var(--captain-folder-color, inherit) !important;
+      -webkit-text-fill-color: var(--captain-folder-color, inherit) !important;
+
+      svg,
+      path,
+      circle,
+      rect,
+      polygon,
+      line {
+        color: var(--captain-folder-color, inherit) !important;
+        fill: var(--captain-folder-color, inherit) !important;
+        stroke: var(--captain-folder-color, inherit) !important;
+      }
+    }
+
+    .nav-folder-title-icon:not(svg):not(:has(svg)),
+    .nav-folder-icon:not(svg):not(:has(svg)),
+    .folder-icon:not(svg):not(:has(svg)),
+    .obsidian-icon-folder-icon:not(svg):not(:has(svg)),
+    .iconize-icon:not(svg):not(:has(svg)) {
+      background-color: var(--captain-folder-color, inherit) !important;
+    }
+  }
+
+  /* 3. Badges: In text_only and text_icon, badges are shielded (theme accent) */
+  &:not(.pakcli-mode-text-icon-badge):not(.pakcli-mode-text-icon-badge-chevron):not(.pakcli-mode-all) {
+    .pakcli-folder-index-badges {
+      color: initial !important;
+      -webkit-text-fill-color: initial !important;
+
+      .pakcli-folder-badge {
+        -webkit-text-fill-color: initial !important;
+
+        &.has-file {
+          color: var(--text-accent, var(--interactive-accent, var(--color-accent, #7852ff))) !important;
+          -webkit-text-fill-color: var(--text-accent, var(--interactive-accent, var(--color-accent, #7852ff))) !important;
+          background-color: rgba(var(--interactive-accent-rgb, 120, 80, 200), 0.14) !important;
+        }
+
+        &.is-missing {
+          color: var(--text-faint, #888) !important;
+          -webkit-text-fill-color: var(--text-faint, #888) !important;
+        }
+      }
+    }
+  }
+
+  /* 4. Badges: In text_icon_badge, text_icon_badge_chevron, and all, badges receive Captain Folder color */
+  &.pakcli-mode-text-icon-badge,
+  &.pakcli-mode-text-icon-badge-chevron,
+  &.pakcli-mode-all {
+    .pakcli-folder-index-badges .pakcli-folder-badge {
+      color: var(--captain-folder-color, inherit) !important;
+      -webkit-text-fill-color: var(--captain-folder-color, inherit) !important;
+      border-color: var(--captain-folder-color, inherit) !important;
+
+      &.has-file {
+        background-color: color-mix(in srgb, var(--captain-folder-color) 18%, transparent) !important;
+      }
+    }
+  }
+
+  /* 5. Chevron: In text_icon_badge_chevron and all, chevron receives Captain Folder color */
+  &.pakcli-mode-text-icon-badge-chevron,
+  &.pakcli-mode-all {
+    .collapse-icon,
+    .nav-folder-collapse-indicator {
+      color: var(--captain-folder-color, inherit) !important;
+      stroke: var(--captain-folder-color, inherit) !important;
+
+      svg,
+      path,
+      polygon {
+        color: var(--captain-folder-color, inherit) !important;
+        stroke: var(--captain-folder-color, inherit) !important;
+      }
+    }
+  }
+
+  /* 6. Count Flair: In all modes except all, flair is shielded */
+  &:not(.pakcli-mode-all) {
+    .tree-item-flair,
+    .tree-item-flair-outer,
+    .nav-folder-title-extra {
+      color: var(--text-faint, inherit) !important;
+      -webkit-text-fill-color: initial !important;
+    }
+  }
+
+  /* 7. Count Flair: In all mode, flair is overridden */
+  &.pakcli-mode-all {
+    .tree-item-flair,
+    .tree-item-flair-outer,
+    .nav-folder-title-extra {
+      color: var(--captain-folder-color, inherit) !important;
+      -webkit-text-fill-color: var(--captain-folder-color, inherit) !important;
+    }
+  }
+}
+
+.pakcli-captain-colored-icon {
+  color: var(--captain-folder-color, inherit) !important;
+  fill: var(--captain-folder-color, inherit) !important;
+  stroke: var(--captain-folder-color, inherit) !important;
+  -webkit-text-fill-color: var(--captain-folder-color, inherit) !important;
+
+  svg,
+  path,
+  circle,
+  rect,
+  polygon,
+  line {
+    color: var(--captain-folder-color, inherit) !important;
+    fill: var(--captain-folder-color, inherit) !important;
+    stroke: var(--captain-folder-color, inherit) !important;
+  }
+}
+
+
