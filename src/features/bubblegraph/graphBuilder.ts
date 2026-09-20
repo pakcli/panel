@@ -393,7 +393,56 @@ export function matchFolderRule(
     if (!folderPath) return null;
     const normalizedPath = normalizePath(folderPath).replace(/^\/+|\/+$/g, '');
 
-    // 1. Check direct fileConfigs override if available
+    // 1. First priority: Check explicit table setting rules (Captain Folder Rules Table)
+    if (rules && rules.length > 0) {
+        const activeRules = rules.filter(r => r.enabled !== false);
+        if (activeRules.length > 0) {
+            const matches: { rule: FolderRule; specificity: number }[] = [];
+
+            for (const rule of activeRules) {
+                const rawRulePath = (rule.path || '').trim();
+                const normalizedRulePath = normalizePath(rawRulePath).replace(/^\/+|\/+$/g, '');
+
+                if (normalizedRulePath.toLowerCase().includes('*')) {
+                    const regexParts = normalizedRulePath.toLowerCase().split('/').map(part => {
+                        if (part === '*') return '[^/]+';
+                        if (part === '**') return '.*';
+                        return part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\\\*/g, '[^/]+');
+                    });
+                    const regexString = regexParts.join('/');
+                    const fullRegex = rule.includeChildren 
+                        ? new RegExp(`^${regexString}(?:/.*)?$`, 'i') 
+                        : new RegExp(`^${regexString}$`, 'i');
+                    if (fullRegex.test(normalizedPath.toLowerCase())) {
+                        matches.push({ rule, specificity: normalizedRulePath.length });
+                    }
+                } else if (normalizedRulePath === "" || normalizedRulePath === ".") {
+                    if (rule.includeChildren || normalizedPath === "") {
+                        matches.push({ rule, specificity: 0 });
+                    }
+                } else {
+                    // Check exact segment-aware match
+                    if (compareFolderPaths(normalizedPath, normalizedRulePath)) {
+                        matches.push({ rule, specificity: normalizedRulePath.length + 100 });
+                    } 
+                    // Check subfolder match (when rule applies to children)
+                    else if (rule.includeChildren && isSubfolderOf(normalizedPath, normalizedRulePath)) {
+                        matches.push({ 
+                            rule, 
+                            specificity: normalizedRulePath.length + 50 
+                        });
+                    }
+                }
+            }
+
+            if (matches.length > 0) {
+                matches.sort((a, b) => b.specificity - a.specificity);
+                return matches[0].rule;
+            }
+        }
+    }
+
+    // 2. Secondary fallback: Check fileConfigs if available and no explicit rule matched
     if (fileConfigs) {
         const parts = normalizedPath.split('/');
         for (let i = parts.length; i >= 1; i--) {
@@ -412,51 +461,7 @@ export function matchFolderRule(
         }
     }
 
-    if (!rules || rules.length === 0) return null;
-    const activeRules = rules.filter(r => r.enabled !== false);
-    if (activeRules.length === 0) return null;
-
-    const matches: { rule: FolderRule; specificity: number }[] = [];
-
-    for (const rule of activeRules) {
-        const rawRulePath = (rule.path || '').trim();
-        const normalizedRulePath = normalizePath(rawRulePath).replace(/^\/+|\/+$/g, '');
-
-        if (normalizedRulePath.toLowerCase().includes('*')) {
-            const regexParts = normalizedRulePath.toLowerCase().split('/').map(part => {
-                if (part === '*') return '[^/]+';
-                if (part === '**') return '.*';
-                return part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\\\*/g, '[^/]+');
-            });
-            const regexString = regexParts.join('/');
-            const fullRegex = rule.includeChildren 
-                ? new RegExp(`^${regexString}(?:/.*)?$`, 'i') 
-                : new RegExp(`^${regexString}$`, 'i');
-            if (fullRegex.test(normalizedPath.toLowerCase())) {
-                matches.push({ rule, specificity: normalizedRulePath.length });
-            }
-        } else if (normalizedRulePath === "" || normalizedRulePath === ".") {
-            if (rule.includeChildren || normalizedPath === "") {
-                matches.push({ rule, specificity: 0 });
-            }
-        } else {
-            // Check exact segment-aware match
-            if (compareFolderPaths(normalizedPath, normalizedRulePath)) {
-                matches.push({ rule, specificity: normalizedRulePath.length + 100 });
-            } 
-            // Check subfolder match (when rule applies to children)
-            else if (isSubfolderOf(normalizedPath, normalizedRulePath)) {
-                matches.push({ 
-                    rule, 
-                    specificity: rule.includeChildren ? normalizedRulePath.length + 50 : normalizedRulePath.length 
-                });
-            }
-        }
-    }
-
-    if (matches.length === 0) return null;
-    matches.sort((a, b) => b.specificity - a.specificity);
-    return matches[0].rule;
+    return null;
 }
 
 export function getFolderColor(

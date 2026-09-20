@@ -17,6 +17,8 @@ export interface FolderRule {
 	enabled: boolean;        // Individual rule toggle
 	color?: string;          // Hex color code for Captain Folder (defaults to dark gray #4a5568)
 	explorerOverride?: CaptainFolderOverrideMode; // Explorer tree override mode
+	assetRouterEnabled?: boolean; // Dedicated toggle: participate in nested asset routing
+	source?: 'manual' | 'dictionary' | 'relationship'; // Origin of rule
 }
 
 export interface AssetRouterSettings {

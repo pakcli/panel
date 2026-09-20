@@ -296,19 +296,23 @@ Relasi toksik, lawan berbahaya, atau musuh (skor -1.00 / bad).
                 // Apply Captain colors if selected
                 if (this.applyCaptainColors) {
                     this.plugin.settings.bubbleUseCaptainColors = true;
+
+                    if (!this.plugin.settings.rules) this.plugin.settings.rules = [];
+                    const existingRule = this.plugin.settings.rules.find(r => normalizePath(r.path || '').toLowerCase() === root.toLowerCase());
+                    const ruleColor = existingRule?.color || '#4a5568';
+
                     const folderConfigs = (this.plugin.settings.fileConfigs as Record<string, any>) || {};
-                    folderConfigs[root] = { color: '#6366f1' };
+                    folderConfigs[root] = { color: ruleColor };
                     tiers.forEach(t => {
                         folderConfigs[`${root}/${t.folderName}`] = { color: t.color };
                     });
                     this.plugin.settings.fileConfigs = folderConfigs;
 
-                    if (!this.plugin.settings.rules) this.plugin.settings.rules = [];
-                    const existingRule = this.plugin.settings.rules.find(r => normalizePath(r.path || '').toLowerCase() === root.toLowerCase());
                     if (existingRule) {
-                        existingRule.color = '#6366f1';
+                        existingRule.color = ruleColor;
                         existingRule.enabled = true;
                         existingRule.includeChildren = true;
+                        existingRule.source = 'relationship';
                     } else {
                         this.plugin.settings.rules.push({
                             path: root,
@@ -316,9 +320,15 @@ Relasi toksik, lawan berbahaya, atau musuh (skor -1.00 / bad).
                             includeChildren: true,
                             useNoteTitle: 'inherit',
                             enabled: true,
-                            color: '#6366f1'
+                            assetRouterEnabled: false,
+                            source: 'relationship',
+                            color: ruleColor
                         });
                     }
+                }
+
+                if (typeof this.plugin.syncSpecialFoldersToCaptainRules === 'function') {
+                    this.plugin.syncSpecialFoldersToCaptainRules();
                 }
 
                 await this.plugin.saveSettings();

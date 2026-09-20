@@ -1,4 +1,4 @@
-import { Plugin, Notice, Setting, PluginSettingTab, ButtonComponent, DropdownComponent, TFile, TFolder, TAbstractFile, Menu, TextComponent, setIcon, normalizePath } from 'obsidian';
+import { Plugin, Notice, Setting, PluginSettingTab, ButtonComponent, DropdownComponent, ToggleComponent, TFile, TFolder, TAbstractFile, Menu, TextComponent, setIcon, normalizePath } from 'obsidian';
 import { PakCLITableSettings, DEFAULT_TABLE_SETTINGS, DEFAULT_BUBBLE_GRAPH_SETTINGS, RelationshipTierConfig, DEFAULT_RELATIONSHIP_TIERS, RelationshipFolderEntry, RelationshipViewStructure, RelationshipSortOrder, DictionaryFolderEntry, DictionarySubfolderMode } from './settings';
 import { handleArtifactRename, moveArtifactsBetweenFolders } from './features/sqlseal/utils/views';
 import { SplitViewManager, FolderSuggestModal } from './features/explorer/splitViewManager';
@@ -1236,6 +1236,119 @@ export default class PakCLITablePlugin extends Plugin {
 				}
 			}
 		}
+
+		if (this.syncSpecialFoldersToCaptainRules()) {
+			await this.saveSettings();
+		}
+	}
+
+	public syncSpecialFoldersToCaptainRules(): boolean {
+		if (!this.settings.rules) {
+			this.settings.rules = [];
+		}
+		let changed = false;
+
+		// Collect all active dictionary paths
+		const dictPaths = new Set<string>();
+		if (this.settings.dictionaryFolders && Array.isArray(this.settings.dictionaryFolders)) {
+			for (const f of this.settings.dictionaryFolders) {
+				if (f.path && f.path.trim()) dictPaths.add(normalizePath(f.path.trim()));
+			}
+		}
+		if (this.settings.dictionaryFolderPath && this.settings.dictionaryFolderPath.trim()) {
+			dictPaths.add(normalizePath(this.settings.dictionaryFolderPath.trim()));
+		}
+
+		// Collect all active relationship paths
+		const relPaths = new Set<string>();
+		if (this.settings.relationshipFolders && Array.isArray(this.settings.relationshipFolders)) {
+			for (const f of this.settings.relationshipFolders) {
+				if (f.path && f.path.trim()) relPaths.add(normalizePath(f.path.trim()));
+			}
+		}
+		if (this.settings.familyCirclesRootFolder && this.settings.familyCirclesRootFolder.trim()) {
+			relPaths.add(normalizePath(this.settings.familyCirclesRootFolder.trim()));
+		}
+
+		// Sync Dictionary paths into Captain rules
+		for (const p of dictPaths) {
+			const normP = p.toLowerCase();
+			const existing = this.settings.rules.find(r => normalizePath(r.path || '').toLowerCase() === normP);
+			if (!existing) {
+				this.settings.rules.push({
+					path: p,
+					isNested: true,
+					includeChildren: true,
+					subCaptainMode: false,
+					useNoteTitle: 'inherit',
+					enabled: true,
+					assetRouterEnabled: false,
+					explorerOverride: this.settings.captainFolderExplorerOverrideMode || 'text_icon',
+					source: 'dictionary',
+					color: '#4a5568'
+				});
+				changed = true;
+			} else {
+				if (!existing.source) {
+					existing.source = 'dictionary';
+					changed = true;
+				}
+				if (existing.assetRouterEnabled === undefined) {
+					existing.assetRouterEnabled = false;
+					changed = true;
+				}
+			}
+		}
+
+		// Sync Relationship paths into Captain rules
+		for (const p of relPaths) {
+			const normP = p.toLowerCase();
+			const existing = this.settings.rules.find(r => normalizePath(r.path || '').toLowerCase() === normP);
+			if (!existing) {
+				this.settings.rules.push({
+					path: p,
+					isNested: true,
+					includeChildren: true,
+					subCaptainMode: false,
+					useNoteTitle: 'inherit',
+					enabled: true,
+					assetRouterEnabled: false,
+					explorerOverride: this.settings.captainFolderExplorerOverrideMode || 'text_icon',
+					source: 'relationship',
+					color: '#4a5568'
+				});
+				changed = true;
+			} else {
+				if (!existing.source) {
+					existing.source = 'relationship';
+					changed = true;
+				}
+				if (existing.assetRouterEnabled === undefined) {
+					existing.assetRouterEnabled = false;
+					changed = true;
+				}
+			}
+		}
+
+		// Prune stale auto-synced rules whose folder is no longer tracked
+		const dictPathsLower = new Set(Array.from(dictPaths).map(p => p.toLowerCase()));
+		const relPathsLower = new Set(Array.from(relPaths).map(p => p.toLowerCase()));
+		const initialRuleCount = this.settings.rules.length;
+		this.settings.rules = this.settings.rules.filter(r => {
+			const norm = normalizePath(r.path || '').toLowerCase();
+			if (r.source === 'dictionary') {
+				return dictPathsLower.has(norm);
+			}
+			if (r.source === 'relationship') {
+				return relPathsLower.has(norm);
+			}
+			return true;
+		});
+		if (this.settings.rules.length !== initialRuleCount) {
+			changed = true;
+		}
+
+		return changed;
 	}
 
 	async saveSettings() {
@@ -2357,6 +2470,7 @@ export default class PakCLITablePlugin extends Plugin {
 							createdAt: Date.now()
 						});
 						this.settings.relationshipFolders = folders;
+						this.syncSpecialFoldersToCaptainRules();
 						this.saveSettings();
 					}
 
@@ -2387,6 +2501,7 @@ export default class PakCLITablePlugin extends Plugin {
 									createdAt: Date.now()
 								});
 								this.settings.relationshipFolders = folders;
+								this.syncSpecialFoldersToCaptainRules();
 								this.saveSettings();
 								renderFoldersAndRecordsTable();
 								new Notice(`Registered relationship folder "${cleanPath}"!`);
@@ -2642,6 +2757,7 @@ export default class PakCLITablePlugin extends Plugin {
 							if (isActive && folders.length > 0) {
 								this.settings.familyCirclesRootFolder = folders[0].path;
 							}
+							this.syncSpecialFoldersToCaptainRules();
 							await this.saveSettings();
 							renderFullSection();
 							renderFoldersAndRecordsTable();
@@ -2663,6 +2779,7 @@ export default class PakCLITablePlugin extends Plugin {
 								if (isActive && folders.length > 0) {
 									this.settings.familyCirclesRootFolder = folders[0].path;
 								}
+								this.syncSpecialFoldersToCaptainRules();
 								await this.saveSettings();
 								renderFullSection();
 								renderFoldersAndRecordsTable();
@@ -3572,6 +3689,7 @@ export default class PakCLITablePlugin extends Plugin {
 							subfolderMode: 'own_az'
 						}];
 						this.settings.dictionaryFolders = folders;
+						this.syncSpecialFoldersToCaptainRules();
 						this.saveSettings();
 					}
 
@@ -3601,6 +3719,7 @@ export default class PakCLITablePlugin extends Plugin {
 						if (folders.length > 0) {
 							this.settings.dictionaryFolderPath = folders[0].path;
 						}
+						this.syncSpecialFoldersToCaptainRules();
 						await this.saveSettings();
 						renderDictFoldersManager();
 						if (this.dictionaryExplorerManager) {
@@ -3634,6 +3753,7 @@ export default class PakCLITablePlugin extends Plugin {
 							if (idx === 0) {
 								this.settings.dictionaryFolderPath = entry.path;
 							}
+							this.syncSpecialFoldersToCaptainRules();
 							await this.saveSettings();
 							if (this.dictionaryExplorerManager) {
 								this.dictionaryExplorerManager.refreshVirtualFolders();
@@ -3670,6 +3790,7 @@ export default class PakCLITablePlugin extends Plugin {
 							if (folders.length > 0) {
 								this.settings.dictionaryFolderPath = folders[0].path;
 							}
+							this.syncSpecialFoldersToCaptainRules();
 							await this.saveSettings();
 							renderDictFoldersManager();
 							if (this.dictionaryExplorerManager) {
@@ -4157,56 +4278,76 @@ export default class PakCLITablePlugin extends Plugin {
 				}
 
 				const bulkContainer = containerEl.createDiv({ cls: 'asset-router-bulk-container' });
-				bulkContainer.style.marginBottom = '10px';
+				bulkContainer.style.cssText = 'display: flex; flex-direction: column; gap: 10px; margin-bottom: 16px; padding: 12px; background: var(--background-secondary); border: 1px solid var(--background-modifier-border); border-radius: 8px;';
 
-				new ButtonComponent(bulkContainer)
-					.setButtonText('Turn On All Rules')
+				const bulkHeader = bulkContainer.createDiv();
+				bulkHeader.style.cssText = 'display: flex; justify-content: space-between; align-items: center; font-size: 13px; font-weight: 600; color: var(--text-normal);';
+				bulkHeader.createSpan({ text: '⚡ Collective / Batch Toggles' });
+
+				const bulkBtnRow = bulkContainer.createDiv();
+				bulkBtnRow.style.cssText = 'display: flex; flex-wrap: wrap; gap: 8px; align-items: center;';
+
+				// Explorer Appearance Collective Buttons
+				new ButtonComponent(bulkBtnRow)
+					.setButtonText('🎨 Enable All Explorer Styling')
 					.setCta()
-					.onClick(() => {
-						new ConfirmModal(
-							this.app,
-							'Are you sure you want to enable ALL Captain Folder rules?',
-							async () => {
-								(pluginSettings.rules || []).forEach(r => {
-									r.enabled = true;
-									r.explorerOverride = pluginSettings.captainFolderExplorerOverrideMode || 'text_icon';
-								});
-								await saveSettings();
-								renderRulesTable();
-								this.splitViewManager?.applyCaptainFolderTextColors();
-								new Notice('All rules enabled');
-							}
-						).open();
+					.onClick(async () => {
+						(pluginSettings.rules || []).forEach(r => {
+							r.explorerOverride = pluginSettings.captainFolderExplorerOverrideMode || 'text_icon';
+							r.enabled = true;
+						});
+						await saveSettings();
+						renderRulesTable();
+						this.splitViewManager?.applyCaptainFolderTextColors();
+						new Notice('Explorer appearance enabled for all rules');
 					});
 
-				const turnOffBtn = new ButtonComponent(bulkContainer)
-					.setButtonText('Turn Off All Rules')
-					.onClick(() => {
-						new ConfirmModal(
-							this.app,
-							'Are you sure you want to disable ALL Captain Folder rules?',
-							async () => {
-								(pluginSettings.rules || []).forEach(r => {
-									r.enabled = false;
-									r.explorerOverride = 'none';
-								});
-								await saveSettings();
-								renderRulesTable();
-								this.splitViewManager?.applyCaptainFolderTextColors();
-								new Notice('All rules disabled');
-							}
-						).open();
+				new ButtonComponent(bulkBtnRow)
+					.setButtonText('⚪ Disable All Explorer Styling')
+					.onClick(async () => {
+						(pluginSettings.rules || []).forEach(r => {
+							r.explorerOverride = 'none';
+							r.enabled = (r.assetRouterEnabled !== false);
+						});
+						await saveSettings();
+						renderRulesTable();
+						this.splitViewManager?.applyCaptainFolderTextColors();
+						new Notice('Explorer appearance disabled for all rules');
 					});
-				turnOffBtn.buttonEl.style.marginLeft = '10px';
 
-				const rescanAllBtn = new ButtonComponent(bulkContainer)
-					.setButtonText('Rescan All Nested')
+				// Asset Router Collective Buttons
+				new ButtonComponent(bulkBtnRow)
+					.setButtonText('📁 Enable All Asset Router')
+					.onClick(async () => {
+						(pluginSettings.rules || []).forEach(r => {
+							r.assetRouterEnabled = true;
+							r.enabled = true;
+						});
+						await saveSettings();
+						renderRulesTable();
+						new Notice('Asset Router enabled for all rules');
+					});
+
+				new ButtonComponent(bulkBtnRow)
+					.setButtonText('🚫 Disable All Asset Router')
+					.onClick(async () => {
+						(pluginSettings.rules || []).forEach(r => {
+							r.assetRouterEnabled = false;
+							r.enabled = (r.explorerOverride && r.explorerOverride !== 'none');
+						});
+						await saveSettings();
+						renderRulesTable();
+						new Notice('Asset Router disabled for all rules');
+					});
+
+				// Rescan All Nested
+				const rescanAllBtn = new ButtonComponent(bulkBtnRow)
+					.setButtonText('🔄 Rescan All Nested')
 					.onClick(async () => {
 						rescanAllBtn.setDisabled(true);
 						await this.router.rescanAllNestedAssets();
 						rescanAllBtn.setDisabled(false);
 					});
-				rescanAllBtn.buttonEl.style.marginLeft = '10px';
 
 				// Form to add new rule
 				new Setting(containerEl).setName('Add New Captain Folder Rule').setHeading();
@@ -4222,6 +4363,7 @@ export default class PakCLITablePlugin extends Plugin {
 				let newTitleOverride: TitleOverrideOption = 'inherit';
 				let newColor = '#4a5568';
 				let newExplorerOverride: CaptainFolderOverrideMode = pluginSettings.captainFolderExplorerOverrideMode || 'text_icon';
+				let newAssetRouterEnabled = true;
 
 				new Setting(addRuleDiv)
 					.setName('Folder Path')
@@ -4271,37 +4413,64 @@ export default class PakCLITablePlugin extends Plugin {
 						.setValue(newExplorerOverride)
 						.onChange(value => newExplorerOverride = value as CaptainFolderOverrideMode));
 
+				new Setting(addRuleDiv)
+					.setName('Asset Router Destination')
+					.setDesc('Enable nested assets/ attachment routing for this folder.')
+					.addToggle(toggle => toggle
+						.setValue(newAssetRouterEnabled)
+						.onChange(value => newAssetRouterEnabled = value));
+
 				const colorPickerSetting = addRuleDiv.createDiv({ cls: 'setting-item' });
 				const colorPickerInfo = colorPickerSetting.createDiv({ cls: 'setting-item-info' });
 				colorPickerInfo.createDiv({ cls: 'setting-item-name', text: 'Captain Folder Color' });
 				colorPickerInfo.createDiv({ cls: 'setting-item-description', text: 'Color shown in Bubble Graph when \'Captain Colors\' toggle is active. Default: dark gray.' });
 				const colorPickerControl = colorPickerSetting.createDiv({ cls: 'setting-item-control' });
-				const colorPreviewSpan = colorPickerControl.createEl('span', { cls: 'asset-router-color-preview' });
-				colorPreviewSpan.style.cssText = `display:inline-block;width:22px;height:22px;border-radius:4px;border:1px solid var(--background-modifier-border);background:${newColor};margin-right:8px;vertical-align:middle;`;
 				const colorInput = colorPickerControl.createEl('input');
 				colorInput.type = 'color';
 				colorInput.value = newColor;
-				colorInput.style.cssText = 'width:40px;height:28px;cursor:pointer;border:none;background:none;padding:0;';
+				colorInput.style.cssText = 'width: 32px; height: 28px; cursor: pointer; border: 1px solid var(--background-modifier-border); border-radius: 4px; background: none; padding: 0; vertical-align: middle;';
 				colorInput.oninput = () => {
 					newColor = colorInput.value;
-					colorPreviewSpan.style.background = newColor;
 				};
 				const resetColorBtn = colorPickerControl.createEl('button', { text: 'Reset', cls: 'mod-warning' });
-				resetColorBtn.style.cssText = 'font-size:11px;padding:2px 8px;margin-left:8px;';
+				resetColorBtn.style.cssText = 'font-size: 11px; padding: 2px 8px; margin-left: 8px;';
 				resetColorBtn.onclick = () => {
 					newColor = '#4a5568';
 					colorInput.value = '#4a5568';
-					colorPreviewSpan.style.background = '#4a5568';
 				};
 
 				const addBtnContainer = addRuleDiv.createDiv();
 				addBtnContainer.style.textAlign = 'right';
 				addBtnContainer.style.marginTop = '10px';
 
+				new ButtonComponent(addBtnContainer)
+					.setButtonText('Add Rule')
+					.setCta()
+					.onClick(async () => {
+						if (!pluginSettings.rules) pluginSettings.rules = [];
+						pluginSettings.rules.push({
+							path: newPath,
+							isNested: true,
+							includeChildren: newScope === 'children',
+							subCaptainMode: newSubCaptain,
+							useNoteTitle: newTitleOverride,
+							enabled: (newExplorerOverride !== 'none') || newAssetRouterEnabled,
+							assetRouterEnabled: newAssetRouterEnabled,
+							source: 'manual',
+							color: newColor,
+							explorerOverride: newExplorerOverride,
+						});
+						await saveSettings();
+						renderRulesTable();
+						this.splitViewManager?.applyCaptainFolderTextColors();
+						new Notice(`Rule added: ${newPath || '/'}`);
+					});
+
 				const rulesTableContainer = containerEl.createDiv({ cls: 'asset-router-rules-table-container' });
 				rulesTableContainer.style.cssText = 'overflow-x: auto; width: 100%; margin-top: 14px; margin-bottom: 50px; padding: 10px; border-radius: 8px; border: 1px solid var(--background-modifier-border); background: var(--background-primary);';
 
 				const renderRulesTable = () => {
+					this.syncSpecialFoldersToCaptainRules();
 					rulesTableContainer.empty();
 					if (!pluginSettings.rules || pluginSettings.rules.length === 0) {
 						rulesTableContainer.createEl('p', { text: 'No Captain Folder rules configured yet.', cls: 'setting-item-description' });
@@ -4315,7 +4484,9 @@ export default class PakCLITablePlugin extends Plugin {
 					headerRow.style.borderBottom = '2px solid var(--background-modifier-border)';
 					[
 						'Explorer Override',
+						'Asset Router',
 						'Folder Path',
+						'Source',
 						'Scope',
 						'Sub-Captain',
 						'Title',
@@ -4332,6 +4503,7 @@ export default class PakCLITablePlugin extends Plugin {
 							const row = tbody.createEl('tr');
 							row.style.borderBottom = '1px solid var(--background-modifier-border)';
 
+							// 1. Explorer Override Dropdown
 							const overrideTd = row.createEl('td');
 							overrideTd.style.cssText = 'padding: 8px 10px; vertical-align: middle;';
 							const modeDropdown = new DropdownComponent(overrideTd)
@@ -4346,42 +4518,81 @@ export default class PakCLITablePlugin extends Plugin {
 							modeDropdown.setValue(currentMode);
 							modeDropdown.onChange(async (val) => {
 								rule.explorerOverride = val as CaptainFolderOverrideMode;
-								rule.enabled = val !== 'none';
+								rule.enabled = (val !== 'none') || (rule.assetRouterEnabled !== false);
 								await saveSettings();
 								this.splitViewManager?.applyCaptainFolderTextColors();
 							});
 
+							// 2. Asset Router Toggle
+							const assetRouterTd = row.createEl('td');
+							assetRouterTd.style.cssText = 'padding: 8px 10px; vertical-align: middle; text-align: center;';
+							const isRouterActive = rule.assetRouterEnabled !== false;
+							new ToggleComponent(assetRouterTd)
+								.setValue(isRouterActive)
+								.onChange(async (val) => {
+									rule.assetRouterEnabled = val;
+									rule.enabled = ((rule.explorerOverride && rule.explorerOverride !== 'none') || val);
+									await saveSettings();
+									new Notice(`Asset Router ${val ? 'enabled' : 'disabled'} for ${rule.path || '/'}`);
+								});
+
+							// 3. Folder Path
 							const pathTd = row.createEl('td', { text: rule.path === '' ? '/' : rule.path });
 							pathTd.style.cssText = 'padding: 8px 10px; font-weight: 500;';
 
+							// 4. Source Badge
+							const sourceTd = row.createEl('td');
+							sourceTd.style.cssText = 'padding: 8px 10px; vertical-align: middle;';
+							const sourceBadge = sourceTd.createSpan();
+							const src = rule.source || 'manual';
+							if (src === 'dictionary') {
+								sourceBadge.textContent = 'Dict';
+								sourceBadge.title = 'Auto-synced from Target Dictionary Folders';
+								sourceBadge.style.cssText = 'display: inline-block; padding: 2px 6px; font-size: 10px; font-weight: 600; border-radius: 4px; background: rgba(56, 189, 248, 0.15); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.3); text-transform: uppercase;';
+							} else if (src === 'relationship') {
+								sourceBadge.textContent = 'Rel';
+								sourceBadge.title = 'Auto-synced from Managed Relationship Folders';
+								sourceBadge.style.cssText = 'display: inline-block; padding: 2px 6px; font-size: 10px; font-weight: 600; border-radius: 4px; background: rgba(236, 72, 153, 0.15); color: #ec4899; border: 1px solid rgba(236, 72, 153, 0.3); text-transform: uppercase;';
+							} else {
+								sourceBadge.textContent = 'Custom';
+								sourceBadge.title = 'Manually created Captain Folder rule';
+								sourceBadge.style.cssText = 'display: inline-block; padding: 2px 6px; font-size: 10px; font-weight: 500; border-radius: 4px; background: var(--background-modifier-border); color: var(--text-muted); text-transform: uppercase;';
+							}
+
+							// 5. Scope
 							const scopeTd = row.createEl('td', { text: rule.includeChildren ? 'Children' : 'Folder' });
 							scopeTd.style.cssText = 'padding: 8px 10px; color: var(--text-muted);';
 
+							// 6. Sub-Captain
 							const subTd = row.createEl('td', { text: rule.subCaptainMode ? 'Yes' : 'No' });
 							subTd.style.cssText = 'padding: 8px 10px;';
 
+							// 7. Title
 							const titleTd = row.createEl('td', { text: rule.useNoteTitle });
 							titleTd.style.cssText = 'padding: 8px 10px; color: var(--text-muted);';
 
-							// Color picker cell
+							// 8. Color picker cell (Single clean native color picker)
 							const colorTd = row.createEl('td');
 							colorTd.style.cssText = 'padding: 8px 10px; text-align: center; vertical-align: middle;';
-							const colorSwatch = colorTd.createEl('span');
 							const currentColor = rule.color || '#4a5568';
-							colorSwatch.style.cssText = `display:inline-block;width:18px;height:18px;border-radius:3px;border:1px solid var(--background-modifier-border);background:${currentColor};margin-right:4px;vertical-align:middle;cursor:pointer;`;
 							const rowColorInput = colorTd.createEl('input');
 							rowColorInput.type = 'color';
 							rowColorInput.value = currentColor;
-							rowColorInput.title = 'Set Captain Folder color for Bubble Graph';
-							rowColorInput.style.cssText = 'width:28px;height:22px;cursor:pointer;border:none;background:none;padding:0;vertical-align:middle;';
+							rowColorInput.title = 'Set Captain Folder color';
+							rowColorInput.style.cssText = 'width: 28px; height: 26px; cursor: pointer; border: 1px solid var(--background-modifier-border); border-radius: 4px; background: none; padding: 0; vertical-align: middle;';
 							rowColorInput.oninput = async () => {
 								rule.color = rowColorInput.value;
-								colorSwatch.style.background = rowColorInput.value;
+								if (pluginSettings.fileConfigs && typeof pluginSettings.fileConfigs === 'object') {
+									const norm = normalizePath(rule.path || '').replace(/^\/+|\/+$/g, '');
+									if (pluginSettings.fileConfigs[norm]) {
+										pluginSettings.fileConfigs[norm].color = rowColorInput.value;
+									}
+								}
 								await saveSettings();
 								this.splitViewManager?.applyCaptainFolderTextColors();
 							};
-							colorSwatch.onclick = () => rowColorInput.click();
 
+							// 9. Actions
 							const actionsTd = row.createEl('td');
 							actionsTd.style.cssText = 'padding: 8px 10px; vertical-align: middle; white-space: nowrap;';
 							const rescanBtn = new ButtonComponent(actionsTd)
@@ -4407,27 +4618,6 @@ export default class PakCLITablePlugin extends Plugin {
 						}
 					});
 				};
-
-				new ButtonComponent(addBtnContainer)
-					.setButtonText('Add Rule')
-					.setCta()
-					.onClick(async () => {
-						if (!pluginSettings.rules) pluginSettings.rules = [];
-						pluginSettings.rules.push({
-							path: newPath,
-							isNested: true,
-							includeChildren: newScope === 'children',
-							subCaptainMode: newSubCaptain,
-							useNoteTitle: newTitleOverride,
-							enabled: newExplorerOverride !== 'none',
-							color: newColor,
-							explorerOverride: newExplorerOverride,
-						});
-						await saveSettings();
-						renderRulesTable();
-						this.splitViewManager?.applyCaptainFolderTextColors();
-						new Notice(`Rule added: ${newPath || '/'}`);
-					});
 
 				renderRulesTable();
 			}

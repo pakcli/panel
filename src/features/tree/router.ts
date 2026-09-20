@@ -223,7 +223,7 @@ export class AssetRouter {
 		if (this.isPathExcluded(notePath)) return null;
 
 		const settings = this.getSettings();
-		const activeRules = settings.rules.filter(r => r.enabled);
+		const activeRules = settings.rules.filter(r => r.enabled && r.assetRouterEnabled !== false);
 		const matches: FolderRule[] = [];
 
 		const normalizedNotePath = normalizePath(notePath);
