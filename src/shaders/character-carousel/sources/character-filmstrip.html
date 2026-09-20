@@ -13,7 +13,11 @@
       --accent-rgb: 139, 92, 246;
       --bg-primary: #1e1e2e;
       --bg-secondary: #252538;
+      --text-normal: #dcddde;
+      --text-muted: #888888;
+      --border-color: rgba(128, 128, 128, 0.2);
       background: var(--bg-primary);
+      color: var(--text-normal);
     }
 
     * {
@@ -50,44 +54,20 @@
       cursor: ew-resize;
       touch-action: none;
       background:
-        linear-gradient(90deg, rgba(var(--accent-rgb), 0.08) 1px, transparent 1px) 50% 0 / 25% 100%,
+        linear-gradient(90deg, rgba(var(--accent-rgb), 0.04) 1px, transparent 1px) 50% 0 / 25% 100%,
         repeating-linear-gradient(
           0deg,
           transparent 0,
           transparent 109px,
-          rgba(var(--accent-rgb), 0.08) 110px,
+          rgba(var(--accent-rgb), 0.04) 110px,
           transparent 111px
         ),
-        radial-gradient(circle at var(--pointer-x) 48%, rgba(var(--accent-rgb), 0.18), transparent 38%),
-        radial-gradient(circle at 50% 50%, rgba(var(--accent-rgb), 0.08), transparent 75%),
         var(--bg-primary);
     }
 
-    .stage::before {
-      content: "";
-      position: absolute;
-      inset: 0;
-      z-index: 5;
-      pointer-events: none;
-      opacity: 0.16;
-      background:
-        repeating-radial-gradient(circle at 12% 18%, rgba(var(--accent-rgb), 0.2) 0 0.5px, transparent 0.7px 4px),
-        repeating-radial-gradient(circle at 78% 71%, rgba(255, 255, 255, 0.4) 0 0.5px, transparent 0.8px 5px);
-    }
-
+    .stage::before,
     .stage::after {
-      content: "";
-      position: absolute;
-      inset: 0;
-      z-index: 4;
-      pointer-events: none;
-      background: linear-gradient(
-        90deg,
-        rgba(var(--accent-rgb), 0.14),
-        transparent 14%,
-        transparent 86%,
-        rgba(var(--accent-rgb), 0.14)
-      );
+      display: none;
     }
 
     .deck {
@@ -106,15 +86,14 @@
       aspect-ratio: 0.72;
       padding: 7px;
       overflow: hidden;
-      border: 2px solid rgba(var(--accent-rgb), calc(0.45 + var(--focus) * 0.55));
-      border-radius: 6px;
-      color: #f3e7ce;
-      background: rgba(var(--accent-rgb), 0.15);
-      background: color-mix(in srgb, var(--accent-color) 20%, var(--bg-secondary));
+      border: 2px solid rgba(var(--accent-rgb), calc(0.25 + var(--focus) * 0.75));
+      border-radius: 8px;
+      color: var(--text-normal);
+      background: var(--bg-secondary);
       box-shadow:
-        0 calc(10px + var(--focus) * 24px) calc(18px + var(--focus) * 36px)
-          rgba(var(--accent-rgb), calc(0.2 + var(--focus) * 0.28)),
-        inset 0 0 0 1.5px rgba(var(--accent-rgb), 0.45);
+        0 calc(10px + var(--focus) * 20px) calc(20px + var(--focus) * 30px)
+          rgba(0, 0, 0, calc(0.4 + var(--focus) * 0.25)),
+        0 0 calc(var(--focus) * 16px) rgba(var(--accent-rgb), calc(var(--focus) * 0.35));
       appearance: none;
       outline: none;
       transform-style: preserve-3d;
@@ -127,21 +106,22 @@
       position: absolute;
       inset: 5px;
       z-index: 3;
-      border: 1px solid rgba(var(--accent-rgb), calc(0.3 + var(--focus) * 0.45));
+      border: 1px solid rgba(var(--accent-rgb), calc(0.12 + var(--focus) * 0.38));
+      border-radius: 6px;
       pointer-events: none;
     }
 
     .card:focus-visible {
       box-shadow:
-        0 26px 50px rgba(var(--accent-rgb), 0.35),
-        0 0 0 4px rgba(var(--accent-rgb), 0.55);
+        0 24px 48px rgba(0, 0, 0, 0.55),
+        0 0 0 3px var(--accent-color);
     }
 
     .card:hover {
       box-shadow:
-        0 20px 48px rgba(0, 0, 0, 0.45),
-        0 0 0 2px rgba(255, 255, 255, 0.85);
-      filter: brightness(1.1) !important;
+        0 20px 44px rgba(0, 0, 0, 0.5),
+        0 0 0 2px var(--accent-color);
+      filter: brightness(1.06) !important;
       cursor: pointer;
     }
 
@@ -179,8 +159,10 @@
       align-items: center;
       gap: clamp(6px, 0.7vw, 11px);
       padding: clamp(7px, 0.8vw, 12px);
-      color: #f0dfc2;
-      background: #171612;
+      color: var(--text-normal);
+      background: color-mix(in srgb, var(--bg-secondary) 88%, var(--bg-primary));
+      border-top: 1px solid var(--border-color, rgba(var(--accent-rgb), 0.2));
+      border-radius: 0 0 6px 6px;
       text-align: left;
     }
 
@@ -189,9 +171,10 @@
       width: clamp(23px, 2.7vw, 37px);
       aspect-ratio: 1;
       place-items: center;
-      border: 1px solid #ce5d20;
+      border: 1.5px solid var(--accent-color);
       border-radius: 50%;
-      color: #d86724;
+      color: var(--accent-color);
+      background: rgba(var(--accent-rgb), 0.1);
       font: 600 clamp(7px, 0.68vw, 11px)/1 ui-monospace, "SFMono-Regular", monospace;
     }
 
@@ -209,7 +192,7 @@
     }
 
     .name {
-      color: #f3e6cc;
+      color: var(--text-normal);
       font-size: clamp(8px, 0.86vw, 13px);
       font-weight: 800;
       letter-spacing: 0.08em;
@@ -218,7 +201,7 @@
 
     .role {
       margin-top: clamp(3px, 0.35vw, 5px);
-      color: #d46a27;
+      color: var(--accent-color);
       font-size: clamp(5px, 0.48vw, 7px);
       font-weight: 700;
       letter-spacing: 0.15em;

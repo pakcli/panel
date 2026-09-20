@@ -61,24 +61,26 @@ function clamp(value: number, minimum: number, maximum: number) {
   return Math.min(maximum, Math.max(minimum, value));
 }
 
-function parseRgb(color: string, fallback: string = '124, 58, 237'): string {
+function parseRgb(color: string, fallback: string = '139, 92, 246'): string {
   if (!color) return fallback;
-  if (color.startsWith('#')) {
-    const hex = color.slice(1);
+  const trimmed = color.trim();
+  if (trimmed.startsWith('#')) {
+    const hex = trimmed.slice(1);
     if (hex.length === 3) {
       const r = parseInt(hex[0] + hex[0], 16);
       const g = parseInt(hex[1] + hex[1], 16);
       const b = parseInt(hex[2] + hex[2], 16);
       return `${r}, ${g}, ${b}`;
-    } else if (hex.length === 6) {
+    } else if (hex.length >= 6) {
       const r = parseInt(hex.slice(0, 2), 16);
       const g = parseInt(hex.slice(2, 4), 16);
       const b = parseInt(hex.slice(4, 6), 16);
       return `${r}, ${g}, ${b}`;
     }
-  } else if (color.startsWith('rgb')) {
-    const m = color.match(/\d+[\s,]+\d+[\s,]+\d+/);
-    if (m) return m[0].replace(/\s+/g, ', ');
+  }
+  const nums = trimmed.match(/\d+/g);
+  if (nums && nums.length >= 3) {
+    return `${nums[0]}, ${nums[1]}, ${nums[2]}`;
   }
   return fallback;
 }
@@ -88,22 +90,79 @@ function getObsidianTheme(): {
   accentRgb: string;
   bgPrimary: string;
   bgSecondary: string;
+  textNormal: string;
+  textMuted: string;
+  borderColor: string;
+  isDark: boolean;
 } {
   if (typeof document === 'undefined') {
     return {
-      accent: '#7c3aed',
-      accentRgb: '124, 58, 237',
+      accent: '#8b5cf6',
+      accentRgb: '139, 92, 246',
       bgPrimary: '#1e1e2e',
       bgSecondary: '#252538',
+      textNormal: '#dcddde',
+      textMuted: '#888888',
+      borderColor: 'rgba(128, 128, 128, 0.2)',
+      isDark: true,
     };
   }
+
+  const isDark = !document.body.classList.contains('theme-light');
   const bodyStyles = getComputedStyle(document.body);
-  const accent = bodyStyles.getPropertyValue('--interactive-accent').trim() || '#7c3aed';
-  const rawRgb = bodyStyles.getPropertyValue('--interactive-accent-rgb').trim();
-  const accentRgb = rawRgb || parseRgb(accent, '124, 58, 237');
-  const bgPrimary = bodyStyles.getPropertyValue('--background-primary').trim() || '#1e1e2e';
-  const bgSecondary = bodyStyles.getPropertyValue('--background-secondary').trim() || '#252538';
-  return { accent, accentRgb, bgPrimary, bgSecondary };
+  const rootStyles = getComputedStyle(document.documentElement);
+
+  let accent =
+    bodyStyles.getPropertyValue('--color-accent').trim() ||
+    rootStyles.getPropertyValue('--color-accent').trim() ||
+    bodyStyles.getPropertyValue('--interactive-accent').trim() ||
+    rootStyles.getPropertyValue('--interactive-accent').trim() ||
+    bodyStyles.getPropertyValue('--text-accent').trim() ||
+    rootStyles.getPropertyValue('--text-accent').trim();
+
+  let rawRgb =
+    bodyStyles.getPropertyValue('--color-accent-rgb').trim() ||
+    rootStyles.getPropertyValue('--color-accent-rgb').trim() ||
+    bodyStyles.getPropertyValue('--interactive-accent-rgb').trim() ||
+    rootStyles.getPropertyValue('--interactive-accent-rgb').trim();
+
+  if (!accent) {
+    try {
+      const probe = document.createElement('div');
+      probe.style.cssText =
+        'position:absolute;left:-9999px;top:-9999px;width:1px;height:1px;visibility:hidden;pointer-events:none;color:var(--color-accent, var(--interactive-accent, var(--text-accent, #8b5cf6)));';
+      document.body.appendChild(probe);
+      const computed = getComputedStyle(probe).color;
+      document.body.removeChild(probe);
+      if (computed) accent = computed;
+    } catch {
+      accent = '#8b5cf6';
+    }
+  }
+
+  const accentRgb = rawRgb || parseRgb(accent, '139, 92, 246');
+  const bgPrimary =
+    bodyStyles.getPropertyValue('--background-primary').trim() ||
+    rootStyles.getPropertyValue('--background-primary').trim() ||
+    (isDark ? '#1e1e2e' : '#ffffff');
+  const bgSecondary =
+    bodyStyles.getPropertyValue('--background-secondary').trim() ||
+    rootStyles.getPropertyValue('--background-secondary').trim() ||
+    (isDark ? '#252538' : '#f4f5f8');
+  const textNormal =
+    bodyStyles.getPropertyValue('--text-normal').trim() ||
+    rootStyles.getPropertyValue('--text-normal').trim() ||
+    (isDark ? '#dcddde' : '#111827');
+  const textMuted =
+    bodyStyles.getPropertyValue('--text-muted').trim() ||
+    rootStyles.getPropertyValue('--text-muted').trim() ||
+    (isDark ? '#888888' : '#4b5563');
+  const borderColor =
+    bodyStyles.getPropertyValue('--background-modifier-border').trim() ||
+    rootStyles.getPropertyValue('--background-modifier-border').trim() ||
+    (isDark ? 'rgba(255, 255, 255, 0.12)' : 'rgba(0, 0, 0, 0.12)');
+
+  return { accent, accentRgb, bgPrimary, bgSecondary, textNormal, textMuted, borderColor, isDark };
 }
 
 function buildFocusedDocument(
@@ -118,9 +177,18 @@ function buildFocusedDocument(
   switchDuration: number = 0.5,
   holdDuration: number = 1.0,
   speed: number = 1.0,
-  themeConfig?: { accent: string; accentRgb: string; bgPrimary: string; bgSecondary: string },
+  themeConfig?: {
+    accent: string;
+    accentRgb: string;
+    bgPrimary: string;
+    bgSecondary: string;
+    textNormal: string;
+    textMuted: string;
+    borderColor: string;
+    isDark: boolean;
+  },
 ) {
-  const { accent, accentRgb, bgPrimary, bgSecondary } = themeConfig || getObsidianTheme();
+  const { accent, accentRgb, bgPrimary, bgSecondary, textNormal, textMuted, borderColor } = themeConfig || getObsidianTheme();
 
   const focusStyles = `<style data-character-carousel-focus>
 :root {
@@ -129,6 +197,9 @@ function buildFocusedDocument(
   --accent-rgb: ${accentRgb};
   --bg-primary: ${bgPrimary};
   --bg-secondary: ${bgSecondary};
+  --text-normal: ${textNormal};
+  --text-muted: ${textMuted};
+  --border-color: ${borderColor};
 }
 html, body {
   width: 100%;
@@ -136,74 +207,75 @@ html, body {
   margin: 0;
   overflow: hidden;
   background: var(--bg-primary) !important;
+  color: var(--text-normal) !important;
 }
 .stage {
   min-height: 0 !important;
   background:
-    linear-gradient(90deg, rgba(var(--accent-rgb), 0.08) 1px, transparent 1px) 50% 0 / 25% 100%,
+    linear-gradient(90deg, rgba(var(--accent-rgb), 0.04) 1px, transparent 1px) 50% 0 / 25% 100%,
     repeating-linear-gradient(
       0deg,
       transparent 0,
       transparent 109px,
-      rgba(var(--accent-rgb), 0.08) 110px,
+      rgba(var(--accent-rgb), 0.04) 110px,
       transparent 111px
     ),
-    radial-gradient(circle at var(--pointer-x) 48%, rgba(var(--accent-rgb), 0.18), transparent 38%),
-    radial-gradient(circle at 50% 50%, rgba(var(--accent-rgb), 0.08), transparent 75%),
     var(--bg-primary) !important;
 }
-.stage::before {
-  opacity: 0.16 !important;
-  background:
-    repeating-radial-gradient(circle at 12% 18%, rgba(var(--accent-rgb), 0.2) 0 0.5px, transparent 0.7px 4px),
-    repeating-radial-gradient(circle at 78% 71%, rgba(255, 255, 255, 0.4) 0 0.5px, transparent 0.8px 5px) !important;
-  mix-blend-mode: normal !important;
-}
+.stage::before,
 .stage::after {
-  background: linear-gradient(
-    90deg,
-    rgba(var(--accent-rgb), 0.14),
-    transparent 15%,
-    transparent 85%,
-    rgba(var(--accent-rgb), 0.14)
-  ) !important;
+  display: none !important;
 }
 .deck {
   transform: scale(var(--character-carousel-scale));
   transform-origin: 50% 50%;
 }
 .card {
-  border: 2px solid rgba(var(--accent-rgb), calc(0.45 + var(--focus) * 0.55)) !important;
-  background: rgba(var(--accent-rgb), 0.15) !important;
-  background: color-mix(in srgb, var(--accent-color) 20%, var(--bg-secondary, #252538)) !important;
+  border-radius: 8px !important;
+  border: 2px solid rgba(var(--accent-rgb), calc(0.25 + var(--focus) * 0.75)) !important;
+  background: var(--bg-secondary) !important;
+  color: var(--text-normal) !important;
   box-shadow:
-    0 calc(10px + var(--focus) * 24px) calc(18px + var(--focus) * 36px)
-      rgba(var(--accent-rgb), calc(0.2 + var(--focus) * 0.28)),
-    inset 0 0 0 1.5px rgba(var(--accent-rgb), 0.45) !important;
+    0 calc(10px + var(--focus) * 20px) calc(20px + var(--focus) * 30px) rgba(0, 0, 0, calc(0.25 + var(--focus) * 0.25)),
+    0 0 calc(var(--focus) * 16px) rgba(var(--accent-rgb), calc(var(--focus) * 0.35)) !important;
 }
 .card::before {
-  border: 1px solid rgba(var(--accent-rgb), calc(0.3 + var(--focus) * 0.45)) !important;
+  border-radius: 6px !important;
+  border: 1px solid rgba(var(--accent-rgb), calc(0.12 + var(--focus) * 0.38)) !important;
 }
 .card:focus-visible {
   box-shadow:
-    0 26px 50px rgba(var(--accent-rgb), 0.35),
-    0 0 0 4px rgba(var(--accent-rgb), 0.55) !important;
+    0 24px 48px rgba(0, 0, 0, 0.4),
+    0 0 0 3px var(--accent-color) !important;
 }
 .card:hover {
   box-shadow:
-    0 20px 48px rgba(var(--accent-rgb), 0.35),
-    0 0 0 2.5px var(--accent-color) !important;
+    0 20px 44px rgba(0, 0, 0, 0.35),
+    0 0 0 2px var(--accent-color) !important;
+  filter: brightness(1.04) !important;
+}
+.portrait {
+  background: var(--bg-primary) !important;
+  border-radius: 4px !important;
 }
 .index {
   border: 1.5px solid var(--accent-color) !important;
   color: var(--accent-color) !important;
+  background: rgba(var(--accent-rgb), 0.1) !important;
+}
+.name {
+  color: var(--text-normal) !important;
+  font-weight: 800 !important;
 }
 .role {
   color: var(--accent-color) !important;
+  font-weight: 700 !important;
 }
 .footer {
-  background: color-mix(in srgb, var(--accent-color) 12%, #171612) !important;
-  border-top: 1px solid rgba(var(--accent-rgb), 0.25) !important;
+  background: color-mix(in srgb, var(--bg-secondary) 88%, var(--bg-primary)) !important;
+  border-top: 1px solid var(--border-color) !important;
+  border-radius: 0 0 6px 6px !important;
+  color: var(--text-normal) !important;
 }
 </style>`;
 
@@ -265,6 +337,15 @@ html, body {
       if (next.bgSecondary) {
         document.documentElement.style.setProperty('--bg-secondary', next.bgSecondary);
       }
+      if (next.textNormal) {
+        document.documentElement.style.setProperty('--text-normal', next.textNormal);
+      }
+      if (next.textMuted) {
+        document.documentElement.style.setProperty('--text-muted', next.textMuted);
+      }
+      if (next.borderColor) {
+        document.documentElement.style.setProperty('--border-color', next.borderColor);
+      }
       controls.paused = Boolean(next.paused);
       document.documentElement.style.setProperty('--character-carousel-scale', String(controls.scale));
     }
@@ -312,16 +393,27 @@ export function CharacterCarousel({
   const safeSideCards = Math.max(0, Math.min(10, sideCards));
   const paused = !hostVisible || !documentVisible;
   const itemsKey = useMemo(() => (items ? items.map(i => `${i.id}`).join(',') : ''), [items]);
-  const currentTheme = getObsidianTheme();
+  const [theme, setTheme] = useState(getObsidianTheme);
+
+  useEffect(() => {
+    const update = () => setTheme(getObsidianTheme());
+    const observer = new MutationObserver(update);
+    if (typeof document !== 'undefined') {
+      observer.observe(document.body, { attributes: true, attributeFilter: ['class', 'style'] });
+      observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class', 'style'] });
+    }
+    return () => observer.disconnect();
+  }, []);
+
   const source = useMemo(
-    () => buildFocusedDocument(variant, items, safeSideCards, orientation, cursorFollow, autoPlay, direction, curve, switchDuration, holdDuration, safeSpeed, currentTheme),
+    () => buildFocusedDocument(variant, items, safeSideCards, orientation, cursorFollow, autoPlay, direction, curve, switchDuration, holdDuration, safeSpeed, theme),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [variant, itemsKey, safeSideCards, orientation, cursorFollow, currentTheme.accent, currentTheme.accentRgb, currentTheme.bgPrimary, currentTheme.bgSecondary]
+    [variant, itemsKey, safeSideCards, orientation, cursorFollow, theme.accent, theme.accentRgb, theme.bgPrimary, theme.bgSecondary, theme.textNormal, theme.textMuted, theme.borderColor]
   );
 
   // Post only the playback controls (no items, no focus) — runs on every relevant change.
   const postControls = useCallback(() => {
-    const theme = getObsidianTheme();
+    const currentTheme = getObsidianTheme();
     iframeRef.current?.contentWindow?.postMessage({
       type: "character-carousel-controls",
       controls: {
@@ -336,13 +428,16 @@ export function CharacterCarousel({
         sideCards: safeSideCards,
         orientation,
         cursorFollow,
-        accentColor: theme.accent,
-        accentRgb: theme.accentRgb,
-        bgPrimary: theme.bgPrimary,
-        bgSecondary: theme.bgSecondary,
+        accentColor: currentTheme.accent,
+        accentRgb: currentTheme.accentRgb,
+        bgPrimary: currentTheme.bgPrimary,
+        bgSecondary: currentTheme.bgSecondary,
+        textNormal: currentTheme.textNormal,
+        textMuted: currentTheme.textMuted,
+        borderColor: currentTheme.borderColor,
       },
     }, "*");
-  }, [paused, safeScale, safeSpeed, safeSideCards, orientation, autoPlay, direction, curve, switchDuration, holdDuration, cursorFollow]);
+  }, [paused, safeScale, safeSpeed, safeSideCards, orientation, autoPlay, direction, curve, switchDuration, holdDuration, cursorFollow, theme]);
 
   // Post items — only when the items list itself changes, not on every controls update.
   const postItems = useCallback(() => {
