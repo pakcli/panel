@@ -632,6 +632,10 @@ body.pakcli-resizing-y {
   height: auto !important;
   min-height: 0 !important;
   flex: 0 0 auto !important;
+  overscroll-behavior: auto !important;
+  touch-action: auto !important;
+  overflow: visible !important;
+  overflow-anchor: none !important;
 
   // Subtle pixelated checkerbox watermark pattern (digital / virtual canvas texture)
   background-image: repeating-conic-gradient(
@@ -801,6 +805,10 @@ body.pakcli-resizing-y {
     height: auto !important;
     min-height: 0 !important;
     flex: 0 0 auto !important;
+    overscroll-behavior: auto !important;
+    touch-action: auto !important;
+    overflow: visible !important;
+    overflow-anchor: none !important;
     padding-left: var(--nav-indent, 14px);
     position: relative;
     border-left: 1px solid var(--nav-indentation-guide-color, var(--background-modifier-border));
@@ -815,7 +823,15 @@ body.pakcli-resizing-y {
   }
 }
 
-/* Ensure containers holding virtual folders never accumulate ghost height */
+/* Ensure containers holding virtual folders never accumulate ghost height or jump scroll */
+.nav-files-container,
+.nav-folder,
+.nav-folder-children,
+.pakcli-virtual-folder,
+.pakcli-virtual-folder-children {
+  overflow-anchor: none !important;
+}
+
 .nav-folder-children:has(> .pakcli-virtual-folder),
 .tree-item-children:has(> .pakcli-virtual-folder) {
   height: auto !important;

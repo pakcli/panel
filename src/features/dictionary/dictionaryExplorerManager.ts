@@ -10,8 +10,12 @@ export class DictionaryExplorerManager {
   private rafId: number | null = null;
   private needsFollowUpPass = false;
   private trailingTimer: number | null = null;
-  private navFilesContainer: HTMLElement | null = null;
+  private isOrganizing = false;
+  private isScrolling = false;
+  private scrollTimer: number | null = null;
+  private pendingRefreshAfterScroll = false;
   private onScrollBound: (() => void) | null = null;
+  private navFilesContainer: HTMLElement | null = null;
   private dictChildrenContainers: Set<HTMLElement> = new Set();
 
   constructor(plugin: PakCLITablePlugin) {
@@ -41,6 +45,10 @@ export class DictionaryExplorerManager {
       window.clearTimeout(this.trailingTimer);
       this.trailingTimer = null;
     }
+    if (this.scrollTimer !== null) {
+      window.clearTimeout(this.scrollTimer);
+      this.scrollTimer = null;
+    }
     if (this.navFilesContainer && this.onScrollBound) {
       this.navFilesContainer.removeEventListener('scroll', this.onScrollBound);
       this.onScrollBound = null;
@@ -56,16 +64,23 @@ export class DictionaryExplorerManager {
   }
 
   public scheduleRefresh() {
+    if (this.isScrolling) {
+      this.pendingRefreshAfterScroll = true;
+      return;
+    }
+    if (this.isOrganizing) return;
+
     this.needsFollowUpPass = true;
     if (this.rafId === null) {
       this.rafId = requestAnimationFrame(() => {
         this.rafId = null;
         this.needsFollowUpPass = false;
-        if (this.isRenamingInExplorer()) {
+        if (this.isRenamingInExplorer() || this.isScrolling) {
+          if (this.isScrolling) this.pendingRefreshAfterScroll = true;
           return;
         }
         this.refreshVirtualFolders();
-        if (this.needsFollowUpPass) {
+        if (this.needsFollowUpPass && !this.isScrolling) {
           this.scheduleRefresh();
         }
       });
@@ -76,7 +91,8 @@ export class DictionaryExplorerManager {
     }
     this.trailingTimer = window.setTimeout(() => {
       this.trailingTimer = null;
-      if (this.isRenamingInExplorer()) {
+      if (this.isRenamingInExplorer() || this.isScrolling) {
+        if (this.isScrolling) this.pendingRefreshAfterScroll = true;
         return;
       }
       this.refreshVirtualFolders();
@@ -198,14 +214,28 @@ export class DictionaryExplorerManager {
         this.navFilesContainer.removeEventListener('scroll', this.onScrollBound);
       }
       this.onScrollBound = () => {
-        this.scheduleRefresh();
+        this.isScrolling = true;
+        if (this.scrollTimer !== null) {
+          window.clearTimeout(this.scrollTimer);
+        }
+        this.scrollTimer = window.setTimeout(() => {
+          this.isScrolling = false;
+          this.scrollTimer = null;
+          if (this.pendingRefreshAfterScroll) {
+            this.pendingRefreshAfterScroll = false;
+            this.scheduleRefresh();
+          }
+        }, 150);
       };
       this.navFilesContainer.addEventListener('scroll', this.onScrollBound, { passive: true });
     }
 
     if (!this.mutationObserver) {
       this.mutationObserver = new MutationObserver((mutations) => {
-        if (this.isRenamingInExplorer()) return;
+        if (this.isRenamingInExplorer() || this.isOrganizing || this.isScrolling) {
+          if (this.isScrolling) this.pendingRefreshAfterScroll = true;
+          return;
+        }
 
         let shouldRefresh = false;
 
@@ -217,22 +247,22 @@ export class DictionaryExplorerManager {
           if (targetEl.classList?.contains('pakcli-virtual-folder') ||
               targetEl.closest?.('.pakcli-virtual-folder')) continue;
 
-          // Fast-path: Mutation inside or directly on any tracked dictionary folder's children container
+          // Mutation directly on childList of tracked dictionary folder's children container
           const isInsideDict = Array.from(this.dictChildrenContainers).some(
             c => targetEl === c || c.contains(targetEl)
           );
-          if (isInsideDict) {
+          if (isInsideDict && mut.type === 'childList') {
             shouldRefresh = true;
             break;
           }
 
-          // Check attribute changes (e.g. is-collapsed toggled on folder expand/collapse)
+          // Check folder expand/collapse on dictionary folders ONLY
           if (mut.type === 'attributes' && mut.attributeName === 'class') {
             if (targetEl && !targetEl.classList.contains('pakcli-virtual-folder') && !targetEl.closest?.('.pakcli-virtual-folder')) {
               if (targetEl.classList.contains('nav-folder') || targetEl.classList.contains('tree-item')) {
                 const p = normalizePath(targetEl.getAttribute?.('data-path') ||
                   targetEl.querySelector?.('.nav-folder-title, .tree-item-self')?.getAttribute('data-path') || '');
-                if (!p || this.isMatchingDictFolder(p) || targetEl.querySelector?.('.nav-folder-children, .tree-item-children')) {
+                if (p && this.isMatchingDictFolder(p)) {
                   shouldRefresh = true;
                   break;
                 }
@@ -248,12 +278,12 @@ export class DictionaryExplorerManager {
               if (node.classList?.contains('pakcli-virtual-folder')) continue;
               const p = normalizePath(node.getAttribute?.('data-path') ||
                 node.querySelector?.('.nav-file-title, .nav-folder-title, .tree-item-self')?.getAttribute('data-path') || '');
-              if (this.isMatchingDictFolder(p)) { shouldRefresh = true; break; }
+              if (p && this.isMatchingDictFolder(p)) { shouldRefresh = true; break; }
               const pf = node.closest?.('.nav-folder:not(.pakcli-virtual-folder)');
               if (pf) {
                 const t = pf.querySelector(':scope > .nav-folder-title, :scope > .tree-item-self');
                 const fp = normalizePath(t?.getAttribute('data-path') || pf.getAttribute('data-path') || '');
-                if (this.isMatchingDictFolder(fp)) { shouldRefresh = true; break; }
+                if (fp && this.isMatchingDictFolder(fp)) { shouldRefresh = true; break; }
               }
             }
           }
@@ -267,7 +297,7 @@ export class DictionaryExplorerManager {
               if (node.classList?.contains('pakcli-virtual-folder')) continue;
               const p = normalizePath(node.getAttribute?.('data-path') ||
                 node.querySelector?.('.nav-file-title, .nav-folder-title, .tree-item-self')?.getAttribute('data-path') || '');
-              if (this.isMatchingDictFolder(p)) { shouldRefresh = true; break; }
+              if (p && this.isMatchingDictFolder(p)) { shouldRefresh = true; break; }
             }
           }
           if (shouldRefresh) break;
@@ -403,13 +433,17 @@ export class DictionaryExplorerManager {
     const container = (leaves[0].view as any)?.containerEl as HTMLElement;
     if (!container) return;
 
-    if (this.isRenamingInExplorer()) return;
+    if (this.isOrganizing || this.isScrolling) {
+      if (this.isScrolling) this.pendingRefreshAfterScroll = true;
+      return;
+    }
 
     const entries = this.getDictionaryFolderEntries();
     if (entries.length === 0) return;
 
     this.disconnectObserver();
     this.dictChildrenContainers.clear();
+    this.isOrganizing = true;
 
     try {
       for (const entry of entries) {
@@ -418,6 +452,7 @@ export class DictionaryExplorerManager {
     } catch (err) {
       console.error('[PakCLI Dictionary] Error applying virtual folders:', err);
     } finally {
+      this.isOrganizing = false;
       this.connectObserver();
     }
   }
@@ -560,57 +595,104 @@ export class DictionaryExplorerManager {
       }
     }
 
-    // 1. Collect all file elements that belong to THIS folder.
-    // If merged: all files in childrenContainer tree (since physical folders are hidden).
-    // If NOT merged (own_az or exclude): ONLY direct files or files inside THIS container's virtual folders!
-    let candidateNavFileEls: HTMLElement[];
-    if (isMerged) {
-      candidateNavFileEls = Array.from(
-        childrenContainer.querySelectorAll('.nav-file, .tree-item.nav-file, .tree-item:not(.nav-folder):not(.pakcli-virtual-folder)')
-      ) as HTMLElement[];
-    } else {
-      const directFiles = Array.from(
-        childrenContainer.querySelectorAll(':scope > .nav-file, :scope > .tree-item.nav-file, :scope > .tree-item:not(.nav-folder):not(.pakcli-virtual-folder)')
-      ) as HTMLElement[];
-      const virtualFiles = Array.from(
-        childrenContainer.querySelectorAll(':scope > .pakcli-virtual-folder > .pakcli-virtual-folder-children > *')
-      ).filter(el => !el.classList.contains('nav-folder') && !el.classList.contains('pakcli-virtual-folder')) as HTMLElement[];
-      candidateNavFileEls = [...directFiles, ...virtualFiles];
-    }
+    // 1. Resolve file elements for this folder
+    // Use view.fileItems as the authoritative source (immune to scroll virtualization & detachment),
+    // complemented by direct DOM candidates in childrenContainer.
+    const leaves = this.app.workspace.getLeavesOfType('file-explorer');
+    const leaf = leaves.find((l) => l.view?.containerEl?.contains(childrenContainer)) || leaves[0];
+    const view = leaf?.view as any;
+    const fileItems = (view?.fileItems && typeof view.fileItems === 'object') ? view.fileItems : null;
 
-    // 2. Group candidate files by letter (robust against path casing and DOM formatting)
+    const domFileEls = Array.from(
+      childrenContainer.querySelectorAll('.nav-file, .tree-item.nav-file, .tree-item:not(.nav-folder):not(.pakcli-virtual-folder)')
+    ) as HTMLElement[];
+
+    // 2. Group candidate files by letter (robust against virtualization, path casing and DOM formatting)
     const letterMap = new Map<string, HTMLElement[]>();
     for (let c = 65; c <= 90; c++) letterMap.set(String.fromCharCode(c), []);
     letterMap.set('#', []);
 
-    const seenCandidateEls = new Set<HTMLElement>();
+    const claimedEls = new Set<HTMLElement>();
 
-    for (const fileEl of candidateNavFileEls) {
-      if (seenCandidateEls.has(fileEl)) continue;
-      seenCandidateEls.add(fileEl);
+    // Pass 1: Resolve DOM elements directly for all vaultFiles
+    for (const file of vaultFiles) {
+      if (file.name.toLowerCase().startsWith('index.')) continue;
 
-      const rawPath = fileEl.getAttribute('data-path') ||
-        fileEl.querySelector('[data-path]')?.getAttribute('data-path') || '';
-      const normP = rawPath ? normalizePath(rawPath).toLowerCase() : '';
-      const domTitle = fileEl.querySelector('.nav-file-title-content, .tree-item-inner, .nav-file-title, .tree-item-self')?.textContent?.trim() || '';
+      const normP = normalizePath(file.path).toLowerCase();
+      const baseLower = file.basename.toLowerCase();
+      let fileEl: HTMLElement | null = null;
 
-      // Match against vaultFiles
-      let matchedFile: TFile | null = null;
-      if (normP) {
-        matchedFile = vaultByNormPath.get(normP) || null;
-      }
-      if (!matchedFile && domTitle) {
-        const cleanTitle = domTitle.toLowerCase().endsWith('.md') ? domTitle.slice(0, -3).toLowerCase() : domTitle.toLowerCase();
-        matchedFile = vaultByBasename.get(cleanTitle) || null;
-      }
-      if (!matchedFile && rawPath) {
-        const abstract = this.app.vault.getAbstractFileByPath(rawPath) || this.app.vault.getAbstractFileByPath(decodeURIComponent(rawPath));
-        if (abstract instanceof TFile) {
-          matchedFile = abstract;
+      // 1a. Native Obsidian FileItem from view.fileItems (most reliable, survives scroll virtualization)
+      if (fileItems) {
+        const item = fileItems[file.path] || fileItems[normP] || fileItems[normalizePath(file.path)];
+        if (item?.el) {
+          fileEl = item.el;
         }
       }
 
-      // If in non-merged mode and file belongs to another folder outside this tree, restore it
+      // 1b. Match from DOM candidate elements by data-path
+      if (!fileEl) {
+        for (const el of domFileEls) {
+          if (claimedEls.has(el)) continue;
+          const raw = el.getAttribute('data-path') || el.querySelector('[data-path]')?.getAttribute('data-path') || '';
+          if (raw && normalizePath(raw).toLowerCase() === normP) {
+            fileEl = el;
+            break;
+          }
+        }
+      }
+
+      // 1c. Match from DOM candidate elements by basename / title
+      if (!fileEl) {
+        for (const el of domFileEls) {
+          if (claimedEls.has(el)) continue;
+          const title = el.querySelector('.nav-file-title-content, .tree-item-inner, .nav-file-title, .tree-item-self')?.textContent?.trim() || '';
+          const clean = title.toLowerCase().endsWith('.md') ? title.slice(0, -3).toLowerCase() : title.toLowerCase();
+          if (clean === baseLower) {
+            fileEl = el;
+            break;
+          }
+        }
+      }
+
+      // 1d. Broader search in explorer container by data-path if still missing
+      if (!fileEl) {
+        const titleEl = container.querySelector(
+          `.nav-file-title[data-path="${file.path}"], .tree-item-self[data-path="${file.path}"], .nav-file-title[data-path="${normP}"]`
+        );
+        if (titleEl) {
+          fileEl = (titleEl.closest('.nav-file, .tree-item.nav-file') || titleEl.parentElement) as HTMLElement;
+        }
+      }
+
+      if (fileEl) {
+        claimedEls.add(fileEl);
+        const firstChar = file.basename.trim().charAt(0).toUpperCase();
+        const letter = (firstChar >= 'A' && firstChar <= 'Z') ? firstChar : '#';
+        letterMap.get(letter)?.push(fileEl);
+      }
+    }
+
+    // Pass 2: Pick up any remaining unclaimed file elements in childrenContainer
+    for (const el of domFileEls) {
+      if (claimedEls.has(el)) continue;
+
+      const rawPath = el.getAttribute('data-path') || el.querySelector('[data-path]')?.getAttribute('data-path') || '';
+      const normP = rawPath ? normalizePath(rawPath).toLowerCase() : '';
+      const domTitle = el.querySelector('.nav-file-title-content, .tree-item-inner, .nav-file-title, .tree-item-self')?.textContent?.trim() || '';
+
+      let matchedFile: TFile | null = null;
+      if (normP) matchedFile = vaultByNormPath.get(normP) || null;
+      if (!matchedFile && domTitle) {
+        const clean = domTitle.toLowerCase().endsWith('.md') ? domTitle.slice(0, -3).toLowerCase() : domTitle.toLowerCase();
+        matchedFile = vaultByBasename.get(clean) || null;
+      }
+      if (!matchedFile && rawPath) {
+        const abstract = this.app.vault.getAbstractFileByPath(rawPath) || this.app.vault.getAbstractFileByPath(decodeURIComponent(rawPath));
+        if (abstract instanceof TFile) matchedFile = abstract;
+      }
+
+      // If in non-merged mode and file belongs to another folder outside this tree, restore it to true parent
       if (!isMerged && matchedFile && matchedFile.parent) {
         const trueParent = normalizePath(matchedFile.parent.path);
         if (trueParent.toLowerCase() !== normFolderPathLower) {
@@ -618,34 +700,36 @@ export class DictionaryExplorerManager {
           if (trueFolderEl) {
             const trueChildren = (trueFolderEl.querySelector(':scope > .nav-folder-children, :scope > .tree-item-children') ||
               trueFolderEl.querySelector('.nav-folder-children, .tree-item-children')) as HTMLElement;
-            if (trueChildren && fileEl.parentElement !== trueChildren) {
-              trueChildren.appendChild(fileEl);
+            if (trueChildren && el.parentElement !== trueChildren) {
+              trueChildren.appendChild(el);
               continue;
             }
           }
         }
       }
 
-      // If file does not exist in vault at all, it was deleted! Remove from DOM!
-      if (!matchedFile) {
-        fileEl.remove();
-        continue;
-      }
-
-      const noteName = matchedFile.basename;
-      if (!noteName) continue;
-
       // Keep index files at root of this folder
-      if (noteName.toLowerCase().startsWith('index')) {
-        if (fileEl.parentElement !== childrenContainer) {
-          childrenContainer.insertBefore(fileEl, childrenContainer.firstChild);
+      if (matchedFile && matchedFile.name.toLowerCase().startsWith('index')) {
+        if (el.parentElement !== childrenContainer) {
+          childrenContainer.insertBefore(el, childrenContainer.firstChild);
         }
         continue;
       }
 
-      const firstChar = noteName.trim().charAt(0).toUpperCase();
-      const letter = (firstChar >= 'A' && firstChar <= 'Z') ? firstChar : '#';
-      letterMap.get(letter)?.push(fileEl);
+      if (matchedFile) {
+        claimedEls.add(el);
+        const firstChar = matchedFile.basename.trim().charAt(0).toUpperCase();
+        const letter = (firstChar >= 'A' && firstChar <= 'Z') ? firstChar : '#';
+        if (!letterMap.get(letter)?.includes(el)) {
+          letterMap.get(letter)?.push(el);
+        }
+      } else {
+        // Unmatched element: NEVER delete it with el.remove()!
+        // If it's currently inside a virtual folder children, return it to childrenContainer
+        if (el.parentElement?.classList.contains('pakcli-virtual-folder-children')) {
+          childrenContainer.appendChild(el);
+        }
+      }
     }
 
     const letters = [...Array.from({ length: 26 }, (_, i) => String.fromCharCode(65 + i)), '#'];
@@ -815,11 +899,11 @@ export class DictionaryExplorerManager {
           return titleA.localeCompare(titleB, undefined, { sensitivity: 'base' });
         });
 
-        // Clean up any children in chDiv that are not in fileEls (deleted or moved files)
+        // Clean up any children in chDiv that are not in fileEls (return to parent, NEVER destroy with child.remove())
         const currentChildren = Array.from(chDiv.children) as HTMLElement[];
         for (const child of currentChildren) {
           if (!fileEls.includes(child)) {
-            child.remove();
+            childrenContainer.appendChild(child);
           }
         }
 
@@ -829,10 +913,11 @@ export class DictionaryExplorerManager {
 
         if (!chMatches) {
           for (const el of fileEls) {
-            if (el.parentElement !== chDiv) chDiv.appendChild(el);
-          }
-          for (let i = 0; i < fileEls.length; i++) {
-            if (chDiv.children[i] !== fileEls[i]) chDiv.appendChild(fileEls[i]);
+            chDiv.appendChild(el);
+            if (el.style.display) el.style.removeProperty('display');
+            if (el.classList.contains('pakcli-merged-child-hidden')) {
+              el.classList.remove('pakcli-merged-child-hidden');
+            }
           }
         }
       }
@@ -855,10 +940,7 @@ export class DictionaryExplorerManager {
         }
       }
       for (const vf of desiredVFEls) {
-        if (vf.parentElement !== childrenContainer) childrenContainer.appendChild(vf);
-      }
-      for (let i = 0; i < desiredVFEls.length; i++) {
-        childrenContainer.appendChild(desiredVFEls[i]);
+        childrenContainer.appendChild(vf);
       }
     }
   }
