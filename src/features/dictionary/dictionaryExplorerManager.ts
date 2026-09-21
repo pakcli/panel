@@ -72,20 +72,26 @@ export class DictionaryExplorerManager {
     );
   }
 
-  public scheduleRefresh(delayMs: number = 80, reason?: string) {
+  public scheduleRefresh(delayMs: number = 20, reason?: string) {
     if (this.isOrganizing || this.isToggling) return;
 
     if (this.trailingTimer !== null) {
       window.clearTimeout(this.trailingTimer);
       this.trailingTimer = null;
     }
+
+    if (delayMs <= 0) {
+      requestAnimationFrame(() => {
+        if (this.isRenamingInExplorer() || this.isOrganizing || this.isToggling) return;
+        this.lastRefreshTime = Date.now();
+        this.refreshVirtualFolders();
+      });
+      return;
+    }
+
     this.trailingTimer = window.setTimeout(() => {
       this.trailingTimer = null;
       if (this.isRenamingInExplorer() || this.isOrganizing || this.isToggling) {
-        return;
-      }
-      if (this.isScrolling) {
-        this.scheduleRefresh(150, reason);
         return;
       }
       this.lastRefreshTime = Date.now();
@@ -204,17 +210,10 @@ export class DictionaryExplorerManager {
     const navFiles = (container.querySelector('.nav-files-container') || container) as HTMLElement;
     this.navFilesContainer = navFiles;
 
-    if (!this.scrollBoundHandler) {
-      this.scrollBoundHandler = () => {
-        this.isScrolling = true;
-        if (this.scrollTimer !== null) window.clearTimeout(this.scrollTimer);
-        this.scrollTimer = window.setTimeout(() => {
-          this.isScrolling = false;
-          this.scrollTimer = null;
-        }, 250);
-      };
-      window.addEventListener('scroll', this.scrollBoundHandler, { capture: true, passive: true });
-      window.addEventListener('wheel', this.scrollBoundHandler, { passive: true });
+    if (this.scrollBoundHandler) {
+      window.removeEventListener('scroll', this.scrollBoundHandler, { capture: true } as any);
+      window.removeEventListener('wheel', this.scrollBoundHandler);
+      this.scrollBoundHandler = null;
     }
 
     if (!this.mutationObserver && this.navFilesContainer) {
@@ -254,25 +253,29 @@ export class DictionaryExplorerManager {
             }
           }
 
-          // 2. ChildList mutation: only refresh when files are actually added to dictionary folders that lack virtual folders
+          // 2. ChildList mutation: absorb loose notes added directly to dictionary folder containers
           if (mut.type === 'childList') {
-            // If the target container already has virtual folders mounted, ignore scroll/virtualization mutations!
             const targetChildren = (targetEl.classList.contains('nav-folder-children') || targetEl.classList.contains('tree-item-children'))
               ? targetEl
               : (targetEl.closest('.nav-folder-children, .tree-item-children') as HTMLElement | null);
-            if (targetChildren && targetChildren.querySelector(':scope > .pakcli-virtual-folder')) {
+
+            if (!targetChildren) continue;
+
+            // Ignore internal mutations inside virtual folder children
+            if (targetEl.classList.contains('pakcli-virtual-folder-children') || targetEl.closest('.pakcli-virtual-folder-children')) {
               continue;
             }
 
             if (mut.addedNodes && mut.addedNodes.length > 0) {
-              const hasAddedFile = Array.from(mut.addedNodes).some(n => {
+              const hasAddedLooseFile = Array.from(mut.addedNodes).some(n => {
                 const el = n as HTMLElement;
                 if (el.nodeType !== Node.ELEMENT_NODE) return false;
                 if (el.classList?.contains('pakcli-virtual-folder') || el.closest?.('.pakcli-virtual-folder')) return false;
-                return (el.classList?.contains('nav-file') || (el.classList?.contains('tree-item') && !el.classList?.contains('nav-folder')) || !!el.querySelector?.('.nav-file:not(.pakcli-virtual-folder *)'));
+                return (el.classList?.contains('nav-file') || (el.classList?.contains('tree-item') && !el.classList?.contains('nav-folder')));
               });
-              if (hasAddedFile) {
-                const parentFolder = targetChildren ? (targetChildren.closest('.nav-folder') as HTMLElement | null) : null;
+
+              if (hasAddedLooseFile) {
+                const parentFolder = targetChildren.closest('.nav-folder') as HTMLElement | null;
                 if (parentFolder && !parentFolder.classList.contains('mod-root') && !parentFolder.classList.contains('pakcli-virtual-folder')) {
                   const titleEl = (parentFolder.querySelector(':scope > .nav-folder-title, :scope > .tree-item-self') || parentFolder) as HTMLElement;
                   const folderPath = titleEl.getAttribute('data-path') || parentFolder.getAttribute('data-path') || '';
@@ -291,7 +294,7 @@ export class DictionaryExplorerManager {
         }
 
         if (shouldRefresh) {
-          this.scheduleRefresh(150, refreshReason);
+          this.scheduleRefresh(0, refreshReason);
         }
       });
     }
@@ -417,7 +420,7 @@ export class DictionaryExplorerManager {
       if (title && !(title as any).__pakcli_dict_click_bound) {
         (title as any).__pakcli_dict_click_bound = true;
         title.addEventListener('click', () => {
-          window.setTimeout(() => this.scheduleRefresh(), 60);
+          this.scheduleRefresh(20);
         });
       }
       return folderEl;

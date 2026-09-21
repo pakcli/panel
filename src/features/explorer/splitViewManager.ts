@@ -524,17 +524,31 @@ export class SplitViewManager implements HoverParent {
 
     dictVFBtn.addEventListener('click', async (e) => {
       e.stopPropagation();
-      const current = this.plugin.settings.enableDictionaryVirtualFolders !== false;
+      const current = (this.plugin.settings.enableDictionaryVirtualFolders !== false) ||
+                      (this.plugin.settings.explorerRelationshipVirtualFolders !== false);
       const next = !current;
       this.plugin.settings.enableDictionaryVirtualFolders = next;
-      await this.plugin.saveSettings();
+      this.plugin.settings.explorerRelationshipVirtualFolders = next;
+
       this.updateButtonState();
+
+      // Transform DOM immediately without waiting for disk I/O
       if (this.plugin.dictionaryExplorerManager) {
-        this.plugin.dictionaryExplorerManager.refreshVirtualFolders();
+        if (!next) {
+          this.plugin.dictionaryExplorerManager.removeVirtualFolders();
+        } else {
+          this.plugin.dictionaryExplorerManager.refreshVirtualFolders();
+        }
       }
       if (this.plugin.relationshipExplorerManager) {
-        this.plugin.relationshipExplorerManager.refreshVirtualFolders();
+        if (!next) {
+          this.plugin.relationshipExplorerManager.removeVirtualFolders();
+        } else {
+          this.plugin.relationshipExplorerManager.refreshVirtualFolders();
+        }
       }
+
+      await this.plugin.saveSettings();
       new Notice(`Virtual Folders in Explorer: ${next ? 'Enabled' : 'Disabled'}`);
     });
 
@@ -585,13 +599,14 @@ export class SplitViewManager implements HoverParent {
     }
 
     if (this.dictVirtualFolderBtnEl) {
-      const isVFEnabled = this.plugin.settings.enableDictionaryVirtualFolders !== false;
+      const isVFEnabled = (this.plugin.settings.enableDictionaryVirtualFolders !== false) ||
+                          (this.plugin.settings.explorerRelationshipVirtualFolders !== false);
       if (isVFEnabled) {
         this.dictVirtualFolderBtnEl.addClass('is-active');
-        this.dictVirtualFolderBtnEl.setAttribute('aria-label', 'Virtual A–Z Folders: Enabled (Click to Disable)');
+        this.dictVirtualFolderBtnEl.setAttribute('aria-label', 'Virtual Folders in Explorer: Enabled (Click to Disable)');
       } else {
         this.dictVirtualFolderBtnEl.removeClass('is-active');
-        this.dictVirtualFolderBtnEl.setAttribute('aria-label', 'Virtual A–Z Folders: Disabled (Click to Enable)');
+        this.dictVirtualFolderBtnEl.setAttribute('aria-label', 'Virtual Folders in Explorer: Disabled (Click to Enable)');
       }
     }
   }

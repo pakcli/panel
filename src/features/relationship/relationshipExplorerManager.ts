@@ -65,7 +65,7 @@ export class RelationshipExplorerManager {
         return !!explorerEl.querySelector('input:not([type="checkbox"]), .nav-folder-title[contenteditable="true"], .nav-file-title[contenteditable="true"], .nav-folder-title [contenteditable="true"], .nav-file-title [contenteditable="true"], .tree-item-inner[contenteditable="true"]');
     }
 
-    public scheduleRefresh(delayMs: number = 80) {
+    public scheduleRefresh(delayMs: number = 20) {
         if (this.isOrganizing || this.isToggling) return;
 
         if (this.trailingTimer !== null) {
@@ -281,7 +281,7 @@ export class RelationshipExplorerManager {
                     }
                 }
 
-                if (shouldRefresh) this.scheduleRefresh(150);
+                if (shouldRefresh) this.scheduleRefresh(20);
             });
         }
 
@@ -393,7 +393,7 @@ export class RelationshipExplorerManager {
             if (title && !(title as any).__pakcli_rel_click_bound) {
                 (title as any).__pakcli_rel_click_bound = true;
                 title.addEventListener('click', () => {
-                    window.setTimeout(() => this.scheduleRefresh(), 60);
+                    this.scheduleRefresh(20);
                 });
             }
             return folderEl;
@@ -408,7 +408,8 @@ export class RelationshipExplorerManager {
             return;
         }
 
-        const isEnabled = this.plugin.settings.explorerRelationshipVirtualFolders !== false;
+        const isEnabled = this.plugin.settings.explorerRelationshipVirtualFolders !== false &&
+                          this.plugin.settings.enableDictionaryVirtualFolders !== false;
         if (!isEnabled) {
             this.removeVirtualFolders();
             return;
