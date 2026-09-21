@@ -1,5 +1,5 @@
 import { Plugin, Notice, Setting, PluginSettingTab, ButtonComponent, DropdownComponent, ToggleComponent, TFile, TFolder, TAbstractFile, Menu, TextComponent, setIcon, normalizePath } from 'obsidian';
-import { PakCLITableSettings, DEFAULT_TABLE_SETTINGS, DEFAULT_BUBBLE_GRAPH_SETTINGS, RelationshipTierConfig, DEFAULT_RELATIONSHIP_TIERS, RelationshipFolderEntry, RelationshipViewStructure, RelationshipSortOrder, DictionaryFolderEntry, DictionarySubfolderMode } from './settings';
+import { PakCLITableSettings, DEFAULT_TABLE_SETTINGS, DEFAULT_BUBBLE_GRAPH_SETTINGS, RelationshipTierConfig, DEFAULT_RELATIONSHIP_TIERS, RelationshipFolderEntry, RelationshipViewStructure, RelationshipSortOrder, DictionaryFolderEntry, DictionarySubfolderMode, HtmlSnapshotMode } from './settings';
 import { handleArtifactRename, moveArtifactsBetweenFolders } from './features/sqlseal/utils/views';
 import { SplitViewManager, FolderSuggestModal } from './features/explorer/splitViewManager';
 import { ExplorerSectionId, EXPLORER_SECTIONS_INFO, DEFAULT_EXPLORER_SECTION_ORDER, ExplorerRowBgMode } from './features/explorer/types';
@@ -153,6 +153,132 @@ export default class PakCLITablePlugin extends Plugin {
 				() => { this.openBubbleGraphView(); }
 			);
 		}
+	}
+
+	/**
+	 * Strips or preserves CSS/JS from HTML based on selected mode:
+	 * - 'html-only' (Default): Strips all <style>, <link rel="stylesheet">, and <script> tags.
+	 * - 'html-css': Preserves <style> and <link>, but strips <script> tags.
+	 * - 'html-css-js': Preserves everything as-is.
+	 */
+	processHtmlForSnapshot(rawHtml: string, mode: HtmlSnapshotMode = 'html-only'): string {
+		if (!rawHtml) return '';
+		let result = rawHtml;
+
+		if (mode === 'html-only') {
+			// Strip all <style>...</style> blocks
+			result = result.replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, '');
+			// Strip all stylesheet link tags
+			result = result.replace(/<link\b[^>]*rel=["']stylesheet["'][^>]*>/gi, '');
+			// Strip all <script>...</script> blocks
+			result = result.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '');
+			// Clean up excess blank lines
+			result = result.replace(/\n\s*\n\s*\n/g, '\n\n');
+		} else if (mode === 'html-css') {
+			// Keep CSS, strip <script>...</script> blocks
+			result = result.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '');
+			result = result.replace(/\n\s*\n\s*\n/g, '\n\n');
+		}
+		// 'html-css-js' retains full unstripped HTML
+
+		return result.trim();
+	}
+
+	/**
+	 * Extracts both the full document HTML (#whole) and current file explorer HTML (#view),
+	 * formats them into Markdown, and copies directly to clipboard based on the chosen mode:
+	 * - 'html-only' (Default): pure HTML without CSS or JS.
+	 * - 'html-css': HTML with CSS stylesheets.
+	 * - 'html-css-js': Complete HTML with CSS stylesheets and JS scripts.
+	 */
+	async copyHtmlSnapshotMarkdown(selectedMode?: HtmlSnapshotMode, evt?: MouseEvent): Promise<void> {
+		const mode: HtmlSnapshotMode = selectedMode || this.settings.htmlSnapshotMode || 'html-only';
+
+		const leaves = this.app.workspace.getLeavesOfType('file-explorer');
+		const explorerLeaf = leaves[0];
+		const container = (explorerLeaf?.view as any)?.containerEl as HTMLElement | undefined;
+		const rawView = container ? container.outerHTML : '<!-- File explorer container not found in workspace -->';
+
+		const processedView = this.processHtmlForSnapshot(rawView, mode);
+
+		const markdownOutput = [
+			'#explorer',
+			'```html',
+			processedView,
+			'```',
+			''
+		].join('\n');
+
+		let copied = false;
+
+		// 1. Native Electron Clipboard (most reliable in Obsidian desktop)
+		try {
+			const electron = (window as any).require?.('electron');
+			if (electron?.clipboard?.writeText) {
+				electron.clipboard.writeText(markdownOutput);
+				copied = true;
+			}
+		} catch (e) {
+			console.warn('[PakCLI] Electron clipboard writeText failed:', e);
+		}
+
+		// 2. Standard Web Clipboard API
+		if (!copied) {
+			try {
+				if (navigator?.clipboard?.writeText) {
+					await navigator.clipboard.writeText(markdownOutput);
+					copied = true;
+				}
+			} catch (err) {
+				console.warn('[PakCLI] navigator.clipboard failed, attempting fallback...', err);
+			}
+		}
+
+		// 3. Document execCommand fallback
+		if (!copied) {
+			try {
+				const textArea = document.createElement('textarea');
+				textArea.value = markdownOutput;
+				textArea.style.position = 'fixed';
+				textArea.style.opacity = '0';
+				document.body.appendChild(textArea);
+				textArea.focus();
+				textArea.select();
+				copied = document.execCommand('copy');
+				document.body.removeChild(textArea);
+			} catch (fallbackErr) {
+				console.error('[PakCLI] Fallback clipboard copy failed:', fallbackErr);
+			}
+		}
+
+		(window as any)._lastExtractedHtmlMarkdown = markdownOutput;
+		const sizeKb = (markdownOutput.length / 1024).toFixed(1);
+		const modeLabel = mode === 'html-only' ? 'HTML only' : (mode === 'html-css' ? 'HTML , CSS' : 'HTML , CSS, JS');
+
+		if (evt?.shiftKey) {
+			try {
+				const blob = new Blob([markdownOutput], { type: 'text/markdown;charset=utf-8' });
+				const url = URL.createObjectURL(blob);
+				const a = document.createElement('a');
+				a.href = url;
+				a.download = `html-snapshot-${mode}-${Date.now()}.md`;
+				document.body.appendChild(a);
+				a.click();
+				document.body.removeChild(a);
+				setTimeout(() => URL.revokeObjectURL(url), 1000);
+				new Notice(`HTML Snapshot (${modeLabel}): Copied & downloaded! (${sizeKb} KB)`);
+			} catch {
+				new Notice(`HTML Snapshot (${modeLabel}): Copied to clipboard! (${sizeKb} KB)`);
+			}
+		} else {
+			new Notice(
+				copied
+					? `HTML Snapshot (${modeLabel}) copied to clipboard! (${sizeKb} KB)`
+					: `HTML Snapshot (${modeLabel}) generated (${sizeKb} KB). Check DevTools console.`
+			);
+		}
+
+		console.log(`[PakCLI] HTML Snapshot Markdown (${modeLabel}) [${markdownOutput.length} chars, ${sizeKb} KB]:\n`, markdownOutput);
 	}
 
 	async onload(): Promise<void> {
@@ -528,6 +654,78 @@ export default class PakCLITablePlugin extends Plugin {
 				const leaf = this.app.workspace.getLeaf(false);
 				await leaf.openFile(file);
 				new Notice('Created and opened Timeline Narrative note!');
+			}
+		});
+
+		// ─── Single HTML Snapshot Ribbon Trigger (Left-click: Copy HTML only immediately; Right-click: Dropdown options) ───
+		const htmlSnapshotRibbonEl = this.addRibbonIcon('clipboard', 'Copy HTML Snapshot (Default: HTML only — Right-click for options)', async (evt: MouseEvent) => {
+			// Klik kiri biasa: langsung salin "html only" (tanpa CSS) secara instan!
+			await this.copyHtmlSnapshotMarkdown(this.settings.htmlSnapshotMode || 'html-only', evt);
+		});
+
+		// Klik kanan: buka dropdown menu (html only, html , css, html , css, js)
+		htmlSnapshotRibbonEl.addEventListener('contextmenu', (evt: MouseEvent) => {
+			evt.preventDefault();
+			const menu = new Menu();
+			const currentMode = this.settings.htmlSnapshotMode || 'html-only';
+
+			menu.addItem((item) => {
+				const isCurrent = currentMode === 'html-only';
+				item.setTitle(isCurrent ? '✓ html only (Default - No CSS/JS)' : '  html only (Default - No CSS/JS)')
+					.setIcon('file-text')
+					.onClick(async () => {
+						this.settings.htmlSnapshotMode = 'html-only';
+						await this.saveSettings();
+						await this.copyHtmlSnapshotMarkdown('html-only', evt);
+					});
+			});
+
+			menu.addItem((item) => {
+				const isCurrent = currentMode === 'html-css';
+				item.setTitle(isCurrent ? '✓ html , css' : '  html , css')
+					.setIcon('palette')
+					.onClick(async () => {
+						this.settings.htmlSnapshotMode = 'html-css';
+						await this.saveSettings();
+						await this.copyHtmlSnapshotMarkdown('html-css', evt);
+					});
+			});
+
+			menu.addItem((item) => {
+				const isCurrent = currentMode === 'html-css-js';
+				item.setTitle(isCurrent ? '✓ html , css, js' : '  html , css, js')
+					.setIcon('code')
+					.onClick(async () => {
+						this.settings.htmlSnapshotMode = 'html-css-js';
+						await this.saveSettings();
+						await this.copyHtmlSnapshotMarkdown('html-css-js', evt);
+					});
+			});
+
+			menu.showAtMouseEvent(evt);
+		});
+
+		this.addCommand({
+			id: 'copy-html-snapshot-html-only',
+			name: 'Copy HTML Snapshot: html only (Default - No CSS/JS)',
+			callback: async () => {
+				await this.copyHtmlSnapshotMarkdown('html-only');
+			}
+		});
+
+		this.addCommand({
+			id: 'copy-html-snapshot-html-css',
+			name: 'Copy HTML Snapshot: html , css',
+			callback: async () => {
+				await this.copyHtmlSnapshotMarkdown('html-css');
+			}
+		});
+
+		this.addCommand({
+			id: 'copy-html-snapshot-html-css-js',
+			name: 'Copy HTML Snapshot: html , css, js',
+			callback: async () => {
+				await this.copyHtmlSnapshotMarkdown('html-css-js');
 			}
 		});
 

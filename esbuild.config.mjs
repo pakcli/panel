@@ -203,9 +203,22 @@ async function postBuild() {
 				if (!existsSync(vaultPath)) {
 					mkdirSync(vaultPath, { recursive: true });
 				}
-				if (existsSync("main.js")) copyFileSync("main.js", join(vaultPath, "main.js"));
-				if (existsSync("manifest.json")) copyFileSync("manifest.json", join(vaultPath, "manifest.json"));
-				if (existsSync("styles.css")) copyFileSync("styles.css", join(vaultPath, "styles.css"));
+				const safeCopy = (src, dest) => {
+					if (!existsSync(src)) return;
+					for (let attempt = 0; attempt < 5; attempt++) {
+						try {
+							copyFileSync(src, dest);
+							return;
+						} catch (e) {
+							if (attempt === 4) throw e;
+							const start = Date.now();
+							while (Date.now() - start < 100) {} // 100ms sync wait
+						}
+					}
+				};
+				safeCopy("main.js", join(vaultPath, "main.js"));
+				safeCopy("manifest.json", join(vaultPath, "manifest.json"));
+				safeCopy("styles.css", join(vaultPath, "styles.css"));
 				console.log(`[postBuild] Automatically deployed plugin artifacts to: ${vaultPath}`);
 			}
 		} catch (err) {

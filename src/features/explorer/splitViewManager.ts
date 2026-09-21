@@ -1178,10 +1178,20 @@ export class SplitViewManager implements HoverParent {
     this.baseExplorerObserver = new MutationObserver((mutations) => {
       let shouldReapply = false;
       for (const m of mutations) {
+        const t = m.target as HTMLElement;
+        if (t && (t.classList?.contains('pakcli-virtual-folder') || t.closest?.('.pakcli-virtual-folder'))) continue;
+
         if (m.addedNodes.length > 0) {
-          shouldReapply = true;
-          break;
+          for (let i = 0; i < m.addedNodes.length; i++) {
+            const n = m.addedNodes[i] as HTMLElement;
+            if (n.nodeType !== Node.ELEMENT_NODE) continue;
+            if (n.classList?.contains('pakcli-virtual-folder') || n.closest?.('.pakcli-virtual-folder')) continue;
+            if (n.classList?.contains('pakcli-folder-index-badges')) continue;
+            shouldReapply = true;
+            break;
+          }
         }
+        if (shouldReapply) break;
       }
       if (shouldReapply) {
         // Check both: focused element AND any rename input present anywhere in the explorer DOM
@@ -1411,6 +1421,7 @@ export class SplitViewManager implements HoverParent {
     folderElements.forEach((folderEl) => {
       if (folderEl.closest('.pakcli-explorer-recent-pane')) return;
       if (folderEl.classList.contains('mod-root')) return;
+      if (folderEl.classList.contains('pakcli-virtual-folder') || folderEl.closest('.pakcli-virtual-folder')) return;
 
       const titleEl = folderEl.querySelector('.nav-folder-title') as HTMLElement;
       const path = normalize(titleEl?.getAttribute('data-path') || folderEl.getAttribute('data-path') || '');
@@ -1632,6 +1643,7 @@ views:
     folderTitleElements.forEach((titleEl) => {
       if (titleEl.closest('.pakcli-explorer-recent-pane')) return;
       if (titleEl.closest('.mod-root:not(.nav-folder)')) return;
+      if (titleEl.closest('.pakcli-virtual-folder')) return;
 
       // Skip this specific folder row if user is currently renaming it
       if (titleEl.querySelector('input, [contenteditable="true"]') || titleEl.getAttribute('contenteditable') === 'true') {
@@ -2493,6 +2505,9 @@ views:
   }
 
   private onFolderClick(e: MouseEvent) {
+    const target = (e.target as HTMLElement)?.closest('.nav-folder-title, .tree-item-self') as HTMLElement;
+    if (!target || target.closest('.pakcli-virtual-folder')) return;
+
     if (this.plugin.settings.baseExplorerActive) {
       if (this.baseExplorerDebounce !== null) {
         cancelAnimationFrame(this.baseExplorerDebounce);
@@ -2519,9 +2534,8 @@ views:
       }
     });
     if (!this.plugin.settings.enableAutoFolderIndex) return;
-    const target = (e.target as HTMLElement)?.closest('.nav-folder-title') as HTMLElement;
-    if (!target) return;
-    const path = target.getAttribute('data-path');
+    const folderTitle = target.classList.contains('nav-folder-title') ? target : (target.closest('.nav-folder-title') as HTMLElement || target);
+    const path = folderTitle.getAttribute('data-path');
     if (!path) return;
     const abstract = this.app.vault.getAbstractFileByPath(path);
     if (abstract instanceof TFolder) {

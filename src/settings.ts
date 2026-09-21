@@ -134,8 +134,11 @@ export interface PakCLITableSettings extends
     carouselSwitchDuration?: number;
     carouselHoldDuration?: number;
     carouselAutoPlay?: boolean;
+    htmlSnapshotMode?: HtmlSnapshotMode;
     [key: string]: unknown;
 }
+
+export type HtmlSnapshotMode = 'html-only' | 'html-css' | 'html-css-js';
 
 export const DEFAULT_ASSET_ROUTER_SETTINGS: AssetRouterSettings = {
 	centralAssetFolderEnabled: true,
@@ -235,5 +238,6 @@ export const DEFAULT_TABLE_SETTINGS: PakCLITableSettings = {
     carouselSwitchDuration: 0.5,
     carouselHoldDuration: 1.0,
     carouselAutoPlay: true,
+    htmlSnapshotMode: 'html-only',
 };
 

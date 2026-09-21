@@ -2,6 +2,8 @@ import { App, TFile, TFolder, normalizePath } from 'obsidian';
 import type PakCLITablePlugin from '../../main';
 import { DictionaryFolderEntry, DictionarySubfolderMode } from '../explorer/types';
 
+
+
 export class DictionaryExplorerManager {
   private app: App;
   private plugin: PakCLITablePlugin;
@@ -11,12 +13,13 @@ export class DictionaryExplorerManager {
   private needsFollowUpPass = false;
   private trailingTimer: number | null = null;
   private isOrganizing = false;
-  private isScrolling = false;
-  private scrollTimer: number | null = null;
-  private pendingRefreshAfterScroll = false;
-  private onScrollBound: (() => void) | null = null;
+  private isToggling = false;
   private navFilesContainer: HTMLElement | null = null;
   private dictChildrenContainers: Set<HTMLElement> = new Set();
+  private lastRefreshTime = 0;
+  private isScrolling = false;
+  private scrollTimer: number | null = null;
+  private scrollBoundHandler: (() => void) | null = null;
 
   constructor(plugin: PakCLITablePlugin) {
     this.plugin = plugin;
@@ -49,9 +52,10 @@ export class DictionaryExplorerManager {
       window.clearTimeout(this.scrollTimer);
       this.scrollTimer = null;
     }
-    if (this.navFilesContainer && this.onScrollBound) {
-      this.navFilesContainer.removeEventListener('scroll', this.onScrollBound);
-      this.onScrollBound = null;
+    if (this.scrollBoundHandler) {
+      window.removeEventListener('scroll', this.scrollBoundHandler, { capture: true } as any);
+      window.removeEventListener('wheel', this.scrollBoundHandler);
+      this.scrollBoundHandler = null;
     }
     this.disconnectObserver();
     this.removeVirtualFolders();
@@ -60,43 +64,33 @@ export class DictionaryExplorerManager {
   private isRenamingInExplorer(): boolean {
     const explorerEl = document.querySelector('.nav-files-container');
     if (!explorerEl) return false;
-    return !!explorerEl.querySelector('input:not([type="checkbox"]), .nav-folder-title[contenteditable="true"], .nav-file-title[contenteditable="true"], .nav-folder-title [contenteditable="true"], .nav-file-title [contenteditable="true"], .tree-item-inner[contenteditable="true"]');
+    return !!explorerEl.querySelector(
+      '.nav-folder-title input, .nav-file-title input, .tree-item-self input, ' +
+      '.nav-folder-title[contenteditable="true"], .nav-file-title[contenteditable="true"], ' +
+      '.nav-folder-title [contenteditable="true"], .nav-file-title [contenteditable="true"], ' +
+      '.tree-item-inner[contenteditable="true"]'
+    );
   }
 
-  public scheduleRefresh() {
-    if (this.isScrolling) {
-      this.pendingRefreshAfterScroll = true;
-      return;
-    }
-    if (this.isOrganizing) return;
-
-    this.needsFollowUpPass = true;
-    if (this.rafId === null) {
-      this.rafId = requestAnimationFrame(() => {
-        this.rafId = null;
-        this.needsFollowUpPass = false;
-        if (this.isRenamingInExplorer() || this.isScrolling) {
-          if (this.isScrolling) this.pendingRefreshAfterScroll = true;
-          return;
-        }
-        this.refreshVirtualFolders();
-        if (this.needsFollowUpPass && !this.isScrolling) {
-          this.scheduleRefresh();
-        }
-      });
-    }
+  public scheduleRefresh(delayMs: number = 80, reason?: string) {
+    if (this.isOrganizing || this.isToggling) return;
 
     if (this.trailingTimer !== null) {
       window.clearTimeout(this.trailingTimer);
+      this.trailingTimer = null;
     }
     this.trailingTimer = window.setTimeout(() => {
       this.trailingTimer = null;
-      if (this.isRenamingInExplorer() || this.isScrolling) {
-        if (this.isScrolling) this.pendingRefreshAfterScroll = true;
+      if (this.isRenamingInExplorer() || this.isOrganizing || this.isToggling) {
         return;
       }
+      if (this.isScrolling) {
+        this.scheduleRefresh(150, reason);
+        return;
+      }
+      this.lastRefreshTime = Date.now();
       this.refreshVirtualFolders();
-    }, 60);
+    }, delayMs);
   }
 
   // ── Observer helpers ───────────────────────────────────────────────────────
@@ -108,6 +102,7 @@ export class DictionaryExplorerManager {
       subtree: true,
       attributes: true,
       attributeFilter: ['class'],
+      attributeOldValue: true,
     });
   }
 
@@ -120,34 +115,33 @@ export class DictionaryExplorerManager {
   // ── Settings helpers ──────────────────────────────────────────────────────
 
   public getDictionaryFolderEntries(): DictionaryFolderEntry[] {
+    let rawEntries: DictionaryFolderEntry[] = [];
     if (this.plugin.settings.dictionaryScope === 'active') {
       const activeFile = this.app.workspace.getActiveFile();
       if (activeFile && activeFile.parent && activeFile.parent.path !== '/') {
-        return [{
-          id: 'active',
-          path: normalizePath(activeFile.parent.path),
-          subfolderMode: 'include',
-        }];
+        rawEntries = [{ path: activeFile.parent.path, subfolderMode: ((this.plugin.settings as any).subfolderMode as DictionarySubfolderMode) || 'own_az' }];
       }
-    }
-    const folders = this.plugin.settings.dictionaryFolders;
-    if (folders && folders.length > 0) {
-      return folders.filter(f => !!f.path && !!f.path.trim()).map(f => ({
-        id: f.id || `dict_${f.path}`,
-        path: normalizePath(f.path.trim()),
-        subfolderMode: (f.subfolderMode || 'own_az') as DictionarySubfolderMode,
-        label: f.label
+    } else {
+      rawEntries = (((this.plugin.settings as any).dictionaryFolderEntries || []) as any[]).map(e => ({
+        path: e.path,
+        subfolderMode: (e.subfolderMode as DictionarySubfolderMode) || 'own_az'
       }));
     }
-    return [{
-      id: 'dict_default',
-      path: normalizePath(this.plugin.settings.dictionaryFolderPath || 'Dictionary'),
-      subfolderMode: 'own_az',
-    }];
+
+    if (rawEntries.length === 0) {
+      const legacyPath = (this.plugin.settings.dictionaryFolderPath || '').trim();
+      if (legacyPath) {
+        rawEntries = [{ path: legacyPath, subfolderMode: ((this.plugin.settings as any).subfolderMode as DictionarySubfolderMode) || 'own_az' }];
+      }
+    }
+
+    return rawEntries;
   }
 
   private isMatchingDictFolder(path: string): boolean {
     if (!path) return false;
+    const isEnabled = this.plugin.settings.enableDictionaryVirtualFolders !== false;
+    if (!isEnabled) return false;
     const p = normalizePath(path).toLowerCase();
     const entries = this.getDictionaryFolderEntries();
     return entries.some(e => {
@@ -174,24 +168,24 @@ export class DictionaryExplorerManager {
   private registerEvents() {
     this.plugin.registerEvent(
       this.app.workspace.on('layout-change', () => {
-        this.scheduleRefresh();
+        this.scheduleRefresh(80, 'layout-change');
         this.observeExplorer();
       })
     );
     this.plugin.registerEvent(
       this.app.vault.on('create', (file) => {
-        if (this.isMatchingDictFolder(file.path)) this.scheduleRefresh();
+        if (this.isMatchingDictFolder(file.path)) this.scheduleRefresh(80, 'vault-create');
       })
     );
     this.plugin.registerEvent(
       this.app.vault.on('delete', (file) => {
-        if (this.isMatchingDictFolder(file.path)) this.scheduleRefresh();
+        if (this.isMatchingDictFolder(file.path)) this.scheduleRefresh(80, 'vault-delete');
       })
     );
     this.plugin.registerEvent(
       this.app.vault.on('rename', (file, oldPath) => {
         if (this.isMatchingDictFolder(file.path) || this.isMatchingDictFolder(oldPath)) {
-          this.scheduleRefresh();
+          this.scheduleRefresh(80, 'vault-rename');
         }
       })
     );
@@ -207,37 +201,30 @@ export class DictionaryExplorerManager {
     const container = (leaves[0].view as any)?.containerEl as HTMLElement;
     if (!container) return;
 
-    this.navFilesContainer = (container.querySelector('.nav-files-container') || container) as HTMLElement;
+    const navFiles = (container.querySelector('.nav-files-container') || container) as HTMLElement;
+    this.navFilesContainer = navFiles;
 
-    if (this.navFilesContainer) {
-      if (this.onScrollBound) {
-        this.navFilesContainer.removeEventListener('scroll', this.onScrollBound);
-      }
-      this.onScrollBound = () => {
+    if (!this.scrollBoundHandler) {
+      this.scrollBoundHandler = () => {
         this.isScrolling = true;
-        if (this.scrollTimer !== null) {
-          window.clearTimeout(this.scrollTimer);
-        }
+        if (this.scrollTimer !== null) window.clearTimeout(this.scrollTimer);
         this.scrollTimer = window.setTimeout(() => {
           this.isScrolling = false;
           this.scrollTimer = null;
-          if (this.pendingRefreshAfterScroll) {
-            this.pendingRefreshAfterScroll = false;
-            this.scheduleRefresh();
-          }
-        }, 150);
+        }, 250);
       };
-      this.navFilesContainer.addEventListener('scroll', this.onScrollBound, { passive: true });
+      window.addEventListener('scroll', this.scrollBoundHandler, { capture: true, passive: true });
+      window.addEventListener('wheel', this.scrollBoundHandler, { passive: true });
     }
 
-    if (!this.mutationObserver) {
+    if (!this.mutationObserver && this.navFilesContainer) {
       this.mutationObserver = new MutationObserver((mutations) => {
-        if (this.isRenamingInExplorer() || this.isOrganizing || this.isScrolling) {
-          if (this.isScrolling) this.pendingRefreshAfterScroll = true;
+        if (this.isRenamingInExplorer() || this.isOrganizing || this.isToggling) {
           return;
         }
 
         let shouldRefresh = false;
+        let refreshReason = '';
 
         for (const mut of mutations) {
           const targetEl = mut.target as HTMLElement;
@@ -247,63 +234,65 @@ export class DictionaryExplorerManager {
           if (targetEl.classList?.contains('pakcli-virtual-folder') ||
               targetEl.closest?.('.pakcli-virtual-folder')) continue;
 
-          // Mutation directly on childList of tracked dictionary folder's children container
-          const isInsideDict = Array.from(this.dictChildrenContainers).some(
-            c => targetEl === c || c.contains(targetEl)
-          );
-          if (isInsideDict && mut.type === 'childList') {
-            shouldRefresh = true;
-            break;
-          }
-
-          // Check folder expand/collapse on dictionary folders ONLY
+          // 1. Folder expand attribute change: trigger only when a dictionary folder expands
           if (mut.type === 'attributes' && mut.attributeName === 'class') {
-            if (targetEl && !targetEl.classList.contains('pakcli-virtual-folder') && !targetEl.closest?.('.pakcli-virtual-folder')) {
-              if (targetEl.classList.contains('nav-folder') || targetEl.classList.contains('tree-item')) {
-                const p = normalizePath(targetEl.getAttribute?.('data-path') ||
-                  targetEl.querySelector?.('.nav-folder-title, .tree-item-self')?.getAttribute('data-path') || '');
-                if (p && this.isMatchingDictFolder(p)) {
+            const folderEl = targetEl.classList.contains('nav-folder')
+              ? targetEl
+              : (targetEl.closest?.('.nav-folder') as HTMLElement | null);
+            if (folderEl && !folderEl.classList.contains('mod-root') && !folderEl.classList.contains('pakcli-virtual-folder')) {
+              const hadCollapsed = (mut.oldValue || '').includes('is-collapsed');
+              const isNowCollapsed = targetEl.classList.contains('is-collapsed') || folderEl.classList.contains('is-collapsed');
+              if (hadCollapsed && !isNowCollapsed) {
+                const folderPath = folderEl.getAttribute('data-path') ||
+                  folderEl.querySelector(':scope > .nav-folder-title, :scope > .tree-item-self')?.getAttribute('data-path') || '';
+                if (folderPath && this.isMatchingDictFolder(folderPath)) {
                   shouldRefresh = true;
+                  refreshReason = `folder expanded: ${folderPath}`;
                   break;
                 }
               }
             }
           }
 
-          // Check added nodes
-          if (mut.addedNodes?.length > 0) {
-            for (let i = 0; i < mut.addedNodes.length; i++) {
-              const node = mut.addedNodes[i] as HTMLElement;
-              if (node.nodeType !== Node.ELEMENT_NODE) continue;
-              if (node.classList?.contains('pakcli-virtual-folder')) continue;
-              const p = normalizePath(node.getAttribute?.('data-path') ||
-                node.querySelector?.('.nav-file-title, .nav-folder-title, .tree-item-self')?.getAttribute('data-path') || '');
-              if (p && this.isMatchingDictFolder(p)) { shouldRefresh = true; break; }
-              const pf = node.closest?.('.nav-folder:not(.pakcli-virtual-folder)');
-              if (pf) {
-                const t = pf.querySelector(':scope > .nav-folder-title, :scope > .tree-item-self');
-                const fp = normalizePath(t?.getAttribute('data-path') || pf.getAttribute('data-path') || '');
-                if (fp && this.isMatchingDictFolder(fp)) { shouldRefresh = true; break; }
+          // 2. ChildList mutation: only refresh when files are actually added to dictionary folders that lack virtual folders
+          if (mut.type === 'childList') {
+            // If the target container already has virtual folders mounted, ignore scroll/virtualization mutations!
+            const targetChildren = (targetEl.classList.contains('nav-folder-children') || targetEl.classList.contains('tree-item-children'))
+              ? targetEl
+              : (targetEl.closest('.nav-folder-children, .tree-item-children') as HTMLElement | null);
+            if (targetChildren && targetChildren.querySelector(':scope > .pakcli-virtual-folder')) {
+              continue;
+            }
+
+            if (mut.addedNodes && mut.addedNodes.length > 0) {
+              const hasAddedFile = Array.from(mut.addedNodes).some(n => {
+                const el = n as HTMLElement;
+                if (el.nodeType !== Node.ELEMENT_NODE) return false;
+                if (el.classList?.contains('pakcli-virtual-folder') || el.closest?.('.pakcli-virtual-folder')) return false;
+                return (el.classList?.contains('nav-file') || (el.classList?.contains('tree-item') && !el.classList?.contains('nav-folder')) || !!el.querySelector?.('.nav-file:not(.pakcli-virtual-folder *)'));
+              });
+              if (hasAddedFile) {
+                const parentFolder = targetChildren ? (targetChildren.closest('.nav-folder') as HTMLElement | null) : null;
+                if (parentFolder && !parentFolder.classList.contains('mod-root') && !parentFolder.classList.contains('pakcli-virtual-folder')) {
+                  const titleEl = (parentFolder.querySelector(':scope > .nav-folder-title, :scope > .tree-item-self') || parentFolder) as HTMLElement;
+                  const folderPath = titleEl.getAttribute('data-path') || parentFolder.getAttribute('data-path') || '';
+                  if (folderPath && this.isMatchingDictFolder(folderPath)) {
+                    const isCollapsed = parentFolder.classList.contains('is-collapsed') || titleEl.classList.contains('is-collapsed');
+                    if (!isCollapsed) {
+                      shouldRefresh = true;
+                      refreshReason = `childList addedNodes in folder: ${folderPath}`;
+                      break;
+                    }
+                  }
+                }
               }
             }
           }
-          if (shouldRefresh) break;
-
-          // Check removed nodes
-          if (mut.removedNodes?.length > 0) {
-            for (let i = 0; i < mut.removedNodes.length; i++) {
-              const node = mut.removedNodes[i] as HTMLElement;
-              if (node.nodeType !== Node.ELEMENT_NODE) continue;
-              if (node.classList?.contains('pakcli-virtual-folder')) continue;
-              const p = normalizePath(node.getAttribute?.('data-path') ||
-                node.querySelector?.('.nav-file-title, .nav-folder-title, .tree-item-self')?.getAttribute('data-path') || '');
-              if (p && this.isMatchingDictFolder(p)) { shouldRefresh = true; break; }
-            }
-          }
-          if (shouldRefresh) break;
         }
 
-        if (shouldRefresh) this.scheduleRefresh();
+        if (shouldRefresh) {
+          this.scheduleRefresh(150, refreshReason);
+        }
       });
     }
 
@@ -315,26 +304,58 @@ export class DictionaryExplorerManager {
   public removeVirtualFolders() {
     const leaves = this.app.workspace.getLeavesOfType('file-explorer');
     if (!leaves || leaves.length === 0) return;
-    const container = (leaves[0].view as any)?.containerEl as HTMLElement;
-    if (!container) return;
 
     this.disconnectObserver();
     try {
-      const virtualFolders = Array.from(container.querySelectorAll('.pakcli-dict-virtual-folder'));
-      for (const vf of virtualFolders) {
-        const parent = vf.parentElement;
-        if (parent) {
-          const files = Array.from(vf.querySelectorAll('.nav-file, .tree-item.nav-file'));
-          for (const f of files) parent.appendChild(f);
-        }
-        vf.remove();
-      }
+      for (const leaf of leaves) {
+        const container = (leaf.view as any)?.containerEl as HTMLElement;
+        if (!container) continue;
 
-      // Restore any hidden merged folders
-      const hiddenFolders = Array.from(container.querySelectorAll('.pakcli-merged-folder-hidden'));
-      for (const hf of hiddenFolders) {
-        (hf as HTMLElement).style.removeProperty('display');
-        hf.classList.remove('pakcli-merged-folder-hidden');
+        const virtualFolders = Array.from(
+          container.querySelectorAll('.pakcli-dict-virtual-folder, .pakcli-virtual-folder[data-virtual-letter]')
+        ) as HTMLElement[];
+
+        const affectedParents = new Set<HTMLElement>();
+
+        for (const vf of virtualFolders) {
+          const parent = vf.parentElement;
+          if (parent) {
+            affectedParents.add(parent);
+            const files = Array.from(
+              vf.querySelectorAll('.nav-file, .tree-item.nav-file, .tree-item:not(.nav-folder):not(.pakcli-virtual-folder)')
+            ) as HTMLElement[];
+            for (const f of files) {
+              f.style.removeProperty('display');
+              f.classList.remove('pakcli-merged-child-hidden');
+              if (f.parentElement !== parent) {
+                parent.appendChild(f);
+              }
+            }
+          }
+          vf.remove();
+        }
+
+        // Sort notes alphabetically once per affected parent container
+        for (const parent of affectedParents) {
+          const noteEls = Array.from(
+            parent.querySelectorAll(':scope > .nav-file, :scope > .tree-item:not(.nav-folder):not(.pakcli-virtual-folder)')
+          ) as HTMLElement[];
+          noteEls.sort((a, b) => {
+            const titleA = a.querySelector('.nav-file-title-content, .tree-item-inner, .nav-file-title')?.textContent?.trim() || a.getAttribute('data-path') || '';
+            const titleB = b.querySelector('.nav-file-title-content, .tree-item-inner, .nav-file-title')?.textContent?.trim() || b.getAttribute('data-path') || '';
+            return titleA.localeCompare(titleB, undefined, { sensitivity: 'base' });
+          });
+          for (const el of noteEls) {
+            parent.appendChild(el);
+          }
+        }
+
+        // Restore any hidden merged folders
+        const hiddenFolders = Array.from(container.querySelectorAll('.pakcli-merged-folder-hidden'));
+        for (const hf of hiddenFolders) {
+          (hf as HTMLElement).style.removeProperty('display');
+          hf.classList.remove('pakcli-merged-folder-hidden');
+        }
       }
     } finally {
       this.dictChildrenContainers.clear();
@@ -349,37 +370,23 @@ export class DictionaryExplorerManager {
     const normalizedTarget = normalizePath(dictRoot).toLowerCase();
     const targetName = dictRoot.split('/').pop()?.toLowerCase();
 
-    // 1. Direct query on folder elements or direct folder titles
-    let folderEl = container.querySelector(
-      `.nav-folder[data-path="${dictRoot}"], .tree-item.nav-folder[data-path="${dictRoot}"]`
-    ) as HTMLElement;
+    // Scan only actual folder elements (.nav-folder / .tree-item.nav-folder)
+    const allFolders = Array.from(
+      container.querySelectorAll('.nav-folder:not(.pakcli-virtual-folder), .tree-item.nav-folder:not(.pakcli-virtual-folder)')
+    ) as HTMLElement[];
 
+    // Pass 1: exact normalized path match
+    let folderEl = (allFolders.find(f => {
+      const p = normalizePath(
+        f.getAttribute('data-path') ||
+        f.querySelector(':scope > .nav-folder-title, :scope > .tree-item-self')?.getAttribute('data-path') ||
+        ''
+      ).toLowerCase();
+      return p === normalizedTarget;
+    }) as HTMLElement) || null;
+
+    // Pass 2: path ends with normalized target (e.g. target is "Dictionary" and folder is "Digital Library/Dictionary")
     if (!folderEl) {
-      const titleEl = container.querySelector(
-        `.nav-folder > .nav-folder-title[data-path="${dictRoot}"], .tree-item.nav-folder > .tree-item-self[data-path="${dictRoot}"]`
-      ) as HTMLElement;
-      if (titleEl) {
-        folderEl = (titleEl.closest('.nav-folder, .tree-item.nav-folder') || titleEl.parentElement) as HTMLElement;
-      }
-    }
-
-    // 2. Scan only actual folder elements (.nav-folder / .tree-item.nav-folder)
-    const allFolders = Array.from(container.querySelectorAll('.nav-folder:not(.pakcli-virtual-folder), .tree-item.nav-folder:not(.pakcli-virtual-folder)')) as HTMLElement[];
-
-    if (!folderEl) {
-      // First pass: exact normalized path match
-      folderEl = (allFolders.find(f => {
-        const p = normalizePath(
-          f.getAttribute('data-path') ||
-          f.querySelector(':scope > .nav-folder-title, :scope > .tree-item-self')?.getAttribute('data-path') ||
-          ''
-        ).toLowerCase();
-        return p === normalizedTarget;
-      }) as HTMLElement) || null;
-    }
-
-    if (!folderEl) {
-      // Second pass: path ends with normalized target (e.g. target is "Dictionary" and folder is "Digital Library/Dictionary")
       folderEl = (allFolders.find(f => {
         const p = normalizePath(
           f.getAttribute('data-path') ||
@@ -390,8 +397,8 @@ export class DictionaryExplorerManager {
       }) as HTMLElement) || null;
     }
 
+    // Pass 3: folder title or path matches targetName
     if (!folderEl && targetName) {
-      // Third pass: folder title or path matches targetName
       folderEl = (allFolders.find(f => {
         const p = normalizePath(
           f.getAttribute('data-path') ||
@@ -419,9 +426,38 @@ export class DictionaryExplorerManager {
     return null;
   }
 
+  private findSubfolderEl(parentChildrenContainer: HTMLElement, folderPath: string): HTMLElement | null {
+    if (!parentChildrenContainer || !folderPath) return null;
+    const targetNorm = normalizePath(folderPath).toLowerCase();
+    const targetBase = folderPath.split('/').pop()?.toLowerCase();
+
+    const childFolders = Array.from(
+      parentChildrenContainer.querySelectorAll(':scope > .nav-folder, :scope > .tree-item.nav-folder')
+    ) as HTMLElement[];
+
+    for (const f of childFolders) {
+      if (f.classList.contains('pakcli-virtual-folder')) continue;
+      const titleEl = (f.querySelector(':scope > .nav-folder-title, :scope > .tree-item-self') || f) as HTMLElement;
+      const p = normalizePath(
+        titleEl.getAttribute('data-path') ||
+        f.getAttribute('data-path') ||
+        ''
+      ).toLowerCase();
+      if (p === targetNorm || (targetBase && (p.endsWith('/' + targetBase) || p === targetBase))) {
+        return f;
+      }
+      const titleText = (titleEl.querySelector('.nav-folder-title-content, .tree-item-inner')?.textContent || '').trim().toLowerCase();
+      if (targetBase && titleText === targetBase) {
+        return f;
+      }
+    }
+    return null;
+  }
+
   // ── Main refresh ───────────────────────────────────────────────────────────
 
   public refreshVirtualFolders() {
+    if (this.isToggling) return;
     const isEnabled = this.plugin.settings.enableDictionaryVirtualFolders !== false;
     if (!isEnabled) {
       this.removeVirtualFolders();
@@ -433,26 +469,46 @@ export class DictionaryExplorerManager {
     const container = (leaves[0].view as any)?.containerEl as HTMLElement;
     if (!container) return;
 
-    if (this.isOrganizing || this.isScrolling) {
-      if (this.isScrolling) this.pendingRefreshAfterScroll = true;
+    const navFiles = (container.querySelector('.nav-files-container') || container) as HTMLElement;
+
+    if (this.isOrganizing || this.isRenamingInExplorer()) {
       return;
     }
 
     const entries = this.getDictionaryFolderEntries();
-    if (entries.length === 0) return;
 
+    this.isOrganizing = true;
     this.disconnectObserver();
     this.dictChildrenContainers.clear();
-    this.isOrganizing = true;
 
     try {
+      // 1. Process configured entries (e.g. custom subfolderMode, include, exclude)
       for (const entry of entries) {
         this.applyVirtualFoldersToEntry(container, entry);
+      }
+
+      // 2. Clean up any stray virtual folders in non-dictionary folders (e.g. "Tool Hardware")
+      const strayVFs = Array.from(
+        container.querySelectorAll('.pakcli-dict-virtual-folder')
+      ) as HTMLElement[];
+      for (const vf of strayVFs) {
+        const parent = vf.parentElement;
+        if (parent && !this.dictChildrenContainers.has(parent)) {
+          const ch = vf.querySelector(':scope > .pakcli-virtual-folder-children');
+          if (ch) {
+            while (ch.firstChild) {
+              parent.appendChild(ch.firstChild);
+            }
+          }
+          vf.remove();
+        }
       }
     } catch (err) {
       console.error('[PakCLI Dictionary] Error applying virtual folders:', err);
     } finally {
       this.isOrganizing = false;
+      // Drain our own DOM mutations BEFORE reconnecting so the observer doesn't immediately re-fire
+      this.mutationObserver?.takeRecords();
       this.connectObserver();
     }
   }
@@ -485,7 +541,7 @@ export class DictionaryExplorerManager {
     const childrenContainer = (folderEl.querySelector(':scope > .nav-folder-children, :scope > .tree-item-children') ||
       folderEl.querySelector('.nav-folder-children, .tree-item-children')) as HTMLElement;
     if (!childrenContainer) return;
-
+    if (this.dictChildrenContainers.has(childrenContainer)) return;
     this.dictChildrenContainers.add(childrenContainer);
 
     const isFolderCollapsed = folderEl.classList.contains('is-collapsed') ||
@@ -495,18 +551,15 @@ export class DictionaryExplorerManager {
     const subfolderMode: DictionarySubfolderMode = entry.subfolderMode || 'own_az';
 
     if (subfolderMode === 'exclude') {
-      // 1. Direct files only
       const directFiles = folderAbstract.children.filter((c): c is TFile => c instanceof TFile);
-      // Ensure physical subfolders stay visible
       const rawFolders = childrenContainer.querySelectorAll(':scope > .nav-folder:not(.pakcli-virtual-folder), :scope > .tree-item.nav-folder:not(.pakcli-virtual-folder)');
       rawFolders.forEach(el => {
         (el as HTMLElement).style.removeProperty('display');
         el.classList.remove('pakcli-merged-folder-hidden');
       });
-      this.buildVirtualFoldersForContainer(container, childrenContainer, actualPath, directFiles, false);
+      this.organizeFolderChildren(container, childrenContainer, actualPath, directFiles, false);
 
     } else if (subfolderMode === 'include') {
-      // 2. All files recursively into single A-Z list
       const allFiles: TFile[] = [];
       const collect = (f: TFolder) => {
         for (const child of f.children) {
@@ -516,50 +569,62 @@ export class DictionaryExplorerManager {
       };
       collect(folderAbstract);
 
-      // Hide physical subfolders so notes are unified cleanly under the A-Z folders
       const rawFolders = childrenContainer.querySelectorAll(':scope > .nav-folder:not(.pakcli-virtual-folder), :scope > .tree-item.nav-folder:not(.pakcli-virtual-folder)');
       rawFolders.forEach(el => {
         (el as HTMLElement).style.setProperty('display', 'none', 'important');
         el.classList.add('pakcli-merged-folder-hidden');
       });
 
-      this.buildVirtualFoldersForContainer(container, childrenContainer, actualPath, allFiles, true);
+      this.organizeFolderChildren(container, childrenContainer, actualPath, allFiles, true);
 
     } else if (subfolderMode === 'own_az') {
-      // 3. Direct files get A-Z virtual folders, AND each physical subfolder gets its own A-Z virtual folders!
       const directFiles = folderAbstract.children.filter((c): c is TFile => c instanceof TFile);
-      // Ensure physical subfolders stay visible
       const rawFolders = childrenContainer.querySelectorAll(':scope > .nav-folder:not(.pakcli-virtual-folder), :scope > .tree-item.nav-folder:not(.pakcli-virtual-folder)');
       rawFolders.forEach(el => {
         (el as HTMLElement).style.removeProperty('display');
         el.classList.remove('pakcli-merged-folder-hidden');
       });
 
-      this.buildVirtualFoldersForContainer(container, childrenContainer, actualPath, directFiles, false);
+      this.organizeFolderChildren(container, childrenContainer, actualPath, directFiles, false);
 
-      // Recursively find and build virtual folders for subfolders
-      const processSubfolders = (parentFolder: TFolder) => {
+      // Process subfolders
+      const processSubfolders = (parentFolder: TFolder, parentFolderEl: HTMLElement) => {
+        const parentChildren = (parentFolderEl.querySelector(':scope > .nav-folder-children, :scope > .tree-item-children') ||
+          parentFolderEl.querySelector('.nav-folder-children, .tree-item-children')) as HTMLElement;
+        if (!parentChildren) return;
+
         for (const child of parentFolder.children) {
           if (child instanceof TFolder) {
-            const subFolderEl = this.findDictionaryFolderEl(container, child.path);
+            const subFolderEl = this.findSubfolderEl(parentChildren, child.path) ||
+              this.findDictionaryFolderEl(container, child.path);
+
             if (subFolderEl) {
+              const titleEl = (subFolderEl.querySelector(':scope > .nav-folder-title, :scope > .tree-item-self') || subFolderEl) as HTMLElement;
+              if (titleEl && !(titleEl as any).__pakcli_dict_click_bound) {
+                (titleEl as any).__pakcli_dict_click_bound = true;
+                titleEl.addEventListener('click', () => {
+                  this.scheduleRefresh(80);
+                });
+              }
+
               const subChildren = (subFolderEl.querySelector(':scope > .nav-folder-children, :scope > .tree-item-children') ||
                 subFolderEl.querySelector('.nav-folder-children, .tree-item-children')) as HTMLElement;
+
               if (subChildren) {
                 this.dictChildrenContainers.add(subChildren);
                 const isSubCollapsed = subFolderEl.classList.contains('is-collapsed') ||
-                  subFolderEl.querySelector(':scope > .nav-folder-title, :scope > .tree-item-self')?.classList.contains('is-collapsed');
+                  titleEl.classList.contains('is-collapsed');
                 if (!isSubCollapsed) {
                   const subDirectFiles = child.children.filter((c): c is TFile => c instanceof TFile);
-                  this.buildVirtualFoldersForContainer(container, subChildren, child.path, subDirectFiles, false);
+                  this.organizeFolderChildren(container, subChildren, child.path, subDirectFiles, false);
                 }
               }
+              processSubfolders(child, subFolderEl);
             }
-            processSubfolders(child);
           }
         }
       };
-      processSubfolders(folderAbstract);
+      processSubfolders(folderAbstract, folderEl);
     }
   }
 
@@ -570,378 +635,297 @@ export class DictionaryExplorerManager {
     vaultFiles: TFile[],
     isMerged: boolean = false
   ) {
+    this.organizeFolderChildren(container, childrenContainer, folderPath, vaultFiles, isMerged);
+  }
+
+  private organizeFolderChildren(
+    container: HTMLElement,
+    childrenContainer: HTMLElement,
+    folderPath: string,
+    vaultFiles: TFile[],
+    isMerged: boolean = false
+  ) {
     const normFolderPath = normalizePath(folderPath);
     const normFolderPathLower = normFolderPath.toLowerCase();
 
-    // 0. Scan vault files by letter
+    const isIndexElement = (el: HTMLElement) => {
+      const p = el.getAttribute('data-path') || el.querySelector('[data-path]')?.getAttribute('data-path') || '';
+      if (p) {
+        const n = p.split('/').pop()?.toLowerCase() || '';
+        return n.startsWith('index.') || n === 'index' || n.endsWith('.base');
+      }
+      const title = el.querySelector('.nav-file-title-content, .tree-item-inner, .nav-file-title, .tree-item-self')?.textContent?.trim()?.toLowerCase() || '';
+      return title === 'index' || title.startsWith('index.') || title.endsWith('.base');
+    };
+
+    const getElementLetter = (el: HTMLElement): string => {
+      let name = '';
+      const rawPath = el.getAttribute('data-path') ||
+        el.querySelector('.nav-file-title, .tree-item-self, [data-path]')?.getAttribute('data-path') || '';
+      if (rawPath) {
+        name = rawPath.split('/').pop() || '';
+      }
+      if (!name) {
+        name = el.querySelector('.nav-file-title-content, .tree-item-inner, .nav-file-title, .tree-item-self')?.textContent?.trim() || '';
+      }
+      const cleanName = name.replace(/\.md$/i, '').trim();
+      if (!cleanName) return '#';
+      const firstChar = cleanName.charAt(0).toUpperCase();
+      return (firstChar >= 'A' && firstChar <= 'Z') ? firstChar : '#';
+    };
+
+    // Group vaultFiles by letter
     const vaultFilesByLetter = new Map<string, TFile[]>();
     for (let c = 65; c <= 90; c++) vaultFilesByLetter.set(String.fromCharCode(c), []);
     vaultFilesByLetter.set('#', []);
 
-    const vaultByNormPath = new Map<string, TFile>();
-    const vaultByBasename = new Map<string, TFile>();
     for (const file of vaultFiles) {
-      const normP = normalizePath(file.path).toLowerCase();
-      vaultByNormPath.set(normP, file);
-      vaultByBasename.set(file.basename.toLowerCase(), file);
-
-      if (!file.name.toLowerCase().startsWith('index.')) {
-        const firstChar = file.basename.trim().charAt(0).toUpperCase();
-        if (firstChar >= 'A' && firstChar <= 'Z') {
-          vaultFilesByLetter.get(firstChar)?.push(file);
-        } else {
-          vaultFilesByLetter.get('#')?.push(file);
-        }
-      }
-    }
-
-    // 1. Resolve file elements for this folder
-    // Use view.fileItems as the authoritative source (immune to scroll virtualization & detachment),
-    // complemented by direct DOM candidates in childrenContainer.
-    const leaves = this.app.workspace.getLeavesOfType('file-explorer');
-    const leaf = leaves.find((l) => l.view?.containerEl?.contains(childrenContainer)) || leaves[0];
-    const view = leaf?.view as any;
-    const fileItems = (view?.fileItems && typeof view.fileItems === 'object') ? view.fileItems : null;
-
-    const domFileEls = Array.from(
-      childrenContainer.querySelectorAll('.nav-file, .tree-item.nav-file, .tree-item:not(.nav-folder):not(.pakcli-virtual-folder)')
-    ) as HTMLElement[];
-
-    // 2. Group candidate files by letter (robust against virtualization, path casing and DOM formatting)
-    const letterMap = new Map<string, HTMLElement[]>();
-    for (let c = 65; c <= 90; c++) letterMap.set(String.fromCharCode(c), []);
-    letterMap.set('#', []);
-
-    const claimedEls = new Set<HTMLElement>();
-
-    // Pass 1: Resolve DOM elements directly for all vaultFiles
-    for (const file of vaultFiles) {
-      if (file.name.toLowerCase().startsWith('index.')) continue;
-
-      const normP = normalizePath(file.path).toLowerCase();
-      const baseLower = file.basename.toLowerCase();
-      let fileEl: HTMLElement | null = null;
-
-      // 1a. Native Obsidian FileItem from view.fileItems (most reliable, survives scroll virtualization)
-      if (fileItems) {
-        const item = fileItems[file.path] || fileItems[normP] || fileItems[normalizePath(file.path)];
-        if (item?.el) {
-          fileEl = item.el;
-        }
-      }
-
-      // 1b. Match from DOM candidate elements by data-path
-      if (!fileEl) {
-        for (const el of domFileEls) {
-          if (claimedEls.has(el)) continue;
-          const raw = el.getAttribute('data-path') || el.querySelector('[data-path]')?.getAttribute('data-path') || '';
-          if (raw && normalizePath(raw).toLowerCase() === normP) {
-            fileEl = el;
-            break;
-          }
-        }
-      }
-
-      // 1c. Match from DOM candidate elements by basename / title
-      if (!fileEl) {
-        for (const el of domFileEls) {
-          if (claimedEls.has(el)) continue;
-          const title = el.querySelector('.nav-file-title-content, .tree-item-inner, .nav-file-title, .tree-item-self')?.textContent?.trim() || '';
-          const clean = title.toLowerCase().endsWith('.md') ? title.slice(0, -3).toLowerCase() : title.toLowerCase();
-          if (clean === baseLower) {
-            fileEl = el;
-            break;
-          }
-        }
-      }
-
-      // 1d. Broader search in explorer container by data-path if still missing
-      if (!fileEl) {
-        const titleEl = container.querySelector(
-          `.nav-file-title[data-path="${file.path}"], .tree-item-self[data-path="${file.path}"], .nav-file-title[data-path="${normP}"]`
-        );
-        if (titleEl) {
-          fileEl = (titleEl.closest('.nav-file, .tree-item.nav-file') || titleEl.parentElement) as HTMLElement;
-        }
-      }
-
-      if (fileEl) {
-        claimedEls.add(fileEl);
-        const firstChar = file.basename.trim().charAt(0).toUpperCase();
-        const letter = (firstChar >= 'A' && firstChar <= 'Z') ? firstChar : '#';
-        letterMap.get(letter)?.push(fileEl);
-      }
-    }
-
-    // Pass 2: Pick up any remaining unclaimed file elements in childrenContainer
-    for (const el of domFileEls) {
-      if (claimedEls.has(el)) continue;
-
-      const rawPath = el.getAttribute('data-path') || el.querySelector('[data-path]')?.getAttribute('data-path') || '';
-      const normP = rawPath ? normalizePath(rawPath).toLowerCase() : '';
-      const domTitle = el.querySelector('.nav-file-title-content, .tree-item-inner, .nav-file-title, .tree-item-self')?.textContent?.trim() || '';
-
-      let matchedFile: TFile | null = null;
-      if (normP) matchedFile = vaultByNormPath.get(normP) || null;
-      if (!matchedFile && domTitle) {
-        const clean = domTitle.toLowerCase().endsWith('.md') ? domTitle.slice(0, -3).toLowerCase() : domTitle.toLowerCase();
-        matchedFile = vaultByBasename.get(clean) || null;
-      }
-      if (!matchedFile && rawPath) {
-        const abstract = this.app.vault.getAbstractFileByPath(rawPath) || this.app.vault.getAbstractFileByPath(decodeURIComponent(rawPath));
-        if (abstract instanceof TFile) matchedFile = abstract;
-      }
-
-      // If in non-merged mode and file belongs to another folder outside this tree, restore it to true parent
-      if (!isMerged && matchedFile && matchedFile.parent) {
-        const trueParent = normalizePath(matchedFile.parent.path);
-        if (trueParent.toLowerCase() !== normFolderPathLower) {
-          const trueFolderEl = this.findDictionaryFolderEl(container, trueParent);
-          if (trueFolderEl) {
-            const trueChildren = (trueFolderEl.querySelector(':scope > .nav-folder-children, :scope > .tree-item-children') ||
-              trueFolderEl.querySelector('.nav-folder-children, .tree-item-children')) as HTMLElement;
-            if (trueChildren && el.parentElement !== trueChildren) {
-              trueChildren.appendChild(el);
-              continue;
-            }
-          }
-        }
-      }
-
-      // Keep index files at root of this folder
-      if (matchedFile && matchedFile.name.toLowerCase().startsWith('index')) {
-        if (el.parentElement !== childrenContainer) {
-          childrenContainer.insertBefore(el, childrenContainer.firstChild);
-        }
-        continue;
-      }
-
-      if (matchedFile) {
-        claimedEls.add(el);
-        const firstChar = matchedFile.basename.trim().charAt(0).toUpperCase();
-        const letter = (firstChar >= 'A' && firstChar <= 'Z') ? firstChar : '#';
-        if (!letterMap.get(letter)?.includes(el)) {
-          letterMap.get(letter)?.push(el);
-        }
-      } else {
-        // Unmatched element: NEVER delete it with el.remove()!
-        // If it's currently inside a virtual folder children, return it to childrenContainer
-        if (el.parentElement?.classList.contains('pakcli-virtual-folder-children')) {
-          childrenContainer.appendChild(el);
-        }
-      }
+      if (file.name.toLowerCase().startsWith('index.') || file.name.toLowerCase().endsWith('.base')) continue;
+      const firstChar = file.basename.trim().charAt(0).toUpperCase();
+      const letter = (firstChar >= 'A' && firstChar <= 'Z') ? firstChar : '#';
+      vaultFilesByLetter.get(letter)?.push(file);
     }
 
     const letters = [...Array.from({ length: 26 }, (_, i) => String.fromCharCode(65 + i)), '#'];
-    const activeLetters = letters.filter(letter => 
-      (vaultFilesByLetter.get(letter)?.length ?? 0) > 0 || (letterMap.get(letter)?.length ?? 0) > 0
-    );
+    const activeVaultLetters = letters.filter(l => (vaultFilesByLetter.get(l)?.length ?? 0) > 0);
 
-    // 3. Clean up existing virtual folders in childrenContainer:
-    // - Remove duplicate virtual folders with the same letter
-    // - Remove virtual folders with mismatched data-folder-scope
-    // - Remove virtual folders for letters with 0 files
     const existingVFs = Array.from(
       childrenContainer.querySelectorAll(':scope > .pakcli-virtual-folder[data-virtual-letter]')
     ) as HTMLElement[];
-    const seenLetters = new Set<string>();
 
-    for (const vf of existingVFs) {
-      const letter = vf.getAttribute('data-virtual-letter') || '';
-      const scope = vf.getAttribute('data-folder-scope');
-      const isDuplicate = seenLetters.has(letter);
-      const isMismatch = scope && normalizePath(scope).toLowerCase() !== normFolderPathLower;
-      const isInactive = !activeLetters.includes(letter);
+    const looseNoteEls = (Array.from(
+      childrenContainer.querySelectorAll(':scope > .nav-file, :scope > .tree-item:not(.nav-folder):not(.pakcli-virtual-folder)')
+    ) as HTMLElement[]).filter(el => !isIndexElement(el));
 
-      if (isDuplicate || isMismatch || isInactive) {
-        // Return files back to childrenContainer before removing vf
-        const files = Array.from(vf.querySelectorAll('.nav-file, .tree-item.nav-file, .tree-item:not(.nav-folder)'));
-        for (const f of files) childrenContainer.appendChild(f);
-        vf.remove();
-      } else {
-        seenLetters.add(letter);
-      }
-    }
+    // ── FAST-PATH CHECK ────────────────────────────────────────────────────────
+    // If all virtual folders are in place and no loose notes exist, do ZERO DOM work!
+    const isOrderMatching = existingVFs.length === activeVaultLetters.length &&
+      existingVFs.every((vf, idx) => vf.getAttribute('data-virtual-letter') === activeVaultLetters[idx]);
 
-    // 4. Build or update virtual folders
-    const desiredVFEls: HTMLElement[] = [];
-
-    for (const letter of activeLetters) {
-      const fileEls = letterMap.get(letter) || [];
-      const collapseKey = `${normFolderPathLower}:${letter}`;
-      const isCollapsed = this.collapsedLetters.has(collapseKey);
-
-      // IMPORTANT: MUST use :scope > to never match into subfolders!
-      let vfEl = childrenContainer.querySelector(
-        `:scope > .pakcli-virtual-folder[data-virtual-letter="${letter}"]`
-      ) as HTMLElement;
-      const totalCount = vaultFilesByLetter.get(letter)?.length ?? fileEls.length;
-
-      if (!vfEl) {
-        // Create new virtual folder
-        vfEl = document.createElement('div');
-        vfEl.className = `nav-folder tree-item pakcli-virtual-folder pakcli-dict-virtual-folder${isCollapsed ? ' is-collapsed' : ''}`;
-        vfEl.setAttribute('data-virtual-letter', letter);
-        vfEl.setAttribute('data-folder-scope', normFolderPath);
-        vfEl.style.setProperty('--tier-color', 'var(--interactive-accent)');
-
-        const titleDiv = document.createElement('div');
-        titleDiv.className = 'nav-folder-title tree-item-self is-clickable pakcli-virtual-folder-title pakcli-dict-virtual-folder-title';
-        titleDiv.title = `Dictionary [${letter}] • Virtual Folder`;
-
-        // Chevron
-        const chevronEl = document.createElement('div');
-        chevronEl.className = 'nav-folder-collapse-indicator collapse-icon';
-        chevronEl.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="svg-icon lucide-chevron-right"><path d="m9 18 6-6-6-6"></path></svg>`;
-        titleDiv.appendChild(chevronEl);
-
-        // Letter name
-        const nameEl = document.createElement('div');
-        nameEl.className = 'nav-folder-title-content tree-item-inner';
-        nameEl.textContent = letter;
-        titleDiv.appendChild(nameEl);
-
-        // Connecting line
-        const lineEl = document.createElement('div');
-        lineEl.className = 'pakcli-virtual-folder-line';
-        titleDiv.appendChild(lineEl);
-
-        // Badge
-        const badgeEl = document.createElement('span');
-        badgeEl.className = 'pakcli-virtual-badge';
-        badgeEl.title = `Virtual Folder • Letter ${letter}`;
-        const badgeIcon = document.createElement('span');
-        badgeIcon.className = 'pakcli-badge-i';
-        badgeIcon.innerHTML = `<svg viewBox="0 0 24 24" width="10" height="10" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>`;
-        badgeEl.appendChild(badgeIcon);
-        const badgeText = document.createElement('span');
-        badgeText.className = 'pakcli-badge-text';
-        badgeText.textContent = 'virtual';
-        badgeEl.appendChild(badgeText);
-        titleDiv.appendChild(badgeEl);
-
-        // Count
-        const countSpan = document.createElement('span');
-        countSpan.className = 'nav-folder-title-extra tree-item-flair pakcli-virtual-count';
-        countSpan.textContent = String(totalCount);
-        titleDiv.appendChild(countSpan);
-
-        vfEl.appendChild(titleDiv);
-
-        // Children container
-        const chDiv = document.createElement('div');
-        chDiv.className = 'nav-folder-children tree-item-children pakcli-virtual-folder-children';
-        if (isCollapsed) {
-          chDiv.style.setProperty('display', 'none', 'important');
-        }
-        vfEl.appendChild(chDiv);
-      } else {
-        // Update existing virtual folder
-        vfEl.setAttribute('data-folder-scope', normFolderPath);
-        if (isCollapsed && !vfEl.classList.contains('is-collapsed')) {
-          vfEl.classList.add('is-collapsed');
-        } else if (!isCollapsed && vfEl.classList.contains('is-collapsed')) {
-          vfEl.classList.remove('is-collapsed');
-        }
-
-        const countSpan = vfEl.querySelector(':scope > .pakcli-virtual-folder-title .pakcli-virtual-count');
+    if (looseNoteEls.length === 0 && isOrderMatching) {
+      for (const vf of existingVFs) {
+        const letter = vf.getAttribute('data-virtual-letter') || '';
+        const ch = vf.querySelector(':scope > .pakcli-virtual-folder-children');
+        const count = ch ? ch.querySelectorAll(':scope > .nav-file, :scope > .tree-item:not(.nav-folder)').length : 0;
+        const totalCount = Math.max(count, vaultFilesByLetter.get(letter)?.length ?? 0);
+        const countSpan = vf.querySelector(':scope > .pakcli-virtual-folder-title .pakcli-virtual-count');
         if (countSpan && countSpan.textContent !== String(totalCount)) {
           countSpan.textContent = String(totalCount);
         }
+      }
+      return;
+    }
+
+    // ── Deduplicate any duplicate virtual folders ──────────────────────────────
+    const vfsByLetter = new Map<string, HTMLElement[]>();
+    for (const vf of existingVFs) {
+      const l = vf.getAttribute('data-virtual-letter') || '';
+      if (!vfsByLetter.has(l)) vfsByLetter.set(l, []);
+      vfsByLetter.get(l)!.push(vf);
+    }
+    for (const [l, vfs] of vfsByLetter.entries()) {
+      if (vfs.length > 1) {
+        const primary = vfs[0];
+        const primaryCh = primary.querySelector(':scope > .pakcli-virtual-folder-children');
+        for (let i = 1; i < vfs.length; i++) {
+          const dup = vfs[i];
+          const dupCh = dup.querySelector(':scope > .pakcli-virtual-folder-children');
+          if (dupCh && primaryCh) {
+            while (dupCh.firstChild) {
+              primaryCh.appendChild(dupCh.firstChild);
+            }
+          }
+          dup.remove();
+        }
+      }
+    }
+
+    // ── Ensure desired virtual folders exist ──────────────────────────────────
+    const targetLetters = activeVaultLetters.length > 0 ? activeVaultLetters : letters.filter(l => (vaultFilesByLetter.get(l)?.length ?? 0) > 0);
+    const letterToVF = new Map<string, HTMLElement>();
+
+    for (const letter of targetLetters) {
+      let vfEl = childrenContainer.querySelector(
+        `:scope > .pakcli-virtual-folder[data-virtual-letter="${letter}"]`
+      ) as HTMLElement;
+
+      if (!vfEl) {
+        const totalCount = vaultFilesByLetter.get(letter)?.length ?? 0;
+        vfEl = this.createVirtualFolderElement(letter, normFolderPath, totalCount);
+        childrenContainer.appendChild(vfEl);
+      } else {
+        vfEl.setAttribute('data-folder-scope', normFolderPath);
+        const collapseKey = `${normFolderPathLower}:${letter}`;
+        const isCollapsed = this.collapsedLetters.has(collapseKey);
+        if (isCollapsed) {
+          vfEl.classList.add('pakcli-collapsed');
+        } else {
+          vfEl.classList.remove('pakcli-collapsed');
+        }
+        vfEl.classList.remove('is-collapsed');
 
         const ch = vfEl.querySelector(':scope > .pakcli-virtual-folder-children') as HTMLElement;
         if (ch) {
-          if (isCollapsed) {
-            ch.style.setProperty('display', 'none', 'important');
-          } else {
-            ch.style.removeProperty('display');
-          }
+          if (isCollapsed) ch.style.setProperty('display', 'none', 'important');
+          else ch.style.removeProperty('display');
         }
       }
+      this.ensureVFClickListener(vfEl, letter, normFolderPath);
+      letterToVF.set(letter, vfEl);
+    }
 
-      // Ensure click listener is ALWAYS bound on titleDiv (whether new or existing)
-      const titleDiv = vfEl.querySelector(':scope > .pakcli-virtual-folder-title') as HTMLElement;
-      if (titleDiv && !(titleDiv as any).__pakcli_dict_click_bound) {
-        (titleDiv as any).__pakcli_dict_click_bound = true;
-        titleDiv.addEventListener('click', (e: MouseEvent) => {
-          if (e.button !== 0) return;
-          e.stopPropagation();
-          e.stopImmediatePropagation();
-          e.preventDefault();
+    // ── Move loose notes into their matching virtual folder ────────────────────
+    const candidateNotes = Array.from(
+      childrenContainer.querySelectorAll(
+        ':scope > .nav-file, :scope > .tree-item:not(.nav-folder):not(.pakcli-virtual-folder)'
+      )
+    ) as HTMLElement[];
 
-          const nowCollapsed = vfEl.classList.contains('is-collapsed');
-          const ch = vfEl.querySelector(':scope > .pakcli-virtual-folder-children') as HTMLElement;
-          const currentScope = vfEl.getAttribute('data-folder-scope') || normFolderPath;
-          const currentLetter = vfEl.getAttribute('data-virtual-letter') || letter;
-          const key = `${normalizePath(currentScope).toLowerCase()}:${currentLetter}`;
+    const firstVF = childrenContainer.querySelector(':scope > .pakcli-virtual-folder');
 
-          if (nowCollapsed) {
-            vfEl.classList.remove('is-collapsed');
-            this.collapsedLetters.delete(key);
-            if (ch) ch.style.removeProperty('display');
-          } else {
-            vfEl.classList.add('is-collapsed');
-            this.collapsedLetters.add(key);
-            if (ch) ch.style.setProperty('display', 'none', 'important');
-          }
-          this.scheduleRefresh();
-        }, { capture: true });
-      }
-
-      desiredVFEls.push(vfEl);
-
-      // 5. Move files into the children container (only if out of place)
-      const chDiv = vfEl.querySelector(':scope > .pakcli-virtual-folder-children') as HTMLElement;
-      if (chDiv) {
-        fileEls.sort((a, b) => {
-          const titleA = a.querySelector('.nav-file-title-content, .tree-item-inner, .nav-file-title')?.textContent?.trim() || a.getAttribute('data-path') || '';
-          const titleB = b.querySelector('.nav-file-title-content, .tree-item-inner, .nav-file-title')?.textContent?.trim() || b.getAttribute('data-path') || '';
-          return titleA.localeCompare(titleB, undefined, { sensitivity: 'base' });
-        });
-
-        // Clean up any children in chDiv that are not in fileEls (return to parent, NEVER destroy with child.remove())
-        const currentChildren = Array.from(chDiv.children) as HTMLElement[];
-        for (const child of currentChildren) {
-          if (!fileEls.includes(child)) {
-            childrenContainer.appendChild(child);
-          }
+    for (const el of candidateNotes) {
+      if (isIndexElement(el)) {
+        if (firstVF && el.nextElementSibling !== firstVF) {
+          childrenContainer.insertBefore(el, firstVF);
         }
+        continue;
+      }
+      const letter = getElementLetter(el);
+      let vf = letterToVF.get(letter);
+      if (!vf) {
+        vf = this.createVirtualFolderElement(letter, normFolderPath, 1);
+        childrenContainer.appendChild(vf);
+        this.ensureVFClickListener(vf, letter, normFolderPath);
+        letterToVF.set(letter, vf);
+      }
+      const chDiv = vf.querySelector(':scope > .pakcli-virtual-folder-children') as HTMLElement;
+      if (chDiv && el.parentElement !== chDiv) {
+        chDiv.appendChild(el);
+        el.style.removeProperty('display');
+        el.classList.remove('pakcli-merged-child-hidden');
+      }
+    }
 
-        const currentChFiles = Array.from(chDiv.children);
-        const chMatches = currentChFiles.length === fileEls.length &&
-          currentChFiles.every((c, idx) => c === fileEls[idx]);
-
-        if (!chMatches) {
-          for (const el of fileEls) {
-            chDiv.appendChild(el);
-            if (el.style.display) el.style.removeProperty('display');
-            if (el.classList.contains('pakcli-merged-child-hidden')) {
-              el.classList.remove('pakcli-merged-child-hidden');
-            }
-          }
+    // ── Stably order virtual folders without re-appending existing ones ────────
+    const orderedVFs = Array.from(letterToVF.values());
+    for (let i = 0; i < orderedVFs.length; i++) {
+      const cur = orderedVFs[i];
+      const next = orderedVFs[i + 1] || null;
+      if (next && next.parentElement === childrenContainer) {
+        if (cur.compareDocumentPosition(next) & Node.DOCUMENT_POSITION_PRECEDING) {
+          childrenContainer.insertBefore(cur, next);
         }
       }
     }
 
-    // 6. Mount/order virtual folders in childrenContainer (only if order has changed)
-    const currentMountedVFs = Array.from(
-      childrenContainer.querySelectorAll(':scope > .pakcli-virtual-folder[data-virtual-letter]')
-    ) as HTMLElement[];
-    const vfOrderMatches = currentMountedVFs.length === desiredVFEls.length &&
-      currentMountedVFs.every((c, idx) => c === desiredVFEls[idx]);
-
-    if (!vfOrderMatches) {
-      // Clean up any extra virtual folders that are not in desiredVFEls
-      for (const vf of currentMountedVFs) {
-        if (!desiredVFEls.includes(vf)) {
-          const files = Array.from(vf.querySelectorAll('.nav-file, .tree-item.nav-file, .tree-item:not(.nav-folder)'));
-          for (const f of files) childrenContainer.appendChild(f);
-          vf.remove();
-        }
-      }
-      for (const vf of desiredVFEls) {
-        childrenContainer.appendChild(vf);
+    // ── Update counts cleanly ──────────────────────────────────────────────────
+    for (const [letter, vf] of letterToVF.entries()) {
+      const ch = vf.querySelector(':scope > .pakcli-virtual-folder-children');
+      const count = ch ? ch.querySelectorAll(':scope > .nav-file, :scope > .tree-item:not(.nav-folder)').length : 0;
+      const totalCount = Math.max(count, vaultFilesByLetter.get(letter)?.length ?? 0);
+      const countSpan = vf.querySelector(':scope > .pakcli-virtual-folder-title .pakcli-virtual-count');
+      if (countSpan && countSpan.textContent !== String(totalCount)) {
+        countSpan.textContent = String(totalCount);
       }
     }
   }
+
+  private createVirtualFolderElement(letter: string, normFolderPath: string, count: number): HTMLElement {
+    const collapseKey = `${normFolderPath.toLowerCase()}:${letter}`;
+    const isCollapsed = this.collapsedLetters.has(collapseKey);
+
+    const vfEl = document.createElement('div');
+    vfEl.className = `nav-folder tree-item pakcli-virtual-folder pakcli-dict-virtual-folder${isCollapsed ? ' pakcli-collapsed' : ''}`;
+    vfEl.setAttribute('data-virtual-letter', letter);
+    vfEl.setAttribute('data-folder-scope', normFolderPath);
+    vfEl.style.setProperty('--tier-color', 'var(--interactive-accent)');
+
+    const titleDiv = document.createElement('div');
+    titleDiv.className = 'nav-folder-title tree-item-self is-clickable pakcli-virtual-folder-title pakcli-dict-virtual-folder-title';
+    titleDiv.title = `Dictionary [${letter}] • Virtual Folder`;
+
+    const chevronEl = document.createElement('div');
+    chevronEl.className = 'nav-folder-collapse-indicator collapse-icon';
+    chevronEl.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="svg-icon lucide-chevron-right"><path d="m9 18 6-6-6-6"></path></svg>`;
+    titleDiv.appendChild(chevronEl);
+
+    const nameEl = document.createElement('div');
+    nameEl.className = 'nav-folder-title-content tree-item-inner';
+    nameEl.textContent = letter;
+    titleDiv.appendChild(nameEl);
+
+    const lineEl = document.createElement('div');
+    lineEl.className = 'pakcli-virtual-folder-line';
+    titleDiv.appendChild(lineEl);
+
+    const badgeEl = document.createElement('span');
+    badgeEl.className = 'pakcli-virtual-badge';
+    badgeEl.title = `Virtual Folder • Letter ${letter}`;
+    const badgeIcon = document.createElement('span');
+    badgeIcon.className = 'pakcli-badge-i';
+    badgeIcon.innerHTML = `<svg viewBox="0 0 24 24" width="10" height="10" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>`;
+    badgeEl.appendChild(badgeIcon);
+    const badgeText = document.createElement('span');
+    badgeText.className = 'pakcli-badge-text';
+    badgeText.textContent = 'virtual';
+    badgeEl.appendChild(badgeText);
+    titleDiv.appendChild(badgeEl);
+
+    const countSpan = document.createElement('span');
+    countSpan.className = 'nav-folder-title-extra tree-item-flair pakcli-virtual-count';
+    countSpan.textContent = String(count);
+    titleDiv.appendChild(countSpan);
+
+    vfEl.appendChild(titleDiv);
+
+    const chDiv = document.createElement('div');
+    chDiv.className = 'nav-folder-children tree-item-children pakcli-virtual-folder-children';
+    if (isCollapsed) {
+      chDiv.style.setProperty('display', 'none', 'important');
+    }
+    vfEl.appendChild(chDiv);
+
+    return vfEl;
+  }
+
+  private ensureVFClickListener(vfEl: HTMLElement, letter: string, normFolderPath: string) {
+    const titleDiv = vfEl.querySelector(':scope > .pakcli-virtual-folder-title') as HTMLElement;
+    if (!titleDiv || (titleDiv as any).__pakcli_dict_click_bound) return;
+
+    (titleDiv as any).__pakcli_dict_click_bound = true;
+    titleDiv.addEventListener('click', (e: MouseEvent) => {
+      if (e.button !== 0) return;
+      e.stopPropagation();
+      e.stopImmediatePropagation();
+      e.preventDefault();
+
+      // Block MutationObserver re-entry so the class
+      // change and children visibility change don't trigger a re-layout.
+      this.isToggling = true;
+      // Cancel any pending timer so it can't call refreshVirtualFolders mid-toggle
+      if (this.trailingTimer !== null) {
+        window.clearTimeout(this.trailingTimer);
+        this.trailingTimer = null;
+      }
+      window.setTimeout(() => { this.isToggling = false; }, 200);
+
+      const nowCollapsed = vfEl.classList.contains('pakcli-collapsed');
+      const ch = vfEl.querySelector(':scope > .pakcli-virtual-folder-children') as HTMLElement;
+      const currentScope = vfEl.getAttribute('data-folder-scope') || normFolderPath;
+      const currentLetter = vfEl.getAttribute('data-virtual-letter') || letter;
+      const key = `${normalizePath(currentScope).toLowerCase()}:${currentLetter}`;
+
+      if (nowCollapsed) {
+        vfEl.classList.remove('pakcli-collapsed');
+        this.collapsedLetters.delete(key);
+        if (ch) ch.style.removeProperty('display');
+      } else {
+        vfEl.classList.add('pakcli-collapsed');
+        this.collapsedLetters.add(key);
+        if (ch) ch.style.setProperty('display', 'none', 'important');
+      }
+      vfEl.classList.remove('is-collapsed');
+    }, { capture: true });
+  }
 }
+

@@ -175,7 +175,6 @@
   }
 }
 
-/* When merge row is active, hide the duplicate child files from folder contents */
 .pakcli-merge-index-active {
   .nav-files-container:not(.pakcli-recent-list) {
     .nav-file.pakcli-merged-child-hidden,
@@ -628,22 +627,10 @@ body.pakcli-resizing-y {
   position: relative;
   margin: 0;
   border-radius: var(--radius-s);
-
-  height: auto !important;
-  min-height: 0 !important;
-  flex: 0 0 auto !important;
-  overscroll-behavior: auto !important;
-  touch-action: auto !important;
-  overflow: visible !important;
-  overflow-anchor: none !important;
-
-  // Subtle pixelated checkerbox watermark pattern (digital / virtual canvas texture)
-  background-image: repeating-conic-gradient(
-    rgba(var(--mono-rgb-100), 0.024) 0% 25%, 
-    transparent 0% 50%
-  );
-  background-size: 8px 8px;
-  background-position: 0 0;
+  display: block;
+  height: auto;
+  box-sizing: border-box;
+  contain: style;
 
   &.pakcli-drop-target {
     background-color: rgba(var(--interactive-accent-rgb, 120, 80, 200), 0.14) !important;
@@ -782,7 +769,29 @@ body.pakcli-resizing-y {
     }
   }
 
-  &.is-collapsed {
+  // Default: EXPANDED by default!
+  .pakcli-virtual-folder-children {
+    display: block !important;
+    height: auto !important;
+    padding-left: var(--nav-indent, 14px);
+    position: relative;
+    border-left: 1px solid var(--nav-indentation-guide-color, var(--background-modifier-border));
+    margin-left: 6px;
+
+    .pakcli-virtual-empty {
+      font-size: 11px;
+      color: var(--text-faint);
+      font-style: italic;
+      padding: 4px 0 4px 8px;
+    }
+  }
+
+  .pakcli-virtual-folder-title .collapse-icon svg {
+    transform: rotate(90deg) !important; // Open: points down 'v'
+  }
+
+  // Only collapse when explicitly requested by user click
+  &.pakcli-collapsed {
     height: auto !important;
     min-height: 0 !important;
 
@@ -800,42 +809,25 @@ body.pakcli-resizing-y {
       overflow: hidden !important;
     }
   }
-
-  .pakcli-virtual-folder-children {
-    height: auto !important;
-    min-height: 0 !important;
-    flex: 0 0 auto !important;
-    overscroll-behavior: auto !important;
-    touch-action: auto !important;
-    overflow: visible !important;
-    overflow-anchor: none !important;
-    padding-left: var(--nav-indent, 14px);
-    position: relative;
-    border-left: 1px solid var(--nav-indentation-guide-color, var(--background-modifier-border));
-    margin-left: 6px;
-
-    .pakcli-virtual-empty {
-      font-size: 11px;
-      color: var(--text-faint);
-      font-style: italic;
-      padding: 4px 0 4px 8px;
-    }
-  }
-}
-
-/* Ensure containers holding virtual folders never accumulate ghost height or jump scroll */
-.nav-files-container,
-.nav-folder,
-.nav-folder-children,
-.pakcli-virtual-folder,
-.pakcli-virtual-folder-children {
-  overflow-anchor: none !important;
 }
 
 .nav-folder-children:has(> .pakcli-virtual-folder),
 .tree-item-children:has(> .pakcli-virtual-folder) {
   height: auto !important;
+  max-height: none !important;
   min-height: 0 !important;
+}
+
+.nav-files-container,
+.nav-files-container *,
+.nav-folder,
+.nav-folder-children,
+.nav-file,
+.tree-item,
+.tree-item-children,
+.pakcli-virtual-folder,
+.pakcli-virtual-folder-children {
+  overflow-anchor: none !important;
 }
 
 /* ── A–Z Dictionary Navigator Modal & Full Listed View ───────────────────── */
