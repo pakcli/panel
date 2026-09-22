@@ -3,7 +3,7 @@
     Interactive Git Lost / Detached Commit Recovery Tool
 .DESCRIPTION
     Lists recent commits from git reflog (including orphaned/detached commits),
-    lets you pick one (0 = latest, 1 = sebelum latest, dst),
+    lets you pick one (0 = latest, 1 = prior to latest, etc.),
     and selectively or completely restore/overwrite files into your working tree.
 #>
 
@@ -25,16 +25,16 @@ function ReadHostDefault {
 $Host.UI.RawUI.WindowTitle = "Git Detached / Lost Commit Recovery"
 
 Write-Host "`n=== [Git Detached / Lost Commit Recovery] ===" -ForegroundColor Cyan
-Write-Host "Mencari commit terakhir dari reflog...`n" -ForegroundColor Gray
+Write-Host "Scanning recent commits from git reflog...`n" -ForegroundColor Gray
 
-# 1. Ambil commit dari git reflog (maks 40 entri terbaru)
+# 1. Fetch commits from git reflog (up to 40 recent entries)
 $rawReflog = git reflog -n 40 --format="%h|%cr|%s" 2>$null
 if (-not $rawReflog) {
-    Write-Host "Error: Gagal membaca git reflog atau repositori kosong." -ForegroundColor Red
+    Write-Host "Error: Failed to read git reflog or repository is empty." -ForegroundColor Red
     return
 }
 
-# Deduplikasi commit hash agar list rapi
+# Deduplicate commit hashes to keep list concise
 $seen = [System.Collections.Generic.HashSet[string]]::new()
 $commitList = [System.Collections.Generic.List[PSCustomObject]]::new()
 
@@ -48,7 +48,7 @@ foreach ($line in $rawReflog) {
     $msg  = $parts[2].Trim()
 
     if ($seen.Add($hash)) {
-        # Cek apakah commit ini orphaned (tidak berada di branch mana pun)
+        # Check whether commit is orphaned (not reachable from any branch)
         $inBranch = git branch --all --contains $hash 2>$null
         $isLost = [string]::IsNullOrWhiteSpace($inBranch)
 
@@ -62,12 +62,12 @@ foreach ($line in $rawReflog) {
 }
 
 if ($commitList.Count -eq 0) {
-    Write-Host "Tidak ada commit yang ditemukan di reflog." -ForegroundColor Yellow
+    Write-Host "No commits found in reflog." -ForegroundColor Yellow
     return
 }
 
-# 2. Tampilkan pilihan commit
-Write-Host "Daftar commit terakhir (0 = paling baru):" -ForegroundColor Green
+# 2. Display commit choices
+Write-Host "Recent commit history (0 = latest):" -ForegroundColor Green
 Write-Host "--------------------------------------------------------------------------------"
 for ($i = 0; $i -lt [Math]::Min(15, $commitList.Count); $i++) {
     $c = $commitList[$i]
@@ -84,25 +84,25 @@ for ($i = 0; $i -lt [Math]::Min(15, $commitList.Count); $i++) {
 }
 Write-Host "--------------------------------------------------------------------------------"
 
-# Input nomor commit
-$selectedIdx = ReadHostDefault -Prompt "`nPilih commit index (0 = latest, 1 = sebelum latest, dst) [Default: 0]" -Default "0"
+# Prompt for commit index
+$selectedIdx = ReadHostDefault -Prompt "`nSelect commit index (0 = latest, 1 = prior to latest, etc.) [Default: 0]" -Default "0"
 
 if (-not ($selectedIdx -match '^\d+$') -or [int]$selectedIdx -ge $commitList.Count) {
-    Write-Host "Pilihan index tidak valid!" -ForegroundColor Red
+    Write-Host "Invalid index selected!" -ForegroundColor Red
     return
 }
 
 $target = $commitList[[int]$selectedIdx]
-Write-Host "`nTarget commit terpilih: $($target.Hash) ($($target.Msg))" -ForegroundColor Cyan
+Write-Host "`nSelected commit: $($target.Hash) ($($target.Msg))" -ForegroundColor Cyan
 
-# 3. Dapatkan daftar file yang berubah di commit tersebut
+# 3. Retrieve changed files in the selected commit
 $changedFiles = git diff-tree --no-commit-id --name-status -r $target.Hash 2>$null
 if (-not $changedFiles) {
-    Write-Host "Tidak ada perubahan file pada commit ini (kemungkinan root commit atau merge kosong)." -ForegroundColor Yellow
+    Write-Host "No file changes in this commit (could be empty or a root commit)." -ForegroundColor Yellow
     return
 }
 
-Write-Host "`nDaftar file di commit ini:" -ForegroundColor Green
+Write-Host "`nFiles in this commit:" -ForegroundColor Green
 $fileList = @()
 foreach ($f in $changedFiles) {
     $fParts = $f -split "`t", 2
@@ -112,43 +112,43 @@ foreach ($f in $changedFiles) {
     Write-Host "  [$status] $filePath" -ForegroundColor Yellow
 }
 
-# 4. Menu Aksi
-Write-Host "`nOpsi Penerapan:" -ForegroundColor Cyan
-Write-Host "  1. Simple overwrite whole (timpa semua file dari commit ini ke working directory)"
-Write-Host "  2. Per-file overwrite (tanya satu per satu untuk tiap file)"
-Write-Host "  3. Cancel (batal)"
+# 4. Action Menu
+Write-Host "`nApplication Options:" -ForegroundColor Cyan
+Write-Host "  1. Simple overwrite all (restore all files from this commit into working directory)"
+Write-Host "  2. Per-file overwrite (prompt for each file individually)"
+Write-Host "  3. Cancel"
 
-$action = ReadHostDefault -Prompt "`nPilih opsi [1/2/3] [Default: 3]" -Default "3"
+$action = ReadHostDefault -Prompt "`nSelect option [1/2/3] [Default: 3]" -Default "3"
 
 switch ($action) {
     "1" {
-        Write-Host "`nMemulihkan semua file dari commit $($target.Hash)..." -ForegroundColor Green
+        Write-Host "`nRestoring all files from commit $($target.Hash)..." -ForegroundColor Green
         foreach ($filePath in $fileList) {
             git checkout $target.Hash -- $filePath 2>$null
             Write-Host "  -> Overwritten: $filePath" -ForegroundColor Green
         }
-        Write-Host "`nSelesai! Semua file berhasil dipulihkan." -ForegroundColor Cyan
+        Write-Host "`nDone! All files restored successfully." -ForegroundColor Cyan
     }
 
     "2" {
-        Write-Host "`nMode Per-File Overwrite (Ketik 1 lalu Enter untuk Overwrite, atau langsung Enter / 0 untuk Skip):" -ForegroundColor Magenta
-        Write-Host "Aturan: 0 = Gak overwrite (Default), 1 = Overwrite`n" -ForegroundColor Gray
+        Write-Host "`nPer-File Overwrite Mode:" -ForegroundColor Magenta
+        Write-Host "Rule: 0 = Skip [Default: press Enter], 1 = Overwrite`n" -ForegroundColor Gray
 
         $appliedCount = 0
         foreach ($filePath in $fileList) {
             $ans = ReadHostDefault -Prompt "Overwrite '$filePath'? (0 = skip [default], 1 = overwrite)" -Default "0"
             if ($ans -eq "1") {
                 git checkout $target.Hash -- $filePath 2>$null
-                Write-Host "  -> [OK] '$filePath' dipulihkan/overwrite!" -ForegroundColor Green
+                Write-Host "  -> [OK] '$filePath' restored/overwritten!" -ForegroundColor Green
                 $appliedCount++
             } else {
-                Write-Host "  -> [SKIP] '$filePath' dilewati." -ForegroundColor DarkGray
+                Write-Host "  -> [SKIP] '$filePath' skipped." -ForegroundColor DarkGray
             }
         }
-        Write-Host "`nSelesai! Sebanyak $appliedCount file dipulihkan." -ForegroundColor Cyan
+        Write-Host "`nDone! $appliedCount file(s) restored." -ForegroundColor Cyan
     }
 
     default {
-        Write-Host "`nDibatalkan. Tidak ada file yang diubah." -ForegroundColor Yellow
+        Write-Host "`nCancelled. No files were modified." -ForegroundColor Yellow
     }
 }
