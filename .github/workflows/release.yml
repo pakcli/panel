@@ -36,9 +36,9 @@ jobs:
         uses: actions/attest-build-provenance@v2
         with:
           subject-path: |
-            main.js
-            styles.css
-            manifest.json
+            dist/main.js
+            dist/styles.css
+            dist/manifest.json
 
       - name: Package and release
         env:
@@ -53,14 +53,14 @@ jobs:
           fi
           
           echo "Publishing release tag: $tag"
-          if [ -f styles.css ]; then
+          if [ -f dist/styles.css ]; then
             gh release create "$tag" \
               --title="$tag" \
               --generate-notes \
-              main.js manifest.json styles.css || gh release upload "$tag" main.js manifest.json styles.css --clobber
+              dist/main.js dist/manifest.json dist/styles.css || gh release upload "$tag" dist/main.js dist/manifest.json dist/styles.css --clobber
           else
             gh release create "$tag" \
               --title="$tag" \
               --generate-notes \
-              main.js manifest.json || gh release upload "$tag" main.js manifest.json --clobber
+              dist/main.js dist/manifest.json || gh release upload "$tag" dist/main.js dist/manifest.json --clobber
           fi
