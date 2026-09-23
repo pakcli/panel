@@ -297,6 +297,78 @@
     flex-shrink: 0;
 }
 
+.pakcli-preset-cluster {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    flex-shrink: 0;
+
+    .pakcli-preset-trigger-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        font-size: 11px;
+        font-weight: 500;
+        height: 24px;
+        padding: 0 8px;
+        border-radius: var(--radius-s);
+        background: var(--background-modifier-form-field);
+        border: 1px solid var(--background-modifier-border);
+        color: var(--text-normal);
+        cursor: pointer;
+        transition: all 0.15s ease;
+
+        svg {
+            width: 12px;
+            height: 12px;
+            opacity: 0.8;
+        }
+
+        .pakcli-preset-btn-arrow {
+            font-size: 9px;
+            opacity: 0.65;
+            margin-left: 2px;
+        }
+
+        &:hover {
+            border-color: var(--interactive-accent);
+            background: var(--background-modifier-hover);
+        }
+
+        &.has-active-preset {
+            border-color: var(--interactive-accent);
+            color: var(--text-accent);
+            background: rgba(var(--interactive-accent-rgb, 120, 100, 240), 0.1);
+        }
+    }
+
+    .pakcli-preset-quick-save-btn {
+        width: 24px;
+        height: 24px;
+        padding: 0;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: var(--radius-s);
+        background: var(--background-modifier-form-field);
+        border: 1px solid var(--background-modifier-border);
+        color: var(--text-muted);
+        cursor: pointer;
+        transition: all 0.15s ease;
+
+        svg {
+            width: 12px;
+            height: 12px;
+        }
+
+        &:hover {
+            color: var(--text-accent);
+            border-color: var(--interactive-accent);
+            background: var(--background-modifier-hover);
+        }
+    }
+}
+
 .pakcli-row2-divider {
     width: 1px;
     height: 15px;
@@ -367,20 +439,59 @@
 }
 
 .pakcli-level-group {
-    display: flex;
+    display: inline-flex;
     align-items: center;
     gap: 6px;
+
+    &.pakcli-level-group-dual {
+        gap: 8px;
+    }
+}
+
+.pakcli-level-subgroup {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+
+    &.pakcli-level-subgroup-global {
+        .pakcli-level-label {
+            color: var(--text-muted);
+        }
+    }
+
+    &.pakcli-level-subgroup-scope {
+        .pakcli-level-label {
+            color: var(--text-accent, #38bdf8);
+        }
+
+        .pakcli-dual-highlight {
+            background: var(--text-accent, #38bdf8);
+        }
+
+        input[type="range"]::-webkit-slider-thumb {
+            background: var(--text-accent, #38bdf8);
+        }
+
+        input[type="range"]::-moz-range-thumb {
+            background: var(--text-accent, #38bdf8);
+        }
+
+        .pakcli-level-display {
+            color: var(--text-accent, #38bdf8);
+        }
+    }
 }
 
 .pakcli-level-label {
     font-size: 11px;
     font-weight: 600;
     color: var(--text-muted);
+    user-select: none;
 }
 
 .pakcli-dual-slider {
     position: relative;
-    width: 64px;
+    width: 58px;
     height: 16px;
     display: flex;
     align-items: center;
@@ -1497,5 +1608,212 @@
     width: 100vw !important;
     height: 100vh !important;
     background: var(--background-primary) !important;
+}
+
+/* ========================================================================= */
+/* 6. View × Scope Preset Manager Modal                                      */
+/* ========================================================================= */
+
+.pakcli-presets-modal {
+    padding: 16px 20px !important;
+
+    .pakcli-presets-top-bar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding-bottom: 12px;
+        margin-bottom: 14px;
+        border-bottom: 1px solid var(--background-modifier-border);
+
+        .pakcli-presets-tagline {
+            font-size: 12px;
+            color: var(--text-muted);
+            line-height: 1.4;
+        }
+
+        .pakcli-save-current-preset-btn {
+            flex-shrink: 0;
+            font-size: 12px;
+            font-weight: 600;
+            padding: 4px 12px;
+            white-space: nowrap;
+        }
+    }
+
+    .pakcli-presets-list {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        max-height: 60vh;
+        overflow-y: auto;
+        padding-right: 4px;
+
+        &::-webkit-scrollbar {
+            width: 4px;
+        }
+        &::-webkit-scrollbar-thumb {
+            background: var(--background-modifier-border);
+            border-radius: 2px;
+        }
+    }
+
+    .pakcli-presets-empty {
+        padding: 30px 10px;
+        text-align: center;
+        color: var(--text-muted);
+        font-size: 13px;
+        border: 1px dashed var(--background-modifier-border);
+        border-radius: var(--radius-m);
+    }
+
+    .pakcli-preset-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 10px 14px;
+        background: var(--background-secondary);
+        border: 1px solid var(--background-modifier-border);
+        border-radius: var(--radius-m);
+        gap: 12px;
+        transition: all 0.15s ease;
+
+        &:hover {
+            border-color: var(--interactive-accent);
+            background: var(--background-modifier-hover);
+        }
+
+        &.is-active {
+            border-color: var(--interactive-accent);
+            background: rgba(var(--interactive-accent-rgb, 120, 100, 240), 0.08);
+            box-shadow: 0 0 0 1px var(--interactive-accent);
+        }
+
+        &.pakcli-preset-save-new-row {
+            background: rgba(var(--interactive-accent-rgb, 120, 100, 240), 0.05);
+            border: 1.5px dashed var(--interactive-accent);
+            cursor: pointer;
+
+            &:hover {
+                background: rgba(var(--interactive-accent-rgb, 120, 100, 240), 0.12);
+                border-style: solid;
+                box-shadow: 0 0 8px rgba(var(--interactive-accent-rgb, 120, 100, 240), 0.2);
+            }
+
+            .pakcli-save-new-name {
+                color: var(--text-accent);
+                font-weight: 700;
+            }
+
+            .pakcli-save-new-badge {
+                border-color: var(--interactive-accent);
+                color: var(--text-accent);
+            }
+
+            .pakcli-save-new-chip {
+                background: rgba(var(--interactive-accent-rgb, 120, 100, 240), 0.15);
+                color: var(--text-accent);
+                border-color: transparent;
+                font-weight: 600;
+            }
+        }
+
+        .pakcli-preset-info {
+            flex: 1;
+            min-width: 0;
+            cursor: pointer;
+
+            .pakcli-preset-title-line {
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                flex-wrap: wrap;
+
+                .pakcli-preset-scope-badge {
+                    font-size: 11px;
+                    font-weight: 600;
+                    padding: 1px 6px;
+                    border-radius: 4px;
+                    background: var(--background-modifier-form-field);
+                    border: 1px solid var(--background-modifier-border);
+                    color: var(--text-normal);
+                }
+
+                .pakcli-preset-name {
+                    font-weight: 600;
+                    font-size: 13px;
+                    color: var(--text-normal);
+                }
+
+                .pakcli-preset-active-pill {
+                    font-size: 10px;
+                    font-weight: 700;
+                    text-transform: uppercase;
+                    letter-spacing: 0.05em;
+                    padding: 1px 6px;
+                    border-radius: 10px;
+                    background: var(--interactive-accent);
+                    color: var(--text-on-accent);
+                }
+            }
+
+            .pakcli-preset-subtitle {
+                font-size: 11px;
+                color: var(--text-muted);
+                margin-top: 4px;
+                font-family: var(--font-monospace);
+            }
+
+            .pakcli-preset-tags-line {
+                display: flex;
+                gap: 6px;
+                margin-top: 6px;
+                flex-wrap: wrap;
+
+                .pakcli-preset-chip {
+                    font-size: 10px;
+                    color: var(--text-muted);
+                    background: var(--background-primary);
+                    padding: 1px 5px;
+                    border-radius: 3px;
+                    border: 1px solid var(--background-modifier-border);
+                }
+            }
+        }
+
+        .pakcli-preset-actions {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            flex-shrink: 0;
+
+            .pakcli-preset-btn {
+                font-size: 11px;
+                padding: 3px 8px;
+                height: 24px;
+                border-radius: var(--radius-s);
+                cursor: pointer;
+                border: 1px solid var(--background-modifier-border);
+                background: var(--background-modifier-form-field);
+                color: var(--text-normal);
+                transition: all 0.15s ease;
+
+                &:hover {
+                    border-color: var(--interactive-accent);
+                    color: var(--text-accent);
+                }
+
+                &.pakcli-preset-delete-btn:hover {
+                    border-color: var(--text-error, #f87171);
+                    color: var(--text-error, #f87171);
+                    background: rgba(239, 68, 68, 0.12);
+                }
+
+                &.pakcli-preset-apply-btn {
+                    font-weight: 600;
+                }
+            }
+        }
+    }
 }
 

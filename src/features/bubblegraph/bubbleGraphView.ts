@@ -1,11 +1,12 @@
 import { ItemView, WorkspaceLeaf, setIcon, TFile, Menu, normalizePath, Notice } from 'obsidian';
 import type PakCLITablePlugin from '../../main';
-import { DEFAULT_BUBBLE_GRAPH_SETTINGS, DEFAULT_RELATIONSHIP_TIERS } from '../../settings';
+import { DEFAULT_BUBBLE_GRAPH_SETTINGS, DEFAULT_RELATIONSHIP_TIERS, BubbleViewScopePreset } from '../../settings';
 import { BubbleNode, BubbleCluster } from './types';
 import { buildVaultGraph, BuiltGraph, getFolderColor, matchFolderRule, getDefaultNodeColor, getNodeEffectiveTime, getNodeLatestTime, resolveNodeImageUrl, compareFolderPaths } from './graphBuilder';
 import { BubbleSimulation } from './simulation';
 import { CanvasRenderer, ViewportTransform, RenderState } from './canvasRenderer';
 import { SfxManager } from './sfxManager';
+import { PresetViewScopeModal, SavePresetPromptModal } from './presetModal';
 
 export const BUBBLE_GRAPH_VIEW_TYPE = 'pakcli-bubble-graph';
 
@@ -37,8 +38,12 @@ export class BubbleGraphView extends ItemView {
     private customLabelFormats: string = 'md, canvas, json, base, csv, folder';
     private customLabelFormatsSet: Set<string> = new Set(['md', 'canvas', 'json', 'base', 'csv', 'folder']);
     private showLines: boolean = true;
-    private labelMinLevel: number = 1; // 1 to 5
-    private labelMaxLevel: number = 2; // 1 to 5
+    private labelMinLevel: number = 1; // 1 to 5 (legacy fallback)
+    private labelMaxLevel: number = 2; // 1 to 5 (legacy fallback)
+    private labelGlobalMinLevel: number = 1; // 1 to 5 (global vault hierarchy)
+    private labelGlobalMaxLevel: number = 2; // 1 to 5
+    private labelScopeMinLevel: number = 1; // 1 to 5 (inside current scoped folder)
+    private labelScopeMaxLevel: number = 2; // 1 to 5
     private labelRangeLevel: number = 2; // legacy single level fallback
     private labelFontSize: number = 11; // 8 - 24px
 
@@ -96,6 +101,22 @@ export class BubbleGraphView extends ItemView {
     private sfxToggleBtnEl!: HTMLElement;
     private volumeSliderEl!: HTMLInputElement;
     private volumeDisplayEl!: HTMLElement;
+    // Global Level Slider UI
+    private globalMinSliderEl!: HTMLInputElement;
+    private globalMaxSliderEl!: HTMLInputElement;
+    private globalHighlightEl!: HTMLElement;
+    private globalDisplayEl!: HTMLElement;
+    private globalResetBtnEl!: HTMLElement;
+
+    // Scope Level Slider UI
+    private scopeMinSliderEl!: HTMLInputElement;
+    private scopeMaxSliderEl!: HTMLInputElement;
+    private scopeHighlightEl!: HTMLElement;
+    private scopeGrayoutEl: HTMLElement | null = null;
+    private scopeDisplayEl!: HTMLElement;
+    private scopeResetBtnEl!: HTMLElement;
+
+    // Legacy aliases
     private levelMinSliderEl!: HTMLInputElement;
     private levelMaxSliderEl!: HTMLInputElement;
     private levelHighlightEl!: HTMLElement;
@@ -124,6 +145,11 @@ export class BubbleGraphView extends ItemView {
     // Relationship Concentric Rings All Scope State toggle
     private relationshipAllScopeState: boolean = false;
     private relAllScopeBtnEl: HTMLElement | null = null;
+
+    // Preset View × Scope Selector UI
+    private presetTriggerBtnEl: HTMLElement | null = null;
+    private presetTriggerTextEl: HTMLElement | null = null;
+    private presetSaveQuickBtnEl: HTMLElement | null = null;
 
     public setNodeImageBorder(border: 'noborder' | 'thin' | 'thick'): void {
         this.nodeImageBorder = border;
@@ -170,9 +196,13 @@ export class BubbleGraphView extends ItemView {
         } else {
             this.timelapseMode = 'vanilla';
         }
-        this.labelMinLevel = this.plugin.settings.bubbleLabelMinLevel ?? 1;
-        this.labelMaxLevel = this.plugin.settings.bubbleLabelMaxLevel ?? (this.plugin.settings.bubbleLabelRangeLevel ?? 2);
-        this.labelRangeLevel = this.labelMaxLevel;
+        this.labelGlobalMinLevel = this.plugin.settings.bubbleLabelGlobalMinLevel ?? (this.plugin.settings.bubbleLabelMinLevel ?? 1);
+        this.labelGlobalMaxLevel = this.plugin.settings.bubbleLabelGlobalMaxLevel ?? (this.plugin.settings.bubbleLabelMaxLevel ?? (this.plugin.settings.bubbleLabelRangeLevel ?? 2));
+        this.labelScopeMinLevel = this.plugin.settings.bubbleLabelScopeMinLevel ?? 1;
+        this.labelScopeMaxLevel = this.plugin.settings.bubbleLabelScopeMaxLevel ?? 2;
+        this.labelMinLevel = this.labelGlobalMinLevel;
+        this.labelMaxLevel = this.labelGlobalMaxLevel;
+        this.labelRangeLevel = this.labelGlobalMaxLevel;
         this.labelFontSize = this.plugin.settings.bubbleLabelFontSize ?? DEFAULT_BUBBLE_GRAPH_SETTINGS.bubbleLabelFontSize;
         this.isInspectorOpen = this.plugin.settings.bubbleInspectorOpen !== false;
         this.isHeaderSettingsOpen = this.plugin.settings.bubbleHeaderSettingsOpen !== false;
@@ -342,9 +372,13 @@ export class BubbleGraphView extends ItemView {
         this.customLabelFormats = DEFAULT_BUBBLE_GRAPH_SETTINGS.bubbleLabelCustomFormats || 'md, canvas, json, base, csv, folder';
         this.updateCustomLabelFormatsSet(this.customLabelFormats);
         this.useCaptainColors = DEFAULT_BUBBLE_GRAPH_SETTINGS.bubbleUseCaptainColors;
-        this.labelRangeLevel = DEFAULT_BUBBLE_GRAPH_SETTINGS.bubbleLabelRangeLevel;
-        this.labelMinLevel = DEFAULT_BUBBLE_GRAPH_SETTINGS.bubbleLabelMinLevel;
-        this.labelMaxLevel = DEFAULT_BUBBLE_GRAPH_SETTINGS.bubbleLabelMaxLevel;
+        this.labelGlobalMinLevel = DEFAULT_BUBBLE_GRAPH_SETTINGS.bubbleLabelGlobalMinLevel ?? 1;
+        this.labelGlobalMaxLevel = DEFAULT_BUBBLE_GRAPH_SETTINGS.bubbleLabelGlobalMaxLevel ?? 2;
+        this.labelScopeMinLevel = DEFAULT_BUBBLE_GRAPH_SETTINGS.bubbleLabelScopeMinLevel ?? 1;
+        this.labelScopeMaxLevel = DEFAULT_BUBBLE_GRAPH_SETTINGS.bubbleLabelScopeMaxLevel ?? 2;
+        this.labelMinLevel = this.labelGlobalMinLevel;
+        this.labelMaxLevel = this.labelGlobalMaxLevel;
+        this.labelRangeLevel = this.labelGlobalMaxLevel;
         this.labelFontSize = DEFAULT_BUBBLE_GRAPH_SETTINGS.bubbleLabelFontSize;
         this.isInspectorOpen = DEFAULT_BUBBLE_GRAPH_SETTINGS.bubbleInspectorOpen;
         this.isHeaderSettingsOpen = DEFAULT_BUBBLE_GRAPH_SETTINGS.bubbleHeaderSettingsOpen !== false;
@@ -365,6 +399,10 @@ export class BubbleGraphView extends ItemView {
         this.plugin.settings.bubbleLabelRangeLevel = this.labelRangeLevel;
         this.plugin.settings.bubbleLabelMinLevel = this.labelMinLevel;
         this.plugin.settings.bubbleLabelMaxLevel = this.labelMaxLevel;
+        this.plugin.settings.bubbleLabelGlobalMinLevel = this.labelGlobalMinLevel;
+        this.plugin.settings.bubbleLabelGlobalMaxLevel = this.labelGlobalMaxLevel;
+        this.plugin.settings.bubbleLabelScopeMinLevel = this.labelScopeMinLevel;
+        this.plugin.settings.bubbleLabelScopeMaxLevel = this.labelScopeMaxLevel;
         this.plugin.settings.bubbleLabelFontSize = this.labelFontSize;
         this.plugin.settings.bubbleInspectorOpen = this.isInspectorOpen;
         this.plugin.settings.bubbleHeaderSettingsOpen = this.isHeaderSettingsOpen;
@@ -1154,7 +1192,40 @@ export class BubbleGraphView extends ItemView {
                 : 'Bubble Graph: Virtual Scope only (Concentric rings active when entering relationship folder)');
         };
 
-        // Divider: Separator after Toggles
+        // Preset View × Scope Selector Cluster (Beside the 4 toggles)
+        const presetCluster = textGroup.createDiv({ cls: 'pakcli-preset-cluster' });
+
+        this.presetTriggerBtnEl = presetCluster.createEl('button', {
+            cls: 'pakcli-preset-trigger-btn pakcli-tab-btn',
+            title: 'Preset View × Scope: Manage & switch presets'
+        });
+        setIcon(this.presetTriggerBtnEl.createSpan({ cls: 'pakcli-preset-btn-icon' }), 'layout-template');
+        this.presetTriggerTextEl = this.presetTriggerBtnEl.createSpan({
+            cls: 'pakcli-preset-btn-text',
+            text: 'Preset: Default'
+        });
+        this.presetTriggerBtnEl.createSpan({ cls: 'pakcli-preset-btn-arrow', text: ' ▾' });
+        this.presetTriggerBtnEl.onclick = () => {
+            new PresetViewScopeModal(this.app, this).open();
+        };
+
+        // Quick Save Preset Button
+        this.presetSaveQuickBtnEl = presetCluster.createEl('button', {
+            cls: 'clickable-icon pakcli-icon-btn pakcli-preset-quick-save-btn',
+            title: 'Save current View × Scope as preset'
+        });
+        setIcon(this.presetSaveQuickBtnEl, 'plus');
+        this.presetSaveQuickBtnEl.onclick = () => {
+            const currentScopeName = this.getCurrentScopeName();
+            const defaultName = `${currentScopeName} View`;
+            new SavePresetPromptModal(this.app, defaultName, (name) => {
+                this.saveCurrentAsPreset(name);
+            }).open();
+        };
+
+        this.updatePresetTriggerUI();
+
+        // Divider: Separator after Toggles & Presets
         textGroup.createDiv({ cls: 'pakcli-row2-divider' });
 
         // 3. Text dropdown + Custom format textbox
@@ -1221,106 +1292,223 @@ export class BubbleGraphView extends ItemView {
         // Divider: Separator after Text Mode
         textGroup.createDiv({ cls: 'pakcli-row2-divider' });
 
-        // 4. Text Level Dual Handle Slider (1-4) + Reset to Single Level Button
-        const levelGroup = textGroup.createDiv({ cls: 'pakcli-level-group' });
-        levelGroup.createSpan({ text: 'Text Level:', cls: 'pakcli-level-label' });
+        // 4. Text Level Dual Handle Sliders (Global Level & Scope Level)
+        const levelGroup = textGroup.createDiv({ cls: 'pakcli-level-group pakcli-level-group-dual' });
 
-        const dualSliderContainer = levelGroup.createDiv({ cls: 'pakcli-dual-slider' });
-        dualSliderContainer.createDiv({ cls: 'pakcli-dual-track' });
-        this.levelHighlightEl = dualSliderContainer.createDiv({ cls: 'pakcli-dual-highlight' });
-        this.levelGrayoutEl = dualSliderContainer.createDiv({ cls: 'pakcli-dual-grayout' });
+        // --- 4A. Global Level Slider (Vault Hierarchy Depth 1-5) ---
+        const globalSubgroup = levelGroup.createDiv({ cls: 'pakcli-level-subgroup pakcli-level-subgroup-global' });
+        globalSubgroup.createSpan({ text: 'Global:', cls: 'pakcli-level-label', title: 'Global Text Level (Vault Hierarchy Depth 1-5)' });
 
-        this.levelMinSliderEl = dualSliderContainer.createEl('input', {
+        const globalSliderContainer = globalSubgroup.createDiv({ cls: 'pakcli-dual-slider pakcli-global-slider' });
+        globalSliderContainer.createDiv({ cls: 'pakcli-dual-track' });
+        this.globalHighlightEl = globalSliderContainer.createDiv({ cls: 'pakcli-dual-highlight' });
+
+        this.globalMinSliderEl = globalSliderContainer.createEl('input', {
             type: 'range',
             cls: 'pakcli-range-min'
         });
-        this.levelMinSliderEl.min = '1';
-        this.levelMinSliderEl.max = '5';
-        this.levelMinSliderEl.step = '1';
-        this.levelMinSliderEl.value = this.labelMinLevel.toString();
+        this.globalMinSliderEl.min = '1';
+        this.globalMinSliderEl.max = '5';
+        this.globalMinSliderEl.step = '1';
+        this.globalMinSliderEl.value = this.labelGlobalMinLevel.toString();
 
-        this.levelMaxSliderEl = dualSliderContainer.createEl('input', {
+        this.globalMaxSliderEl = globalSliderContainer.createEl('input', {
             type: 'range',
             cls: 'pakcli-range-max'
         });
-        this.levelMaxSliderEl.min = '1';
-        this.levelMaxSliderEl.max = '5';
-        this.levelMaxSliderEl.step = '1';
-        this.levelMaxSliderEl.value = this.labelMaxLevel.toString();
+        this.globalMaxSliderEl.min = '1';
+        this.globalMaxSliderEl.max = '5';
+        this.globalMaxSliderEl.step = '1';
+        this.globalMaxSliderEl.value = this.labelGlobalMaxLevel.toString();
 
-        this.levelDisplayEl = levelGroup.createSpan({
-            cls: 'pakcli-level-display'
+        this.globalDisplayEl = globalSubgroup.createSpan({
+            cls: 'pakcli-level-display pakcli-global-display'
         });
 
-        this.levelResetBtnEl = levelGroup.createEl('button', {
+        this.globalResetBtnEl = globalSubgroup.createEl('button', {
             cls: 'clickable-icon pakcli-level-reset-btn'
         });
-        setIcon(this.levelResetBtnEl, 'rotate-ccw');
+        setIcon(this.globalResetBtnEl, 'rotate-ccw');
+
+        // --- 4B. Scope Level Slider (Relative inside Current Scoped Folder 1-5) ---
+        const scopeSubgroup = levelGroup.createDiv({ cls: 'pakcli-level-subgroup pakcli-level-subgroup-scope' });
+        scopeSubgroup.createSpan({ text: 'Scope:', cls: 'pakcli-level-label', title: 'Scope Text Level (Relative to Current Scoped Folder 1-5)' });
+
+        const scopeSliderContainer = scopeSubgroup.createDiv({ cls: 'pakcli-dual-slider pakcli-scope-slider' });
+        scopeSliderContainer.createDiv({ cls: 'pakcli-dual-track' });
+        this.scopeHighlightEl = scopeSliderContainer.createDiv({ cls: 'pakcli-dual-highlight' });
+        this.scopeGrayoutEl = scopeSliderContainer.createDiv({ cls: 'pakcli-dual-grayout' });
+
+        this.scopeMinSliderEl = scopeSliderContainer.createEl('input', {
+            type: 'range',
+            cls: 'pakcli-range-min'
+        });
+        this.scopeMinSliderEl.min = '1';
+        this.scopeMinSliderEl.max = '5';
+        this.scopeMinSliderEl.step = '1';
+        this.scopeMinSliderEl.value = this.labelScopeMinLevel.toString();
+
+        this.scopeMaxSliderEl = scopeSliderContainer.createEl('input', {
+            type: 'range',
+            cls: 'pakcli-range-max'
+        });
+        this.scopeMaxSliderEl.min = '1';
+        this.scopeMaxSliderEl.max = '5';
+        this.scopeMaxSliderEl.step = '1';
+        this.scopeMaxSliderEl.value = this.labelScopeMaxLevel.toString();
+
+        this.scopeDisplayEl = scopeSubgroup.createSpan({
+            cls: 'pakcli-level-display pakcli-scope-display'
+        });
+
+        this.scopeResetBtnEl = scopeSubgroup.createEl('button', {
+            cls: 'clickable-icon pakcli-level-reset-btn'
+        });
+        setIcon(this.scopeResetBtnEl, 'rotate-ccw');
+
+        // Legacy aliases
+        this.levelMinSliderEl = this.globalMinSliderEl;
+        this.levelMaxSliderEl = this.globalMaxSliderEl;
+        this.levelHighlightEl = this.globalHighlightEl;
+        this.levelGrayoutEl = this.scopeGrayoutEl;
+        this.levelDisplayEl = this.globalDisplayEl;
+        this.levelResetBtnEl = this.globalResetBtnEl;
 
         this.syncLevelControls();
 
-        const handleMinInput = () => {
-            let minVal = parseInt(this.levelMinSliderEl.value, 10) || 1;
-            let maxVal = parseInt(this.levelMaxSliderEl.value, 10) || 5;
+        // Global Slider Handlers
+        const handleGlobalMinInput = () => {
+            let minVal = parseInt(this.globalMinSliderEl.value, 10) || 1;
+            let maxVal = parseInt(this.globalMaxSliderEl.value, 10) || 5;
             if (minVal > maxVal) {
                 minVal = maxVal;
-                this.levelMinSliderEl.value = minVal.toString();
+                this.globalMinSliderEl.value = minVal.toString();
             }
+            this.labelGlobalMinLevel = minVal;
+            this.labelGlobalMaxLevel = maxVal;
             this.labelMinLevel = minVal;
             this.labelMaxLevel = maxVal;
             this.labelRangeLevel = maxVal;
             this.syncLevelControls();
         };
 
-        const handleMaxInput = () => {
-            let minVal = parseInt(this.levelMinSliderEl.value, 10) || 1;
-            let maxVal = parseInt(this.levelMaxSliderEl.value, 10) || 5;
+        const handleGlobalMaxInput = () => {
+            let minVal = parseInt(this.globalMinSliderEl.value, 10) || 1;
+            let maxVal = parseInt(this.globalMaxSliderEl.value, 10) || 5;
             if (maxVal < minVal) {
                 maxVal = minVal;
-                this.levelMaxSliderEl.value = maxVal.toString();
+                this.globalMaxSliderEl.value = maxVal.toString();
             }
+            this.labelGlobalMinLevel = minVal;
+            this.labelGlobalMaxLevel = maxVal;
             this.labelMinLevel = minVal;
             this.labelMaxLevel = maxVal;
             this.labelRangeLevel = maxVal;
             this.syncLevelControls();
         };
 
-        const saveLevelChange = async () => {
-            this.plugin.settings.bubbleLabelMinLevel = this.labelMinLevel;
-            this.plugin.settings.bubbleLabelMaxLevel = this.labelMaxLevel;
-            this.plugin.settings.bubbleLabelRangeLevel = this.labelMaxLevel;
+        const saveGlobalLevelChange = async () => {
+            this.plugin.settings.bubbleLabelGlobalMinLevel = this.labelGlobalMinLevel;
+            this.plugin.settings.bubbleLabelGlobalMaxLevel = this.labelGlobalMaxLevel;
+            this.plugin.settings.bubbleLabelMinLevel = this.labelGlobalMinLevel;
+            this.plugin.settings.bubbleLabelMaxLevel = this.labelGlobalMaxLevel;
+            this.plugin.settings.bubbleLabelRangeLevel = this.labelGlobalMaxLevel;
             await this.plugin.saveSettings();
         };
 
-        this.levelMinSliderEl.oninput = handleMinInput;
-        this.levelMinSliderEl.onchange = saveLevelChange;
+        this.globalMinSliderEl.oninput = handleGlobalMinInput;
+        this.globalMinSliderEl.onchange = saveGlobalLevelChange;
+        this.globalMaxSliderEl.oninput = handleGlobalMaxInput;
+        this.globalMaxSliderEl.onchange = saveGlobalLevelChange;
 
-        this.levelMaxSliderEl.oninput = handleMaxInput;
-        this.levelMaxSliderEl.onchange = saveLevelChange;
-
-        dualSliderContainer.onmousemove = (e: MouseEvent) => {
-            if (this.labelMinLevel === this.labelMaxLevel) {
-                const rect = dualSliderContainer.getBoundingClientRect();
+        globalSliderContainer.onmousemove = (e: MouseEvent) => {
+            if (this.labelGlobalMinLevel === this.labelGlobalMaxLevel) {
+                const rect = globalSliderContainer.getBoundingClientRect();
                 const relX = (e.clientX - rect.left) / (rect.width || 1);
-                const thumbPos = (this.labelMinLevel - 1) / 4;
+                const thumbPos = (this.labelGlobalMinLevel - 1) / 4;
                 if (relX < thumbPos) {
-                    this.levelMinSliderEl.style.zIndex = '5';
-                    this.levelMaxSliderEl.style.zIndex = '4';
+                    this.globalMinSliderEl.style.zIndex = '5';
+                    this.globalMaxSliderEl.style.zIndex = '4';
                 } else {
-                    this.levelMaxSliderEl.style.zIndex = '5';
-                    this.levelMinSliderEl.style.zIndex = '4';
+                    this.globalMaxSliderEl.style.zIndex = '5';
+                    this.globalMinSliderEl.style.zIndex = '4';
                 }
             } else {
-                this.levelMinSliderEl.style.zIndex = '4';
-                this.levelMaxSliderEl.style.zIndex = '4';
+                this.globalMinSliderEl.style.zIndex = '4';
+                this.globalMaxSliderEl.style.zIndex = '4';
             }
         };
 
-        this.levelResetBtnEl.onclick = async () => {
-            if (this.labelMinLevel !== this.labelMaxLevel) {
-                await this.setTextLevelRange(this.labelMinLevel, this.labelMinLevel);
+        this.globalResetBtnEl.onclick = async () => {
+            if (this.labelGlobalMinLevel !== this.labelGlobalMaxLevel) {
+                await this.setGlobalLevelRange(this.labelGlobalMinLevel, this.labelGlobalMinLevel);
             } else {
-                await this.setTextLevelRange(1, 1);
+                await this.setGlobalLevelRange(1, 2);
+            }
+            if (this.sfxManager && this.sfxManager.isEnabled()) {
+                this.sfxManager.playLinkSwitch();
+            }
+        };
+
+        // Scope Slider Handlers
+        const handleScopeMinInput = () => {
+            let minVal = parseInt(this.scopeMinSliderEl.value, 10) || 1;
+            let maxVal = parseInt(this.scopeMaxSliderEl.value, 10) || 5;
+            if (minVal > maxVal) {
+                minVal = maxVal;
+                this.scopeMinSliderEl.value = minVal.toString();
+            }
+            this.labelScopeMinLevel = minVal;
+            this.labelScopeMaxLevel = maxVal;
+            this.syncLevelControls();
+        };
+
+        const handleScopeMaxInput = () => {
+            let minVal = parseInt(this.scopeMinSliderEl.value, 10) || 1;
+            let maxVal = parseInt(this.scopeMaxSliderEl.value, 10) || 5;
+            if (maxVal < minVal) {
+                maxVal = minVal;
+                this.scopeMaxSliderEl.value = maxVal.toString();
+            }
+            this.labelScopeMinLevel = minVal;
+            this.labelScopeMaxLevel = maxVal;
+            this.syncLevelControls();
+        };
+
+        const saveScopeLevelChange = async () => {
+            this.plugin.settings.bubbleLabelScopeMinLevel = this.labelScopeMinLevel;
+            this.plugin.settings.bubbleLabelScopeMaxLevel = this.labelScopeMaxLevel;
+            await this.plugin.saveSettings();
+        };
+
+        this.scopeMinSliderEl.oninput = handleScopeMinInput;
+        this.scopeMinSliderEl.onchange = saveScopeLevelChange;
+        this.scopeMaxSliderEl.oninput = handleScopeMaxInput;
+        this.scopeMaxSliderEl.onchange = saveScopeLevelChange;
+
+        scopeSliderContainer.onmousemove = (e: MouseEvent) => {
+            if (this.labelScopeMinLevel === this.labelScopeMaxLevel) {
+                const rect = scopeSliderContainer.getBoundingClientRect();
+                const relX = (e.clientX - rect.left) / (rect.width || 1);
+                const thumbPos = (this.labelScopeMinLevel - 1) / 4;
+                if (relX < thumbPos) {
+                    this.scopeMinSliderEl.style.zIndex = '5';
+                    this.scopeMaxSliderEl.style.zIndex = '4';
+                } else {
+                    this.scopeMaxSliderEl.style.zIndex = '5';
+                    this.scopeMinSliderEl.style.zIndex = '4';
+                }
+            } else {
+                this.scopeMinSliderEl.style.zIndex = '4';
+                this.scopeMaxSliderEl.style.zIndex = '4';
+            }
+        };
+
+        this.scopeResetBtnEl.onclick = async () => {
+            if (this.labelScopeMinLevel !== this.labelScopeMaxLevel) {
+                await this.setScopeLevelRange(this.labelScopeMinLevel, this.labelScopeMinLevel);
+            } else {
+                await this.setScopeLevelRange(1, 2);
             }
             if (this.sfxManager && this.sfxManager.isEnabled()) {
                 this.sfxManager.playLinkSwitch();
@@ -2341,8 +2529,12 @@ export class BubbleGraphView extends ItemView {
                     labelMode: this.labelMode,
                     customLabelFormats: this.customLabelFormatsSet,
                     labelRangeLevel: this.labelRangeLevel,
-                    labelMinLevel: this.labelMinLevel,
-                    labelMaxLevel: this.labelMaxLevel,
+                    labelMinLevel: this.labelGlobalMinLevel,
+                    labelMaxLevel: this.labelGlobalMaxLevel,
+                    labelGlobalMinLevel: this.labelGlobalMinLevel,
+                    labelGlobalMaxLevel: this.labelGlobalMaxLevel,
+                    labelScopeMinLevel: this.labelScopeMinLevel,
+                    labelScopeMaxLevel: this.labelScopeMaxLevel,
                     labelFontSize: this.labelFontSize,
                     hullOpacity: this.plugin.settings.bubbleHullOpacity || 0.12,
                     intraLinkOpacity: this.plugin.settings.bubbleIntraLinkOpacity || 0.2,
@@ -2698,93 +2890,166 @@ export class BubbleGraphView extends ItemView {
         }
     }
 
-    private getLevelName(lvl: number): string {
+    private getGlobalLevelName(lvl: number): string {
         switch (lvl) {
-            case 1: return 'L1: Root / Relation Folder';
-            case 2: return 'L2: Bad, Unsure, Friends & Subfolders';
-            case 3: return 'L3: Close Friends & L3 Folders';
-            case 4: return 'L4: Family & L4 Folders';
-            case 5: return 'L5: Household & L5+ Folders';
+            case 1: return 'L1: Root Files / Top Folders';
+            case 2: return 'L2: Folders & Subfolders';
+            case 3: return 'L3: L3 Folders & Notes';
+            case 4: return 'L4: L4 Folders & Notes';
+            case 5: return 'L5: Deepest Notes';
             default: return `Level ${lvl}`;
         }
     }
 
-    private getLevelTooltip(min: number, max: number): string {
-        if (min === max) {
-            return `Text Level ${min} only: ${this.getLevelName(min)}`;
+    private getScopeLevelName(lvl: number): string {
+        switch (lvl) {
+            case 1: return 'L1: Direct Notes in Current Scope';
+            case 2: return 'L2: 1st Subfolder Notes';
+            case 3: return 'L3: 2nd Subfolder Notes';
+            case 4: return 'L4: 3rd Subfolder Notes';
+            case 5: return 'L5: Deep Subfolders';
+            default: return `Level ${lvl}`;
         }
-        return `Text Levels ${min}-${max}: ${this.getLevelName(min)} to ${this.getLevelName(max)}`;
+    }
+
+    private getGlobalLevelTooltip(min: number, max: number): string {
+        if (min === max) {
+            return `Global Text Level ${min} only: ${this.getGlobalLevelName(min)}`;
+        }
+        return `Global Text Levels ${min}-${max}: ${this.getGlobalLevelName(min)} to ${this.getGlobalLevelName(max)}`;
+    }
+
+    private getScopeLevelTooltip(min: number, max: number): string {
+        if (min === max) {
+            return `Scope Text Level ${min} only: ${this.getScopeLevelName(min)}`;
+        }
+        return `Scope Text Levels ${min}-${max}: ${this.getScopeLevelName(min)} to ${this.getScopeLevelName(max)}`;
+    }
+
+    private getLevelName(lvl: number): string {
+        return this.getGlobalLevelName(lvl);
+    }
+
+    private getLevelTooltip(min: number, max: number): string {
+        return this.getGlobalLevelTooltip(min, max);
     }
 
     private syncLevelControls(): void {
-        if (!this.levelMinSliderEl || !this.levelMaxSliderEl) return;
-        this.levelMinSliderEl.value = this.labelMinLevel.toString();
-        this.levelMaxSliderEl.value = this.labelMaxLevel.toString();
+        // 1. Sync Global Level Controls
+        if (this.globalMinSliderEl && this.globalMaxSliderEl) {
+            this.globalMinSliderEl.value = this.labelGlobalMinLevel.toString();
+            this.globalMaxSliderEl.value = this.labelGlobalMaxLevel.toString();
 
-        const leftPercent = ((this.labelMinLevel - 1) / 4) * 100;
-        const widthPercent = ((this.labelMaxLevel - this.labelMinLevel) / 4) * 100;
-        if (this.levelHighlightEl) {
-            this.levelHighlightEl.style.left = `${leftPercent}%`;
-            this.levelHighlightEl.style.width = `${widthPercent}%`;
-        }
+            const leftPercent = ((this.labelGlobalMinLevel - 1) / 4) * 100;
+            const widthPercent = ((this.labelGlobalMaxLevel - this.labelGlobalMinLevel) / 4) * 100;
+            if (this.globalHighlightEl) {
+                this.globalHighlightEl.style.left = `${leftPercent}%`;
+                this.globalHighlightEl.style.width = `${widthPercent}%`;
+            }
 
-        // Compute scope depth (items inside scoped folder start at 1 + scope depth)
-        const scopeLevel = (this.scopedFolder && this.scopedFolder !== '/' && this.scopedFolder !== '.')
-            ? Math.min(5, 1 + this.scopedFolder.split('/').filter(Boolean).length)
-            : 1;
+            const isSingle = this.labelGlobalMinLevel === this.labelGlobalMaxLevel;
+            const displayText = isSingle
+                ? this.labelGlobalMinLevel.toString()
+                : `${this.labelGlobalMinLevel}-${this.labelGlobalMaxLevel}`;
 
-        // Visual grayout of unavailable levels < scopeLevel without altering stored user setting
-        if (this.levelGrayoutEl) {
-            if (scopeLevel > 1) {
-                const grayoutWidth = ((scopeLevel - 1) / 4) * 100;
-                this.levelGrayoutEl.style.width = `${grayoutWidth}%`;
-                this.levelGrayoutEl.style.display = 'block';
-                this.levelGrayoutEl.title = `Levels 1${scopeLevel > 2 ? `-${scopeLevel - 1}` : ''} inactive: view scoped to Level ${scopeLevel} (${this.scopedFolder})`;
-            } else {
-                this.levelGrayoutEl.style.width = '0%';
-                this.levelGrayoutEl.style.display = 'none';
-                this.levelGrayoutEl.title = '';
+            const desc = this.getGlobalLevelTooltip(this.labelGlobalMinLevel, this.labelGlobalMaxLevel);
+
+            this.globalMinSliderEl.title = `Min Global Text Level: ${this.labelGlobalMinLevel} (${this.getGlobalLevelName(this.labelGlobalMinLevel)})`;
+            this.globalMaxSliderEl.title = `Max Global Text Level: ${this.labelGlobalMaxLevel} (${this.getGlobalLevelName(this.labelGlobalMaxLevel)})`;
+
+            if (this.globalDisplayEl) {
+                this.globalDisplayEl.setText(displayText);
+                this.globalDisplayEl.title = desc;
+            }
+
+            if (this.globalResetBtnEl) {
+                this.globalResetBtnEl.title = isSingle
+                    ? (this.labelGlobalMinLevel === 1 ? `Level 1 active (click to reset to 1-2)` : `Reset Global to 1-2`)
+                    : `Reset Global to single level (L${this.labelGlobalMinLevel})`;
+                this.globalResetBtnEl.setAttribute('aria-label', this.globalResetBtnEl.title);
             }
         }
 
-        const effMin = Math.max(this.labelMinLevel, scopeLevel);
-        const effMax = Math.max(this.labelMaxLevel, effMin);
+        // 2. Sync Scope Level Controls
+        if (this.scopeMinSliderEl && this.scopeMaxSliderEl) {
+            this.scopeMinSliderEl.value = this.labelScopeMinLevel.toString();
+            this.scopeMaxSliderEl.value = this.labelScopeMaxLevel.toString();
 
-        const isSingle = this.labelMinLevel === this.labelMaxLevel;
-        const displayText = isSingle
-            ? this.labelMinLevel.toString()
-            : `${this.labelMinLevel}-${this.labelMaxLevel}`;
+            const leftPercent = ((this.labelScopeMinLevel - 1) / 4) * 100;
+            const widthPercent = ((this.labelScopeMaxLevel - this.labelScopeMinLevel) / 4) * 100;
+            if (this.scopeHighlightEl) {
+                this.scopeHighlightEl.style.left = `${leftPercent}%`;
+                this.scopeHighlightEl.style.width = `${widthPercent}%`;
+            }
 
-        let desc = this.getLevelTooltip(this.labelMinLevel, this.labelMaxLevel);
-        if (scopeLevel > 1 && (effMin !== this.labelMinLevel || effMax !== this.labelMaxLevel)) {
-            desc += ` [Effective: Level ${effMin === effMax ? effMin : `${effMin}-${effMax}`}, scoped to Level ${scopeLevel}]`;
-        }
+            const hasScope = Boolean(this.scopedFolder && this.scopedFolder !== '/' && this.scopedFolder !== '.');
+            if (this.scopeGrayoutEl) {
+                if (!hasScope) {
+                    this.scopeGrayoutEl.style.width = '100%';
+                    this.scopeGrayoutEl.style.display = 'block';
+                    this.scopeGrayoutEl.title = 'Vault root view: Scope slider activates when scoped into a folder';
+                } else {
+                    this.scopeGrayoutEl.style.width = '0%';
+                    this.scopeGrayoutEl.style.display = 'none';
+                    this.scopeGrayoutEl.title = '';
+                }
+            }
 
-        this.levelMinSliderEl.title = `Min Text Level: ${this.labelMinLevel} (${this.getLevelName(this.labelMinLevel)})`;
-        this.levelMaxSliderEl.title = `Max Text Level: ${this.labelMaxLevel} (${this.getLevelName(this.labelMaxLevel)})`;
+            const isSingle = this.labelScopeMinLevel === this.labelScopeMaxLevel;
+            const displayText = isSingle
+                ? this.labelScopeMinLevel.toString()
+                : `${this.labelScopeMinLevel}-${this.labelScopeMaxLevel}`;
 
-        if (this.levelDisplayEl) {
-            this.levelDisplayEl.setText(displayText);
-            this.levelDisplayEl.title = desc;
-        }
+            let desc = this.getScopeLevelTooltip(this.labelScopeMinLevel, this.labelScopeMaxLevel);
+            if (hasScope) {
+                desc += ` [Scope: ${this.scopedFolder}]`;
+            } else {
+                desc += ' [Vault root - scope ready]';
+            }
 
-        if (this.levelResetBtnEl) {
-            this.levelResetBtnEl.title = isSingle
-                ? (this.labelMinLevel === 1 ? `Level 1 active (click to reset to 1-2)` : `Reset to Level 1 (Top Folders & Root Files)`)
-                : `Reset to single level (Level ${this.labelMinLevel} only)`;
-            this.levelResetBtnEl.setAttribute('aria-label', this.levelResetBtnEl.title);
+            this.scopeMinSliderEl.title = `Min Scope Text Level: ${this.labelScopeMinLevel} (${this.getScopeLevelName(this.labelScopeMinLevel)})`;
+            this.scopeMaxSliderEl.title = `Max Scope Text Level: ${this.labelScopeMaxLevel} (${this.getScopeLevelName(this.labelScopeMaxLevel)})`;
+
+            if (this.scopeDisplayEl) {
+                this.scopeDisplayEl.setText(displayText);
+                this.scopeDisplayEl.title = desc;
+            }
+
+            if (this.scopeResetBtnEl) {
+                this.scopeResetBtnEl.title = isSingle
+                    ? (this.labelScopeMinLevel === 1 ? `Level 1 active (click to reset to 1-2)` : `Reset Scope to 1-2`)
+                    : `Reset Scope to single level (L${this.labelScopeMinLevel})`;
+                this.scopeResetBtnEl.setAttribute('aria-label', this.scopeResetBtnEl.title);
+            }
         }
     }
 
-    public async setTextLevelRange(min: number, max: number): Promise<void> {
-        this.labelMinLevel = Math.max(1, Math.min(5, Math.min(min, max)));
-        this.labelMaxLevel = Math.max(1, Math.min(5, Math.max(min, max)));
-        this.labelRangeLevel = this.labelMaxLevel;
+    public async setGlobalLevelRange(min: number, max: number): Promise<void> {
+        this.labelGlobalMinLevel = Math.max(1, Math.min(5, Math.min(min, max)));
+        this.labelGlobalMaxLevel = Math.max(1, Math.min(5, Math.max(min, max)));
+        this.labelMinLevel = this.labelGlobalMinLevel;
+        this.labelMaxLevel = this.labelGlobalMaxLevel;
+        this.labelRangeLevel = this.labelGlobalMaxLevel;
+        this.plugin.settings.bubbleLabelGlobalMinLevel = this.labelGlobalMinLevel;
+        this.plugin.settings.bubbleLabelGlobalMaxLevel = this.labelGlobalMaxLevel;
         this.plugin.settings.bubbleLabelMinLevel = this.labelMinLevel;
         this.plugin.settings.bubbleLabelMaxLevel = this.labelMaxLevel;
         this.plugin.settings.bubbleLabelRangeLevel = this.labelRangeLevel;
         await this.plugin.saveSettings();
         this.syncLevelControls();
+    }
+
+    public async setScopeLevelRange(min: number, max: number): Promise<void> {
+        this.labelScopeMinLevel = Math.max(1, Math.min(5, Math.min(min, max)));
+        this.labelScopeMaxLevel = Math.max(1, Math.min(5, Math.max(min, max)));
+        this.plugin.settings.bubbleLabelScopeMinLevel = this.labelScopeMinLevel;
+        this.plugin.settings.bubbleLabelScopeMaxLevel = this.labelScopeMaxLevel;
+        await this.plugin.saveSettings();
+        this.syncLevelControls();
+    }
+
+    public async setTextLevelRange(min: number, max: number): Promise<void> {
+        await this.setGlobalLevelRange(min, max);
     }
 
     public setTextLevel(level: number): void {
@@ -2930,5 +3195,210 @@ export class BubbleGraphView extends ItemView {
         this.setBtnActive(this.fullscreenBtnEl, this.isFullscreen);
         this.fullscreenBtnEl.setAttribute('title', this.isFullscreen ? 'Exit Fullscreen (Kembali ke Normal View)' : 'Grand Fullscreen (Layar Penuh)');
         setIcon(this.fullscreenBtnEl, this.isFullscreen ? 'minimize' : 'maximize');
+    }
+
+    // ==========================================
+    // Preset View × Scope Management
+    // ==========================================
+
+    public getCurrentScopeName(): string {
+        if (!this.scopedFolder || this.scopedFolder === '/' || this.scopedFolder === '.') {
+            return 'Vault';
+        }
+        return this.scopedFolder.split('/').pop() || this.scopedFolder;
+    }
+
+    public getPresets(): BubbleViewScopePreset[] {
+        return this.plugin.settings.bubbleViewScopePresets || [];
+    }
+
+    public getActivePresetId(): string | null {
+        return this.plugin.settings.activeBubblePresetId || null;
+    }
+
+    public updatePresetTriggerUI(): void {
+        if (!this.presetTriggerTextEl) return;
+        const presets = this.getPresets();
+        const activeId = this.getActivePresetId();
+        const activePreset = presets.find(p => p.id === activeId);
+
+        if (activePreset) {
+            this.presetTriggerTextEl.setText(`Preset: ${activePreset.name}`);
+            this.presetTriggerBtnEl?.setAttribute('title', `Active Preset: ${activePreset.name} (Scope: ${activePreset.scopedFolder || 'Vault'})\nClick to manage presets`);
+            this.presetTriggerBtnEl?.addClass('has-active-preset');
+        } else {
+            this.presetTriggerTextEl.setText('Preset: Default');
+            this.presetTriggerBtnEl?.setAttribute('title', 'Preset View × Scope: Click to manage and switch presets');
+            this.presetTriggerBtnEl?.removeClass('has-active-preset');
+        }
+    }
+
+    public async saveCurrentAsPreset(name: string): Promise<void> {
+        const newPreset: BubbleViewScopePreset = {
+            id: `preset_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+            name: name.trim(),
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+            scopedFolder: this.scopedFolder,
+            relationshipAllScopeState: this.relationshipAllScopeState,
+            layoutMode: this.layoutMode,
+            showLines: this.showLines,
+            useCaptainColors: this.useCaptainColors,
+            enableNodeImageCover: this.enableNodeImageCover,
+            nodeImageBorder: this.nodeImageBorder,
+            labelMode: this.labelMode,
+            customLabelFormats: this.customLabelFormats,
+            labelMinLevel: this.labelGlobalMinLevel,
+            labelMaxLevel: this.labelGlobalMaxLevel,
+            labelGlobalMinLevel: this.labelGlobalMinLevel,
+            labelGlobalMaxLevel: this.labelGlobalMaxLevel,
+            labelScopeMinLevel: this.labelScopeMinLevel,
+            labelScopeMaxLevel: this.labelScopeMaxLevel,
+            labelFontSize: this.labelFontSize,
+            denseScale: this.plugin.settings.bubbleDenseScale ?? 1.15,
+            isSimulationLocked: this.isSimulationLocked,
+            zoom: this.transform.zoom,
+            panX: this.transform.panX,
+            panY: this.transform.panY
+        };
+
+        if (!this.plugin.settings.bubbleViewScopePresets) {
+            this.plugin.settings.bubbleViewScopePresets = [];
+        }
+        this.plugin.settings.bubbleViewScopePresets.push(newPreset);
+        this.plugin.settings.activeBubblePresetId = newPreset.id;
+        await this.plugin.saveSettings();
+
+        this.updatePresetTriggerUI();
+        new Notice(`Preset "${name}" saved!`);
+    }
+
+    public async applyPreset(preset: BubbleViewScopePreset): Promise<void> {
+        this.scopedFolder = (preset.scopedFolder && preset.scopedFolder !== '/' && preset.scopedFolder !== '.') 
+            ? normalizePath(preset.scopedFolder) 
+            : null;
+        this.relationshipAllScopeState = Boolean(preset.relationshipAllScopeState);
+        this.layoutMode = preset.layoutMode || 'bubble';
+        this.showLines = preset.showLines !== false;
+        this.useCaptainColors = Boolean(preset.useCaptainColors);
+        this.enableNodeImageCover = preset.enableNodeImageCover !== false;
+        this.nodeImageBorder = preset.nodeImageBorder || 'thick';
+        this.labelMode = (preset.labelMode as any) || 'all';
+        this.showLabels = this.labelMode !== 'hide' && (preset.labelMode as any) !== 'off';
+        this.customLabelFormats = preset.customLabelFormats || 'md, canvas, json, base, csv, folder';
+        this.updateCustomLabelFormatsSet(this.customLabelFormats);
+        this.labelGlobalMinLevel = preset.labelGlobalMinLevel ?? (preset.labelMinLevel ?? 1);
+        this.labelGlobalMaxLevel = preset.labelGlobalMaxLevel ?? (preset.labelMaxLevel ?? 2);
+        this.labelScopeMinLevel = preset.labelScopeMinLevel ?? 1;
+        this.labelScopeMaxLevel = preset.labelScopeMaxLevel ?? 2;
+        this.labelMinLevel = this.labelGlobalMinLevel;
+        this.labelMaxLevel = this.labelGlobalMaxLevel;
+        this.labelRangeLevel = this.labelMaxLevel;
+        this.labelFontSize = preset.labelFontSize ?? 11;
+
+        if (preset.denseScale !== undefined) {
+            await this.setDenseScale(preset.denseScale, true);
+        }
+        if (preset.isSimulationLocked !== undefined) {
+            await this.setSimulationLocked(preset.isSimulationLocked);
+        }
+        if (preset.zoom !== undefined && preset.panX !== undefined && preset.panY !== undefined) {
+            this.transform = { zoom: preset.zoom, panX: preset.panX, panY: preset.panY };
+        }
+
+        this.plugin.settings.activeBubblePresetId = preset.id;
+        await this.plugin.saveSettings();
+
+        // Update UI controls
+        if (this.linesToggleBtnEl) this.setBtnActive(this.linesToggleBtnEl, this.showLines);
+        if (this.captainColorsBtnEl) this.setBtnActive(this.captainColorsBtnEl, this.useCaptainColors);
+        if (this.imageCoverBtnEl) this.setBtnActive(this.imageCoverBtnEl, this.enableNodeImageCover);
+        if (this.relAllScopeBtnEl) this.setBtnActive(this.relAllScopeBtnEl, this.relationshipAllScopeState);
+        this.updateLabelModeUI();
+        this.syncLevelControls();
+        if (this.fontSizeSliderEl) {
+            this.fontSizeSliderEl.value = this.labelFontSize.toString();
+        }
+        if (this.fontSizeDisplayEl) {
+            this.fontSizeDisplayEl.setText(`${this.labelFontSize}px`);
+        }
+
+        this.reloadGraphData();
+        this.updateScopeBar();
+        this.updateInspectorContent();
+        this.applyCaptainFolderColors();
+        this.updatePresetTriggerUI();
+
+        if (preset.zoom === undefined) {
+            this.fitToView();
+        }
+
+        if (this.sfxManager?.isEnabled()) {
+            this.sfxManager.playLinkSwitch(1.0);
+        }
+
+        new Notice(`Loaded preset: "${preset.name}" (${preset.scopedFolder ? `📁 ${preset.scopedFolder}` : '🌐 Vault'})`);
+    }
+
+    public async overwritePreset(presetId: string): Promise<void> {
+        const presets = this.getPresets();
+        const p = presets.find(item => item.id === presetId);
+        if (!p) return;
+
+        p.scopedFolder = this.scopedFolder;
+        p.relationshipAllScopeState = this.relationshipAllScopeState;
+        p.layoutMode = this.layoutMode;
+        p.showLines = this.showLines;
+        p.useCaptainColors = this.useCaptainColors;
+        p.enableNodeImageCover = this.enableNodeImageCover;
+        p.nodeImageBorder = this.nodeImageBorder;
+        p.labelMode = this.labelMode;
+        p.customLabelFormats = this.customLabelFormats;
+        p.labelMinLevel = this.labelGlobalMinLevel;
+        p.labelMaxLevel = this.labelGlobalMaxLevel;
+        p.labelGlobalMinLevel = this.labelGlobalMinLevel;
+        p.labelGlobalMaxLevel = this.labelGlobalMaxLevel;
+        p.labelScopeMinLevel = this.labelScopeMinLevel;
+        p.labelScopeMaxLevel = this.labelScopeMaxLevel;
+        p.labelFontSize = this.labelFontSize;
+        p.denseScale = this.plugin.settings.bubbleDenseScale ?? 1.15;
+        p.isSimulationLocked = this.isSimulationLocked;
+        p.zoom = this.transform.zoom;
+        p.panX = this.transform.panX;
+        p.panY = this.transform.panY;
+        p.updatedAt = Date.now();
+
+        this.plugin.settings.activeBubblePresetId = p.id;
+        await this.plugin.saveSettings();
+        this.updatePresetTriggerUI();
+    }
+
+    public async duplicatePreset(presetId: string): Promise<void> {
+        const presets = this.getPresets();
+        const p = presets.find(item => item.id === presetId);
+        if (!p) return;
+
+        const copy: BubbleViewScopePreset = {
+            ...p,
+            id: `preset_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+            name: `${p.name} (Copy)`,
+            createdAt: Date.now(),
+            updatedAt: Date.now()
+        };
+
+        presets.push(copy);
+        this.plugin.settings.bubbleViewScopePresets = presets;
+        await this.plugin.saveSettings();
+    }
+
+    public async deletePreset(presetId: string): Promise<void> {
+        let presets = this.getPresets();
+        presets = presets.filter(item => item.id !== presetId);
+        this.plugin.settings.bubbleViewScopePresets = presets;
+        if (this.plugin.settings.activeBubblePresetId === presetId) {
+            this.plugin.settings.activeBubblePresetId = null;
+        }
+        await this.plugin.saveSettings();
+        this.updatePresetTriggerUI();
     }
 }

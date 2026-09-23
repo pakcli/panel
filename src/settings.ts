@@ -80,6 +80,10 @@ export interface BubbleGraphSettings {
     bubbleLabelRangeLevel: number;
     bubbleLabelMinLevel: number;
     bubbleLabelMaxLevel: number;
+    bubbleLabelGlobalMinLevel?: number;
+    bubbleLabelGlobalMaxLevel?: number;
+    bubbleLabelScopeMinLevel?: number;
+    bubbleLabelScopeMaxLevel?: number;
     bubbleLabelFontSize: number;
     bubbleInspectorOpen: boolean;
     bubbleHeaderSettingsOpen?: boolean;
@@ -109,6 +113,36 @@ export interface BubbleGraphSettings {
     explorerVirtualFolderShowLine?: boolean;
     explorerVirtualFolderDragDrop?: boolean;
     bubbleRelationshipAllScopeState?: boolean;
+    bubbleViewScopePresets?: BubbleViewScopePreset[];
+    activeBubblePresetId?: string | null;
+}
+
+export interface BubbleViewScopePreset {
+    id: string;
+    name: string;
+    createdAt: number;
+    updatedAt: number;
+    scopedFolder: string | null;
+    relationshipAllScopeState?: boolean;
+    layoutMode: 'bubble' | 'default';
+    showLines: boolean;
+    useCaptainColors: boolean;
+    enableNodeImageCover: boolean;
+    nodeImageBorder: BubbleNodeImageBorder;
+    labelMode: 'all' | 'folder' | 'text' | 'custom' | 'off' | 'hide';
+    customLabelFormats: string;
+    labelMinLevel: number;
+    labelMaxLevel: number;
+    labelGlobalMinLevel?: number;
+    labelGlobalMaxLevel?: number;
+    labelScopeMinLevel?: number;
+    labelScopeMaxLevel?: number;
+    labelFontSize: number;
+    denseScale: number;
+    isSimulationLocked?: boolean;
+    zoom?: number;
+    panX?: number;
+    panY?: number;
 }
 
 export interface PakCLITableSettings extends 
@@ -188,6 +222,10 @@ export const DEFAULT_BUBBLE_GRAPH_SETTINGS: BubbleGraphSettings = {
     bubbleLabelRangeLevel: 2,
     bubbleLabelMinLevel: 1,
     bubbleLabelMaxLevel: 2,
+    bubbleLabelGlobalMinLevel: 1,
+    bubbleLabelGlobalMaxLevel: 2,
+    bubbleLabelScopeMinLevel: 1,
+    bubbleLabelScopeMaxLevel: 2,
     bubbleLabelFontSize: 11,
     bubbleInspectorOpen: true,
     bubbleHeaderSettingsOpen: true,
@@ -219,6 +257,8 @@ export const DEFAULT_BUBBLE_GRAPH_SETTINGS: BubbleGraphSettings = {
     explorerVirtualFolderShowLine: true,
     explorerVirtualFolderDragDrop: true,
     bubbleRelationshipAllScopeState: false,
+    bubbleViewScopePresets: [],
+    activeBubblePresetId: null,
 };
 
 export const DEFAULT_TABLE_SETTINGS: PakCLITableSettings = {
