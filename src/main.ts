@@ -2,6 +2,7 @@ import { Plugin, Notice, Setting, PluginSettingTab, ButtonComponent, DropdownCom
 import { PakCLITableSettings, DEFAULT_TABLE_SETTINGS, DEFAULT_BUBBLE_GRAPH_SETTINGS, RelationshipTierConfig, DEFAULT_RELATIONSHIP_TIERS, RelationshipFolderEntry, RelationshipViewStructure, RelationshipSortOrder, DictionaryFolderEntry, DictionarySubfolderMode, HtmlSnapshotMode } from './settings';
 import { handleArtifactRename, moveArtifactsBetweenFolders } from './features/sqlseal/utils/views';
 import { SplitViewManager, FolderSuggestModal } from './features/explorer/splitViewManager';
+import { SidebarManager } from './features/explorer/sidebarManager';
 import { ExplorerSectionId, EXPLORER_SECTIONS_INFO, DEFAULT_EXPLORER_SECTION_ORDER, ExplorerRowBgMode } from './features/explorer/types';
 import { ImageTriageModal } from './features/carousel/ImageTriageModal';
 import { IMAGE_CAROUSEL_VIEW_TYPE, ImageCarouselView } from './features/carousel/ImageCarouselView';
@@ -74,6 +75,7 @@ export default class PakCLITablePlugin extends Plugin {
 	settingsTabInstance: MasterDetailSettingsTab | null = null;
 	settingsPanelStates: Map<string, boolean> = new Map();
 	splitViewManager!: SplitViewManager;
+	sidebarManager!: SidebarManager;
 	relationshipExplorerManager!: RelationshipExplorerManager;
 	dictionaryExplorerManager!: DictionaryExplorerManager;
 	vaultRoot: string = '';
@@ -554,6 +556,56 @@ export default class PakCLITablePlugin extends Plugin {
 		});
 
 		this.addCommand({
+			id: 'toggle-left-sidebar-mode',
+			name: 'Toggle Left Sidebar (Explorer) Mode: Pinned (Docked) / Floating Overlay',
+			callback: async () => {
+				if (this.sidebarManager) {
+					await this.sidebarManager.toggleLeftSidebarMode();
+				}
+			}
+		});
+
+		this.addCommand({
+			id: 'toggle-right-sidebar-mode',
+			name: 'Toggle Right Sidebar Mode: Pinned (Docked) / Floating Overlay',
+			callback: async () => {
+				if (this.sidebarManager) {
+					await this.sidebarManager.toggleRightSidebarMode();
+				}
+			}
+		});
+
+		this.addCommand({
+			id: 'swap-sidebars',
+			name: 'Swap Left and Right Sidebars',
+			callback: async () => {
+				if (this.sidebarManager) {
+					await this.sidebarManager.swapSidebars();
+				}
+			}
+		});
+
+		this.addCommand({
+			id: 'open-left-sidebar-overlay',
+			name: 'Open Temporary Left Sidebar (Explorer) Overlay (No content resize)',
+			callback: () => {
+				if (this.sidebarManager) {
+					this.sidebarManager.openTemporaryOverlay('left');
+				}
+			}
+		});
+
+		this.addCommand({
+			id: 'open-right-sidebar-overlay',
+			name: 'Open Temporary Right Sidebar Overlay (No content resize)',
+			callback: () => {
+				if (this.sidebarManager) {
+					this.sidebarManager.openTemporaryOverlay('right');
+				}
+			}
+		});
+
+		this.addCommand({
 			id: 'debug-codeblocks',
 			name: 'Debug Codeblocks: Inspect Styling & Language Rules',
 			callback: () => {
@@ -767,6 +819,10 @@ export default class PakCLITablePlugin extends Plugin {
 		// Initialize Explorer Additions & Split View Manager
 		this.splitViewManager = new SplitViewManager(this);
 		this.splitViewManager.init();
+
+		// Initialize Workspace Sidebar Manager (Swap, Pin, Overlay)
+		this.sidebarManager = new SidebarManager(this);
+		this.sidebarManager.init();
 
 		// Initialize Relationship Virtual Explorer Manager
 		this.relationshipExplorerManager = new RelationshipExplorerManager(this);
@@ -1417,6 +1473,9 @@ export default class PakCLITablePlugin extends Plugin {
 		}
 		if (this.splitViewManager) {
 			this.splitViewManager.destroy();
+		}
+		if (this.sidebarManager) {
+			this.sidebarManager.destroy();
 		}
 		if (this.relationshipExplorerManager) {
 			this.relationshipExplorerManager.destroy();

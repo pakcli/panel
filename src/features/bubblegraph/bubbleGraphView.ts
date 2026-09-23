@@ -72,6 +72,8 @@ export class BubbleGraphView extends ItemView {
     private inspectorEl!: HTMLElement;
     private inspectorBtnEl!: HTMLElement;
     private isInspectorOpen: boolean = true;
+    private inspectorMode: 'pinned' | 'overlay' = 'pinned';
+    private inspectorSide: 'left' | 'right' = 'right';
     private isHeaderSettingsOpen: boolean = true;
     private isFloatingToolsOpen: boolean = true;
     private isFooterOpen: boolean = true;
@@ -205,6 +207,8 @@ export class BubbleGraphView extends ItemView {
         this.labelRangeLevel = this.labelGlobalMaxLevel;
         this.labelFontSize = this.plugin.settings.bubbleLabelFontSize ?? DEFAULT_BUBBLE_GRAPH_SETTINGS.bubbleLabelFontSize;
         this.isInspectorOpen = this.plugin.settings.bubbleInspectorOpen !== false;
+        this.inspectorMode = this.plugin.settings.bubbleInspectorMode || 'pinned';
+        this.inspectorSide = this.plugin.settings.bubbleInspectorSide || 'right';
         this.isHeaderSettingsOpen = this.plugin.settings.bubbleHeaderSettingsOpen !== false;
         this.isFloatingToolsOpen = this.plugin.settings.bubbleFloatingToolsOpen !== false;
         const savedAutoFit = this.plugin.settings.bubbleAutoFitMode;
@@ -902,35 +906,7 @@ export class BubbleGraphView extends ItemView {
         this.inspectorBtnEl.setAttribute('aria-pressed', this.isInspectorOpen ? 'true' : 'false');
         setIcon(this.inspectorBtnEl, 'info');
         this.inspectorBtnEl.onclick = async () => {
-            this.isInspectorOpen = !this.isInspectorOpen;
-            if (this.inspectorEl) {
-                this.inspectorEl.toggleClass('collapsed', !this.isInspectorOpen);
-            }
-            this.setBtnActive(this.inspectorBtnEl, this.isInspectorOpen);
-            this.inspectorBtnEl.setAttribute('title', this.isInspectorOpen ? 'Hide Inspector Sidepanel' : 'Show Inspector Sidepanel');
-            this.plugin.settings.bubbleInspectorOpen = this.isInspectorOpen;
-            await this.plugin.saveSettings();
-
-            if (this.graphData) {
-                const activeFile = this.app.workspace.getActiveFile();
-                const activePath = activeFile ? activeFile.path : null;
-                for (const node of this.graphData.nodes) {
-                    node.isActive = Boolean(this.isInspectorOpen && activePath && node.id === activePath);
-                }
-                if (this.isInspectorOpen && activePath) {
-                    const activeNode = this.graphData.nodes.find(n => n.id === activePath);
-                    if (activeNode) {
-                        this.selectNode(activeNode, false);
-                    }
-                } else {
-                    this.selectedNode = null;
-                }
-            }
-
-            if (this.sfxManager?.isEnabled()) {
-                this.sfxManager.playLinkSwitch();
-            }
-            setTimeout(() => this.renderer?.resize(), 50);
+            await this.toggleInspector();
         };
 
         // 5. Toggle Fullscreen (Clean 2-mode: "this" <-> "grand full screen")
@@ -1954,12 +1930,54 @@ export class BubbleGraphView extends ItemView {
         this.statsPillEl.setText(`${scopeLabel}Nodes: ${s.totalNodes}  |  Clusters: ${s.totalClusters}  |  Venn Bridges: ${s.totalVennBridges}`);
     }
 
+    public async toggleInspector(forceOpen?: boolean): Promise<void> {
+        this.isInspectorOpen = forceOpen !== undefined ? forceOpen : !this.isInspectorOpen;
+        if (this.inspectorEl) {
+            this.inspectorEl.toggleClass('collapsed', !this.isInspectorOpen);
+        }
+        if (this.inspectorBtnEl) {
+            this.setBtnActive(this.inspectorBtnEl, this.isInspectorOpen);
+            this.inspectorBtnEl.setAttribute('title', this.isInspectorOpen ? 'Hide Inspector Sidepanel' : 'Show Inspector Sidepanel');
+            this.inspectorBtnEl.setAttribute('aria-pressed', this.isInspectorOpen ? 'true' : 'false');
+        }
+        this.plugin.settings.bubbleInspectorOpen = this.isInspectorOpen;
+        await this.plugin.saveSettings();
+
+        if (this.graphData) {
+            const activeFile = this.app.workspace.getActiveFile();
+            const activePath = activeFile ? activeFile.path : null;
+            for (const node of this.graphData.nodes) {
+                node.isActive = Boolean(this.isInspectorOpen && activePath && node.id === activePath);
+            }
+            if (this.isInspectorOpen && activePath) {
+                const activeNode = this.graphData.nodes.find(n => n.id === activePath);
+                if (activeNode) {
+                    this.selectNode(activeNode, false);
+                }
+            } else if (!this.isInspectorOpen) {
+                this.selectedNode = null;
+            }
+        }
+
+        if (this.sfxManager?.isEnabled()) {
+            this.sfxManager.playLinkSwitch();
+        }
+        setTimeout(() => this.renderer?.resize(), 50);
+    }
+
     private renderInspector(parent: HTMLElement): void {
         this.inspectorEl = parent.createDiv({ cls: 'pakcli-bubble-inspector' });
+        this.applyInspectorLayout();
         if (!this.isInspectorOpen) {
             this.inspectorEl.addClass('collapsed');
         }
         this.updateInspectorContent();
+    }
+
+    private applyInspectorLayout(): void {
+        if (!this.inspectorEl) return;
+        this.inspectorEl.toggleClass('is-overlay', this.inspectorMode === 'overlay');
+        this.inspectorEl.toggleClass('is-left', this.inspectorSide === 'left');
     }
 
     private updateInspectorContent(): void {
@@ -1968,6 +1986,56 @@ export class BubbleGraphView extends ItemView {
 
         const header = this.inspectorEl.createDiv({ cls: 'pakcli-inspector-header' });
         header.createSpan({ text: 'ℹ️ INSPECTOR', cls: 'pakcli-inspector-title' });
+
+        const headerActions = header.createDiv({ cls: 'pakcli-inspector-header-actions' });
+
+        // Swap Side button (Left <-> Right)
+        const swapBtn = headerActions.createEl('button', {
+            cls: 'clickable-icon pakcli-sidebar-swap-btn',
+            text: '⇄',
+            title: `Pindah Inspector ke ${this.inspectorSide === 'right' ? 'Kiri (Left)' : 'Kanan (Right)'}`
+        });
+        swapBtn.onclick = async (e) => {
+            e.stopPropagation();
+            this.inspectorSide = this.inspectorSide === 'right' ? 'left' : 'right';
+            this.plugin.settings.bubbleInspectorSide = this.inspectorSide;
+            await this.plugin.saveSettings();
+            this.applyInspectorLayout();
+            this.updateInspectorContent();
+            setTimeout(() => this.renderer?.resize(), 50);
+            new Notice(`Inspector dipindah ke sisi ${this.inspectorSide === 'right' ? 'Kanan' : 'Kiri'}`);
+        };
+
+        // Pin/Overlay toggle button: [📌 Pinned] / [🪟 Overlay]
+        const isPinned = this.inspectorMode === 'pinned';
+        const pinBtn = headerActions.createEl('button', {
+            cls: `clickable-icon pakcli-sidebar-pin-btn ${isPinned ? 'is-pinned' : 'is-overlay'}`,
+            text: isPinned ? '📌' : '🪟',
+            title: isPinned 
+                ? 'Mode: Terpin (Docked - Mengurangi lebar canvas). Klik untuk jadikan Floating Overlay' 
+                : 'Mode: Overlay (Floating - Canvas tetap 100%). Klik untuk jadikan Terpin (Pinned)'
+        });
+        pinBtn.onclick = async (e) => {
+            e.stopPropagation();
+            this.inspectorMode = this.inspectorMode === 'pinned' ? 'overlay' : 'pinned';
+            this.plugin.settings.bubbleInspectorMode = this.inspectorMode;
+            await this.plugin.saveSettings();
+            this.applyInspectorLayout();
+            this.updateInspectorContent();
+            setTimeout(() => this.renderer?.resize(), 50);
+            new Notice(`Inspector mode: ${this.inspectorMode === 'pinned' ? 'Pinned (Docked)' : 'Floating Overlay'}`);
+        };
+
+        // Close button
+        const closeBtn = headerActions.createEl('button', {
+            cls: 'clickable-icon pakcli-inspector-close-btn',
+            text: '✕',
+            title: 'Tutup Inspector'
+        });
+        closeBtn.onclick = async (e) => {
+            e.stopPropagation();
+            await this.toggleInspector(false);
+        };
 
         if (this.scopedFolder) {
             const scopeBanner = this.inspectorEl.createDiv({ cls: 'pakcli-inspector-scope-banner' });
@@ -3259,7 +3327,9 @@ export class BubbleGraphView extends ItemView {
             isSimulationLocked: this.isSimulationLocked,
             zoom: this.transform.zoom,
             panX: this.transform.panX,
-            panY: this.transform.panY
+            panY: this.transform.panY,
+            inspectorMode: this.inspectorMode,
+            inspectorSide: this.inspectorSide
         };
 
         if (!this.plugin.settings.bubbleViewScopePresets) {
@@ -3305,6 +3375,15 @@ export class BubbleGraphView extends ItemView {
         if (preset.zoom !== undefined && preset.panX !== undefined && preset.panY !== undefined) {
             this.transform = { zoom: preset.zoom, panX: preset.panX, panY: preset.panY };
         }
+        if (preset.inspectorMode) {
+            this.inspectorMode = preset.inspectorMode;
+            this.plugin.settings.bubbleInspectorMode = preset.inspectorMode;
+        }
+        if (preset.inspectorSide) {
+            this.inspectorSide = preset.inspectorSide;
+            this.plugin.settings.bubbleInspectorSide = preset.inspectorSide;
+        }
+        this.applyInspectorLayout();
 
         this.plugin.settings.activeBubblePresetId = preset.id;
         await this.plugin.saveSettings();
@@ -3366,6 +3445,8 @@ export class BubbleGraphView extends ItemView {
         p.zoom = this.transform.zoom;
         p.panX = this.transform.panX;
         p.panY = this.transform.panY;
+        p.inspectorMode = this.inspectorMode;
+        p.inspectorSide = this.inspectorSide;
         p.updatedAt = Date.now();
 
         this.plugin.settings.activeBubblePresetId = p.id;

@@ -115,6 +115,8 @@ export interface BubbleGraphSettings {
     bubbleRelationshipAllScopeState?: boolean;
     bubbleViewScopePresets?: BubbleViewScopePreset[];
     activeBubblePresetId?: string | null;
+    bubbleInspectorMode?: 'pinned' | 'overlay';
+    bubbleInspectorSide?: 'left' | 'right';
 }
 
 export interface BubbleViewScopePreset {
@@ -143,6 +145,8 @@ export interface BubbleViewScopePreset {
     zoom?: number;
     panX?: number;
     panY?: number;
+    inspectorMode?: 'pinned' | 'overlay';
+    inspectorSide?: 'left' | 'right';
 }
 
 export interface PakCLITableSettings extends 
@@ -259,6 +263,8 @@ export const DEFAULT_BUBBLE_GRAPH_SETTINGS: BubbleGraphSettings = {
     bubbleRelationshipAllScopeState: false,
     bubbleViewScopePresets: [],
     activeBubblePresetId: null,
+    bubbleInspectorMode: 'pinned',
+    bubbleInspectorSide: 'right',
 };
 
 export const DEFAULT_TABLE_SETTINGS: PakCLITableSettings = {
