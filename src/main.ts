@@ -60,8 +60,12 @@ import {
 	SUPPORTED_AUDIO_EXTENSIONS 
 } from './features/audio';
 
+// Ribbon Organizer & Grouping Imports
+import { RibbonManager, RibbonManagerSettingTab } from './features/ribbon';
+
 export default class PakCLITablePlugin extends Plugin {
 	declare settings: PakCLITableSettings;
+	ribbonManager!: RibbonManager;
 	router!: AssetRouter;
 	codeblockScaler!: CodeblockScaler;
 	leafletPlugin!: BasesLeafletViewPlugin;
@@ -282,6 +286,18 @@ export default class PakCLITablePlugin extends Plugin {
 	}
 
 	async onload(): Promise<void> {
+		// Initialize Ribbon Manager & hook prototype immediately before any ribbon buttons are created
+		this.ribbonManager = new RibbonManager(this.app, this);
+		this.ribbonManager.init();
+
+		this.addCommand({
+			id: 'open-ribbon-manager-settings',
+			name: 'Open Ribbon Manager Settings',
+			callback: () => {
+				this.openSettingsTab('table-ribbon-manager');
+			}
+		});
+
 		// 1. Resolve Vault Root Path
 		const adapter = this.app.vault.adapter as { getBasePath?: () => string };
 		if (typeof adapter.getBasePath === 'function') {
@@ -1357,6 +1373,11 @@ export default class PakCLITablePlugin extends Plugin {
 	}
 
 	async onunload() {
+		// Clean up Ribbon Manager
+		if (this.ribbonManager) {
+			this.ribbonManager.destroy();
+		}
+
 		// 1. Remove ribbon icon if present
 		if (this.bubbleRibbonEl) {
 			this.bubbleRibbonEl.remove();
@@ -5468,6 +5489,20 @@ export default class PakCLITablePlugin extends Plugin {
 								window.setTimeout(() => this.audioEngine?.playPaperSlide(), 280);
 							});
 					});
+			}
+		});
+
+		// 8. Ribbon Organizer & Grouping Handler (table-ribbon-manager)
+		settingsTab.registerLocalSection({
+			id: 'table-ribbon-manager',
+			category: 'table',
+			title: 'Ribbon Organizer & Grouping',
+			icon: 'layout-grid',
+			isInstalled: true,
+			render: (containerEl) => {
+				const ribbonTab = new RibbonManagerSettingTab(this.app, this, this.ribbonManager);
+				ribbonTab.containerEl = containerEl;
+				ribbonTab.display();
 			}
 		});
 

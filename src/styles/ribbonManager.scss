@@ -1,0 +1,271 @@
+/* ==========================================================================
+   PakCLI Ribbon Manager & Ribbon Grouping Styling
+   ========================================================================== */
+
+/* 1. Ribbon Injected Spacers & Dividers in Left Ribbon */
+.pakcli-ribbon-injected.pakcli-ribbon-divider {
+  display: block !important;
+  box-sizing: border-box;
+  pointer-events: none;
+  user-select: none;
+  flex-shrink: 0;
+
+  /* Spacing Sizes (Reduced 50% for compact elegance) */
+  &.mod-spacing-compact {
+    margin-top: 2px;
+    margin-bottom: 2px;
+  }
+
+  &.mod-spacing-medium {
+    margin-top: 4px;
+    margin-bottom: 4px;
+  }
+
+  &.mod-spacing-large {
+    margin-top: 7px;
+    margin-bottom: 7px;
+  }
+
+  /* Divider Styles */
+  &.mod-space {
+    height: 1px;
+    border: none;
+    background: transparent;
+  }
+
+  &.mod-hairline {
+    height: 1px;
+    width: 55%;
+    margin-left: auto;
+    margin-right: auto;
+    background: var(--background-modifier-border);
+    opacity: 0.7;
+  }
+
+  &.mod-dot {
+    height: 3px;
+    width: 3px;
+    border-radius: 50%;
+    margin-left: auto;
+    margin-right: auto;
+    background: var(--text-muted);
+    opacity: 0.5;
+  }
+}
+
+/* 2. Hidden Ribbon Button State */
+.side-dock-ribbon-action.pakcli-ribbon-hidden,
+.clickable-icon.pakcli-ribbon-hidden {
+  display: none !important;
+}
+
+/* 3. Dedicated Settings Tab Styles */
+.pakcli-ribbon-settings-tab {
+  .pakcli-ribbon-header-wrap {
+    margin-bottom: 18px;
+  }
+
+  .pakcli-ribbon-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin: 20px 0 16px 0;
+    padding: 10px 14px;
+    background: var(--background-secondary);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 8px;
+
+    .pakcli-ribbon-search-input {
+      flex: 1;
+      min-width: 220px;
+      padding: 6px 12px;
+      background: var(--background-primary);
+      border: 1px solid var(--background-modifier-border);
+      border-radius: 6px;
+      color: var(--text-normal);
+      font-size: 13px;
+
+      &:focus {
+        border-color: var(--interactive-accent);
+        outline: none;
+      }
+    }
+
+    .pakcli-ribbon-btn-row {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+  }
+
+  .pakcli-ribbon-groups-container {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+
+  .pakcli-ribbon-empty-card {
+    padding: 24px;
+    text-align: center;
+    background: var(--background-secondary);
+    border: 1px dashed var(--background-modifier-border);
+    border-radius: 8px;
+    color: var(--text-muted);
+    font-style: italic;
+  }
+
+  .pakcli-ribbon-group-card {
+    background: var(--background-secondary);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 8px;
+    overflow: hidden;
+    transition: border-color 0.2s ease;
+
+    &:hover {
+      border-color: var(--background-modifier-border-hover);
+    }
+
+    &.is-vanilla {
+      border-left: 3px solid var(--interactive-accent);
+    }
+
+    .pakcli-ribbon-group-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 14px;
+      background: var(--background-secondary-alt);
+      border-bottom: 1px solid var(--background-modifier-border);
+
+      .pakcli-ribbon-group-title-wrap {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+
+        .pakcli-ribbon-group-badge-icon {
+          font-size: 14px;
+        }
+
+        .pakcli-ribbon-group-title {
+          font-size: 14px;
+          color: var(--text-normal);
+        }
+
+        .pakcli-ribbon-count-badge {
+          display: inline-block;
+          padding: 2px 7px;
+          font-size: 11px;
+          font-weight: 500;
+          border-radius: 12px;
+          background: var(--background-modifier-border);
+          color: var(--text-muted);
+        }
+      }
+
+      .pakcli-ribbon-group-controls {
+        display: flex;
+        gap: 4px;
+
+        .pakcli-ribbon-move-btn {
+          padding: 2px 8px;
+          font-size: 12px;
+          background: var(--background-primary);
+          border: 1px solid var(--background-modifier-border);
+          border-radius: 4px;
+          cursor: pointer;
+          color: var(--text-muted);
+
+          &:hover {
+            color: var(--text-normal);
+            border-color: var(--interactive-accent);
+          }
+        }
+      }
+    }
+
+    .pakcli-ribbon-items-list {
+      display: flex;
+      flex-direction: column;
+
+      .pakcli-ribbon-item-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 8px 14px;
+        border-bottom: 1px solid var(--background-modifier-border);
+        transition: background-color 0.15s ease, opacity 0.15s ease;
+
+        &:last-child {
+          border-bottom: none;
+        }
+
+        &:hover {
+          background-color: var(--background-primary-alt);
+        }
+
+        &.is-hidden {
+          opacity: 0.55;
+          background-color: var(--background-secondary);
+
+          .pakcli-ribbon-item-title {
+            text-decoration: line-through;
+            color: var(--text-faint);
+          }
+        }
+
+        .pakcli-ribbon-item-info {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          flex: 1;
+          min-width: 0;
+
+          .pakcli-ribbon-icon-preview {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 22px;
+            height: 22px;
+            color: var(--text-muted);
+
+            svg {
+              width: 18px;
+              height: 18px;
+            }
+          }
+
+          .pakcli-ribbon-item-title {
+            font-size: 13px;
+            color: var(--text-normal);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+          }
+        }
+
+        .pakcli-ribbon-item-controls {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+
+          .pakcli-ribbon-item-move-btn {
+            padding: 2px 6px;
+            font-size: 11px;
+            background: transparent;
+            border: 1px solid var(--background-modifier-border);
+            border-radius: 4px;
+            cursor: pointer;
+            color: var(--text-muted);
+
+            &:hover {
+              color: var(--text-normal);
+              border-color: var(--interactive-accent);
+            }
+          }
+        }
+      }
+    }
+  }
+}

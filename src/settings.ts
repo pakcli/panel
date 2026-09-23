@@ -9,6 +9,9 @@ export type { ExplorerSectionId, ExplorerSettings, DictionaryFolderEntry, Dictio
 import { AudioPluginSettings, DEFAULT_AUDIO_SETTINGS } from './features/audio/types';
 export type { AudioPluginSettings };
 export { DEFAULT_AUDIO_SETTINGS };
+import { RibbonManagerSettings, DEFAULT_RIBBON_MANAGER_SETTINGS } from './features/ribbon/types';
+export type { RibbonManagerSettings };
+export { DEFAULT_RIBBON_MANAGER_SETTINGS };
 
 export type BubbleGraphIntegrationMode = 'deactivate' | 'replace' | 'second';
 export type BubbleNodeGlyphOption = 'no-dot' | 'dot' | 'plus' | 'minus' | 'i' | 'square' | 'ring' | 'star';
@@ -114,7 +117,8 @@ export interface PakCLITableSettings extends
     BasesLeafletViewSettings,
     BubbleGraphSettings,
     ExplorerSettings,
-    AudioPluginSettings 
+    AudioPluginSettings,
+    RibbonManagerSettings 
 {
     dateFormat: string;
     codeblockWrapMode: 'flowclip' | 'wrap' | 'scalefit';
@@ -224,6 +228,7 @@ export const DEFAULT_TABLE_SETTINGS: PakCLITableSettings = {
     ...DEFAULT_BUBBLE_GRAPH_SETTINGS,
     ...DEFAULT_EXPLORER_SETTINGS,
     ...DEFAULT_AUDIO_SETTINGS,
+    ...DEFAULT_RIBBON_MANAGER_SETTINGS,
     dateFormat: '_{yyyy}{mm}{dd}',
     codeblockWrapMode: 'flowclip',
     codeblockLanguageRules: [

@@ -25,6 +25,7 @@ export class SplitViewManager implements HoverParent {
   private badgeDebounce: number | null = null;
   private saveCsvTimeout: ReturnType<typeof setTimeout> | null = null;
   private onFolderClickBound: ((e: MouseEvent) => void) | null = null;
+  private explorerResizeObserver: ResizeObserver | null = null;
 
   constructor(plugin: PakCLITablePlugin) {
     this.plugin = plugin;
@@ -50,6 +51,10 @@ export class SplitViewManager implements HoverParent {
     // Flush: save history immediately on destroy so it survives exit/reload
     if (this.recentFilesList.length > 0) {
       this.saveRecentsCsvArtifact().catch(() => { });
+    }
+    if (this.explorerResizeObserver) {
+      this.explorerResizeObserver.disconnect();
+      this.explorerResizeObserver = null;
     }
     if (this.mutationObserver) {
       this.mutationObserver.disconnect();
@@ -130,7 +135,14 @@ export class SplitViewManager implements HoverParent {
       })
     );
 
-    // 6. Enable Ctrl+Click multi-select in File Explorer & Recent list
+    // 6. Listen to workspace resize to dynamically adapt [base] vs [b] badge width limit
+    this.plugin.registerEvent(
+      this.app.workspace.on('resize', () => {
+        this.recheckAllBaseBadges();
+      })
+    );
+
+    // 7. Enable Ctrl+Click multi-select in File Explorer & Recent list
     this.initCtrlMultiSelect();
   }
 
@@ -1859,9 +1871,8 @@ views:
           menu.showAtMouseEvent(e);
         });
         badgesWrap.appendChild(badgeBase);
-      } else {
-        badgeBase.setText('base');
       }
+      this.updateBaseBadgeWidthAdaptive(titleEl, contentEl, badgeBase);
 
       // Ensure i is positioned before base
       if (badgeI && badgeBase && badgeI.nextSibling !== badgeBase) {
@@ -1933,6 +1944,109 @@ views:
     }
 
     this.applyCaptainFolderTextColors(containerEl);
+
+    // Adaptive check on next animation frame to catch post-reflow layout widths
+    requestAnimationFrame(() => {
+      this.recheckAllBaseBadges(containerEl);
+    });
+
+    // Ensure ResizeObserver is actively watching the container to adapt badges dynamically
+    if (containerEl) {
+      if (!this.explorerResizeObserver) {
+        this.explorerResizeObserver = new ResizeObserver(() => {
+          this.recheckAllBaseBadges();
+        });
+      }
+      this.explorerResizeObserver.observe(containerEl);
+    }
+  }
+
+  /**
+   * Adaptive base badge width: Automatically shortens [base] to [b]
+   * when the row hits the width limit before sacrificing/truncating the folder name text.
+   */
+  private updateBaseBadgeWidthAdaptive(
+    titleEl: HTMLElement,
+    contentEl: HTMLElement,
+    badgeBase: HTMLElement
+  ): void {
+    if (!badgeBase || !contentEl || badgeBase.style.display === 'none') return;
+
+    // Must be attached to DOM and visible with non-zero dimensions to measure accurately
+    const titleRect = titleEl.getBoundingClientRect();
+    if (titleRect.width === 0 || titleRect.height === 0) return;
+
+    const badgesWrap = (badgeBase.closest('.pakcli-folder-index-badges') as HTMLElement) || badgeBase;
+    const badgesRect = badgesWrap.getBoundingClientRect();
+    const contentRect = contentEl.getBoundingClientRect();
+
+    // Determine the usable inner right boundary of the folder row
+    const titleStyle = window.getComputedStyle(titleEl);
+    const paddingRight = parseFloat(titleStyle.paddingRight || '0') || 0;
+    const borderRight = parseFloat(titleStyle.borderRightWidth || '0') || 0;
+    let usableRight = titleRect.right - paddingRight - borderRight;
+
+    // If an external flair (note count badge, etc.) sits at the right edge, account for it
+    const flair = titleEl.querySelector<HTMLElement>(
+      '.tree-item-flair, .tree-item-flair-outer, .nav-folder-title-extra'
+    );
+    if (flair && flair.style.display !== 'none' && flair.offsetParent !== null) {
+      const flairRect = flair.getBoundingClientRect();
+      if (flairRect.width > 0 && flairRect.left < usableRight && flairRect.left > badgesRect.left) {
+        usableRight = flairRect.left - 2;
+      }
+    }
+
+    // Check if folder name text is currently being truncated by CSS (scrollWidth > rendered width)
+    const textDeficit = Math.max(0, contentEl.scrollWidth - Math.ceil(contentRect.width));
+    const isTextTruncated = textDeficit > 1;
+
+    // Remaining free space between the badges and the row's usable right boundary
+    const freeSpace = usableRight - badgesRect.right;
+    const isShortened = badgeBase.classList.contains('is-shortened');
+
+    if (!isShortened) {
+      // Currently [base] (min-width: 30px).
+      // Shorten to [b] (min-width: 16px) only when it hits the limit (freeSpace <= 1px)
+      // or when the folder text is already being truncated by flex compression.
+      if (freeSpace <= 1 || isTextTruncated) {
+        badgeBase.setText('b');
+        badgeBase.addClass('is-shortened');
+        badgeBase.setAttribute('title', badgeBase.getAttribute('aria-label') || 'index.base');
+      }
+    } else {
+      // Currently [b] (min-width: 16px). The delta to [base] is 14px.
+      // Only expand back to [base] if:
+      // 1. Folder text is completely untruncated (textDeficit <= 1)
+      // 2. There is ample free space to the right (>= 18px = 14px delta + 4px safety buffer)
+      // This prevents any oscillating/flickering layout loop.
+      if (!isTextTruncated && freeSpace >= 18) {
+        badgeBase.setText('base');
+        badgeBase.removeClass('is-shortened');
+        badgeBase.removeAttribute('title');
+      }
+    }
+  }
+
+  public recheckAllBaseBadges(customContainer?: HTMLElement): void {
+    const leaves = this.app.workspace.getLeavesOfType('file-explorer');
+    if (!leaves || leaves.length === 0) return;
+    const containers: HTMLElement[] = customContainer
+      ? [customContainer]
+      : leaves.map((l) => (l.view as any)?.containerEl).filter(Boolean);
+
+    for (const container of containers) {
+      const folderTitleElements = container.querySelectorAll<HTMLElement>(
+        '.nav-folder-title, .tree-item-self.nav-folder-title'
+      );
+      folderTitleElements.forEach((titleEl) => {
+        const badgeBase = titleEl.querySelector<HTMLElement>('.pakcli-badge-base');
+        if (!badgeBase || badgeBase.style.display === 'none') return;
+
+        const contentEl = (titleEl.querySelector('.nav-folder-title-content, .tree-item-inner') as HTMLElement) || titleEl;
+        this.updateBaseBadgeWidthAdaptive(titleEl, contentEl, badgeBase);
+      });
+    }
   }
 
   public removeCaptainFolderTextColors(customContainer?: HTMLElement) {

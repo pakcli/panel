@@ -139,6 +139,11 @@
   &.pakcli-badge-base {
     min-width: 30px;
     text-transform: lowercase;
+
+    &.is-shortened {
+      min-width: 16px !important;
+      padding: 1px 3px !important;
+    }
   }
 
   &.has-file {
