@@ -1,7 +1,9 @@
-import { Setting } from 'obsidian';
+import { Setting, setIcon } from 'obsidian';
 import { TreeConfig } from '../utils/parser';
 import { ViewMode } from '../renderers/DiagramRenderer';
 import { Spinner } from './Spinner';
+import { TREE_FORMAT_RULES_MD, TREE_FORMAT_RULES_BRIEF, TREE_EXAMPLE_CODEBLOCK } from '../utils/formatRules';
+import { copyToClipboard } from '../utils/clipboard';
 
 /**
  * SettingsPanel component - Settings panel with view mode, toggles, and spinners
@@ -63,6 +65,12 @@ export class SettingsPanel {
 		
 		// Level number offset spinner
 		this.renderOffsetSpinner(settingsPanel);
+
+		// Header casing dropdown (lowercase | capitalcase)
+		this.renderHeaderCaseDropdown(settingsPanel);
+		
+		// Format rules & AI cheat sheet
+		this.renderRulesSection(settingsPanel);
 		
 		return settingsPanel;
 	}
@@ -147,5 +155,62 @@ export class SettingsPanel {
 			}
 		);
 		offsetGroup.appendChild(spinner.render());
+	}
+
+	private renderHeaderCaseDropdown(container: HTMLElement): void {
+		const headerCaseGroup = container.createDiv({ cls: 'settings-group' });
+		headerCaseGroup.createEl("label", { text: "header case", cls: 'settings-label' });
+		const select = headerCaseGroup.createEl("select", {
+			cls: 'settings-select'
+		});
+		select.createEl("option", { value: 'lowercase', text: 'lowercase (default)' });
+		select.createEl("option", { value: 'capitalcase', text: 'capitalcase' });
+		select.value = this.config.header || 'lowercase';
+		select.onchange = async () => {
+			await this.onConfigChange({ header: select.value as 'lowercase' | 'capitalcase' });
+		};
+	}
+
+	private renderRulesSection(container: HTMLElement): void {
+		const rulesGroup = container.createDiv({ cls: 'settings-group tree-settings-rules-group' });
+		rulesGroup.createEl("label", { text: "format rules & ai prompt", cls: 'settings-label' });
+		
+		const desc = rulesGroup.createDiv({ cls: 'tree-rules-desc-text' });
+		desc.textContent = "Copyable format rules for programmers, users, or AI assistants:";
+
+		const btnRow = rulesGroup.createDiv({ cls: 'tree-rules-btn-row' });
+		
+		const copyRulesBtn = btnRow.createEl("button", {
+			cls: 'tree-control-button tree-rules-panel-btn'
+		});
+		const rulesIcon = copyRulesBtn.createSpan({ cls: 'tree-btn-icon' });
+		setIcon(rulesIcon, 'copy');
+		const rulesLabel = copyRulesBtn.createSpan({ text: ' copy rules' });
+		copyRulesBtn.title = "Copy complete format rules & AI prompt";
+		copyRulesBtn.onclick = async () => {
+			const ok = await copyToClipboard(TREE_FORMAT_RULES_MD);
+			if (ok) {
+				rulesLabel.textContent = " Copied!";
+				window.setTimeout(() => (rulesLabel.textContent = " copy rules"), 1500);
+			}
+		};
+
+		const copyTplBtn = btnRow.createEl("button", {
+			cls: 'tree-control-button tree-rules-panel-btn'
+		});
+		const tplIcon = copyTplBtn.createSpan({ cls: 'tree-btn-icon' });
+		setIcon(tplIcon, 'file-code');
+		const tplLabel = copyTplBtn.createSpan({ text: ' copy template' });
+		copyTplBtn.title = "Copy minimal tree codeblock template";
+		copyTplBtn.onclick = async () => {
+			const ok = await copyToClipboard(TREE_EXAMPLE_CODEBLOCK);
+			if (ok) {
+				tplLabel.textContent = " Copied!";
+				window.setTimeout(() => (tplLabel.textContent = " copy template"), 1500);
+			}
+		};
+
+		const pre = rulesGroup.createEl("pre", { cls: 'tree-settings-rules-pre' });
+		pre.textContent = TREE_FORMAT_RULES_BRIEF;
 	}
 }

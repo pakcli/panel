@@ -7,19 +7,22 @@ export class ControlBar {
 	private onCopy: () => Promise<string>;
 	private onSettingsToggle: () => void;
 	private onCreateStructure?: () => void;
+	private onRulesToggle?: () => void;
 
 	constructor(
 		interactive: boolean,
 		onInteractiveToggle: () => void,
 		onCopy: () => Promise<string>,
 		onSettingsToggle: () => void,
-		onCreateStructure?: () => void
+		onCreateStructure?: () => void,
+		onRulesToggle?: () => void
 	) {
 		this.interactive = interactive;
 		this.onInteractiveToggle = onInteractiveToggle;
 		this.onCopy = onCopy;
 		this.onSettingsToggle = onSettingsToggle;
 		this.onCreateStructure = onCreateStructure;
+		this.onRulesToggle = onRulesToggle;
 	}
 
 	/**
@@ -50,6 +53,20 @@ export class ControlBar {
 			copyBtn.textContent = ok ? "Copied!" : "Fail";
 			window.setTimeout(() => (copyBtn.textContent = "copy"), 1200);
 		};
+
+		// Rules button
+		if (this.onRulesToggle) {
+			const rulesBtn = topBar.createEl("button", {
+				text: "rules",
+				cls: 'tree-control-button tree-rules-btn'
+			});
+			rulesBtn.title = "View & copy format rules for AI / programmers";
+			rulesBtn.onclick = () => {
+				if (this.onRulesToggle) {
+					this.onRulesToggle();
+				}
+			};
+		}
 
 		// Create structure button
 		if (this.onCreateStructure) {

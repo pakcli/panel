@@ -11,6 +11,7 @@ export interface TreeConfig {
 	title: string; // Title text (empty = no title)
 	offsetLevelNumbered: number; // Offset for numbering (0 = root is 1, 1 = root has no number)
 	currentView: number; // 1 = tree, 2 = table full, 3 = table folder
+	header: 'lowercase' | 'capitalcase'; // Default: lowercase
 }
 
 /**
@@ -34,11 +35,12 @@ export function parseConfig(source: string): { config: TreeConfig; contentStart:
 	const lines = source.split("\n");
 	const config: TreeConfig = {
 		interactive: false,
-		startShowLevel: 1, // Default: show root level only
+		startShowLevel: 0, // Default: 0 (collapsed)
 		levelNumbered: 0,
 		title: "",
 		offsetLevelNumbered: 0,
-		currentView: 1 // Default: tree view
+		currentView: 1, // Default: tree view
+		header: 'lowercase' // Default: lowercase
 	};
 	
 	let contentStart = 0;
@@ -77,6 +79,11 @@ export function parseConfig(source: string): { config: TreeConfig; contentStart:
 					config.currentView = !isNaN(num) && num >= 1 && num <= 3 ? num : 1;
 				} else if (flagName === 'title') {
 					config.title = flagValue;
+				} else if (flagName === 'header') {
+					const lower = flagValue.toLowerCase();
+					config.header = (lower === 'capitalcase' || lower === 'capital' || lower === 'uppercase')
+						? 'capitalcase'
+						: 'lowercase';
 				}
 				
 				contentStart = i + 1;

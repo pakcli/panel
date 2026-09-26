@@ -1,4 +1,4 @@
-import { MarkdownPostProcessorContext, MarkdownRenderChild } from "obsidian";
+import { MarkdownPostProcessorContext, MarkdownRenderChild, setIcon } from "obsidian";
 import { parseWithConfig, TreeConfig } from '../utils/parser';
 import { treeView } from '../utils/treeFormatter';
 import { enableWikiLinks } from '../utils/rendering';
@@ -9,6 +9,8 @@ import { TableFolderRenderer } from './TableFolderRenderer';
 import { ControlBar } from '../ui/ControlBar';
 import { SettingsPanel } from '../ui/SettingsPanel';
 import { CreateStructureModal } from "../ui/CreateStructureModal";
+import { TREE_FORMAT_RULES_MD, TREE_FORMAT_RULES_BRIEF, TREE_EXAMPLE_CODEBLOCK } from '../utils/formatRules';
+import { copyToClipboard } from '../utils/clipboard';
 
 export type ViewMode = 'tree' | 'table-a' | 'table-b';
 
@@ -25,6 +27,7 @@ export class DiagramRenderer extends MarkdownRenderChild {
 	levelNumberOffset: number = 0; // Offset for level numbering (0 = root is 1, 1 = root has no number)
 	isUpdatingSource: boolean = false; // Flag to prevent re-render during source update
 	sourceHash: string; // Unique identifier for this codeblock
+	rulesBannerOpen: boolean = false; // Track if format rules banner is open
 
 	constructor(
 		plugin: TreeDiagramPlugin,
@@ -223,6 +226,12 @@ export class DiagramRenderer extends MarkdownRenderChild {
 				'-offsetlevelnumbered:' + this.levelNumberOffset,
 				'-currentview:' + this.config.currentView
 			];
+			if (this.config.header) {
+				newFlags.push('-header:' + this.config.header);
+			}
+			if (this.config.title) {
+				newFlags.push('-title:' + this.config.title);
+			}
 			
 			// Reconstruct codeblock with flags at the top
 			const newCodeblock = [
@@ -317,6 +326,15 @@ export class DiagramRenderer extends MarkdownRenderChild {
 			displayTitle = rootNames.join(", ");
 		}
 
+		// Apply header casing to displayTitle if present
+		if (displayTitle) {
+			if (this.config.header === 'capitalcase') {
+				displayTitle = displayTitle.replace(/\b[a-z]/g, c => c.toUpperCase());
+			} else {
+				displayTitle = displayTitle.toLowerCase();
+			}
+		}
+
 		// Add title if we have one
 		if (displayTitle) {
 			if (this.config.startShowLevel === 0) {
@@ -340,7 +358,8 @@ export class DiagramRenderer extends MarkdownRenderChild {
 					this.config.levelNumbered,
 					`${treeIndex + 1}`, // Root number
 					this.config.startShowLevel, // Pass startShowLevel to control visible depth
-					this.levelNumberOffset // Pass level number offset
+					this.levelNumberOffset, // Pass level number offset
+					this.config.header || 'lowercase' // Pass header casing format
 				);
 				allLines.push(...treeLines);
 				
@@ -506,10 +525,74 @@ export class DiagramRenderer extends MarkdownRenderChild {
 			},
 			() => {
 				this.handleCreateStructure();
+			},
+			() => {
+				this.rulesBannerOpen = !this.rulesBannerOpen;
+				this.render();
 			}
 		);
 		
 		controlBar.render(contentArea);
+
+		if (this.rulesBannerOpen) {
+			this.renderRulesBanner(contentArea);
+		}
+	}
+
+	renderRulesBanner(contentArea: HTMLElement) {
+		const banner = contentArea.createDiv({ cls: 'tree-rules-banner' });
+		
+		const header = banner.createDiv({ cls: 'tree-rules-banner-header' });
+		const titleEl = header.createDiv({ cls: 'tree-rules-banner-title' });
+		const iconSpan = titleEl.createSpan({ cls: 'tree-rules-icon' });
+		setIcon(iconSpan, 'book-open');
+		titleEl.createEl('strong', { text: 'Tree Format Rules & AI Prompt' });
+		
+		const actions = header.createDiv({ cls: 'tree-rules-banner-actions' });
+		
+		const copyRulesBtn = actions.createEl('button', {
+			cls: 'tree-control-button tree-rules-action-btn'
+		});
+		const copyRulesIcon = copyRulesBtn.createSpan({ cls: 'tree-btn-icon' });
+		setIcon(copyRulesIcon, 'copy');
+		const copyRulesLabel = copyRulesBtn.createSpan({ text: ' copy rules' });
+		copyRulesBtn.title = 'Copy complete format specification and AI prompt to clipboard';
+		copyRulesBtn.onclick = async () => {
+			const ok = await copyToClipboard(TREE_FORMAT_RULES_MD);
+			if (ok) {
+				copyRulesLabel.textContent = ' Copied!';
+				window.setTimeout(() => (copyRulesLabel.textContent = ' copy rules'), 1500);
+			}
+		};
+
+		const copyTplBtn = actions.createEl('button', {
+			cls: 'tree-control-button tree-rules-action-btn'
+		});
+		const copyTplIcon = copyTplBtn.createSpan({ cls: 'tree-btn-icon' });
+		setIcon(copyTplIcon, 'file-code');
+		const copyTplLabel = copyTplBtn.createSpan({ text: ' copy template' });
+		copyTplBtn.title = 'Copy minimal tree codeblock template to clipboard';
+		copyTplBtn.onclick = async () => {
+			const ok = await copyToClipboard(TREE_EXAMPLE_CODEBLOCK);
+			if (ok) {
+				copyTplLabel.textContent = ' Copied!';
+				window.setTimeout(() => (copyTplLabel.textContent = ' copy template'), 1500);
+			}
+		};
+
+		const closeBtn = actions.createEl('button', {
+			cls: 'tree-control-button tree-rules-close-btn'
+		});
+		setIcon(closeBtn, 'x');
+		closeBtn.title = 'Close rules banner';
+		closeBtn.onclick = () => {
+			this.rulesBannerOpen = false;
+			this.render();
+		};
+
+		const body = banner.createDiv({ cls: 'tree-rules-banner-body' });
+		const pre = body.createEl('pre', { cls: 'tree-rules-pre' });
+		pre.textContent = TREE_FORMAT_RULES_BRIEF;
 	}
 
 	handleCreateStructure() {

@@ -22,6 +22,8 @@ import { DiagramRenderer } from './features/tree/renderers/DiagramRenderer';
 import { registerCommands as registerTreeCommands } from './features/tree/commands/index';
 import { FolderSuggest } from './features/tree/ui/folder-suggest';
 import { ConfirmModal } from './features/tree/ui/modals';
+import { TREE_FORMAT_RULES_MD, TREE_FORMAT_RULES_BRIEF, TREE_EXAMPLE_CODEBLOCK } from './features/tree/utils/formatRules';
+import { copyToClipboard } from './features/tree/utils/clipboard';
 import { TimelineNarrativeRenderer } from './features/timelineNarrative/TimelineNarrativeRenderer';
 import { TimelineNarrativeEditorSuggest } from './features/timelineNarrative/timelineAutocomplete';
 
@@ -4247,6 +4249,38 @@ export default class PakCLITablePlugin extends Plugin {
 								await this.saveSettings();
 							});
 					});
+
+				new Setting(containerEl)
+					.setName('Tree Format Rules & AI Prompt')
+					.setDesc('Standard syntax rules and copy-pasteable guide for programmers, AI bots (ChatGPT, Claude, Gemini), and users.')
+					.setHeading();
+
+				new Setting(containerEl)
+					.setName('Copy Specification')
+					.setDesc('Copy the full specification and prompt or minimal codeblock template.')
+					.addButton((btn) => {
+						btn.setIcon('copy')
+							.setButtonText('Copy Full Rules & AI Prompt')
+							.setCta()
+							.onClick(async () => {
+								await copyToClipboard(TREE_FORMAT_RULES_MD);
+								btn.setButtonText('Copied!');
+								setTimeout(() => btn.setButtonText('Copy Full Rules & AI Prompt'), 1500);
+							});
+					})
+					.addButton((btn) => {
+						btn.setIcon('file-code')
+							.setButtonText('Copy Template')
+							.onClick(async () => {
+								await copyToClipboard(TREE_EXAMPLE_CODEBLOCK);
+								btn.setButtonText('Copied!');
+								setTimeout(() => btn.setButtonText('Copy Template'), 1500);
+							});
+					});
+
+				const rulesCard = containerEl.createDiv({ cls: 'pakcli-tree-rules-card' });
+				const pre = rulesCard.createEl('pre', { cls: 'pakcli-tree-rules-pre' });
+				pre.textContent = TREE_FORMAT_RULES_BRIEF;
 			}
 		});
 

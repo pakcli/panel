@@ -6,6 +6,26 @@ const LINE = "│   ";
 const BLANK = "    ";
 
 /**
+ * Transforms header text casing safely without corrupting internal link targets in wikilinks.
+ */
+export function applyHeaderCase(text: string, mode: 'lowercase' | 'capitalcase' = 'lowercase'): string {
+    const transformWord = (s: string) => {
+        if (mode === 'lowercase') return s.toLowerCase();
+        // Capitalcase / Titlecase: capitalize first letter of each word
+        return s.replace(/\b[a-z]/g, c => c.toUpperCase());
+    };
+
+    if (text.includes('[[')) {
+        return text.replace(/\[\[(.*?)(?:\|(.*?))?\]\]/g, (_, target, alias) => {
+            const display = alias || target;
+            return `[[${target}|${transformWord(display)}]]`;
+        }).replace(/^([^[]+)/g, (_, prefix) => transformWord(prefix));
+    }
+
+    return transformWord(text);
+}
+
+/**
  * Parse a hierarchy of Nodes into corresponding text to display in tree diagram.
  * 
  * @param root The root node
@@ -16,6 +36,7 @@ const BLANK = "    ";
  * @param numberPrefix Prefix for hierarchical numbering (e.g., "1" for root)
  * @param startShowLevel Initial depth level to show (0 = none, 1 = root only, 2 = root + children, etc.)
  * @param levelNumberOffset Offset for numbering depth (0 = root is 1, 1 = root has no number, level 2 is 1, etc.)
+ * @param headerCase Header casing format ('lowercase' or 'capitalcase')
  * @returns An array of lines to display in the tree diagram,
  *          each line corresponds to a Node
  */
@@ -27,7 +48,8 @@ export function treeView(
     levelNumbered: number = 0,
     numberPrefix: string = "",
     startShowLevel: number = 999,
-    levelNumberOffset: number = 0
+    levelNumberOffset: number = 0,
+    headerCase: 'lowercase' | 'capitalcase' = 'lowercase'
 ): string[] {
     let output: string[] = [];
     let queue: Array<{ node: TreeNode; path: string; depth: number; numberParts: number[] }> = [];
@@ -53,8 +75,8 @@ export function treeView(
         // Root gets numbered only if offset is 0
         rootLine += `${numberPrefix}. `;
     }
-    // Add root name (which may include wikilinks)
-    rootLine += root.name;
+    // Add root name (which may include wikilinks) - root is a header!
+    rootLine += applyHeaderCase(root.name, headerCase);
     output.push(rootLine);
 
     // Add root children to queue with numbering
@@ -141,7 +163,12 @@ export function treeView(
         }
         
         // Add node name (which may include wikilinks)
-        line += node.name;
+        // If node has children, it's a folder/header (apply headerCase)
+        // If node has no children, it's "isi" (content/leaf node, keep case)
+        const nodeDisplayName = hasChildren 
+            ? applyHeaderCase(node.name, headerCase) 
+            : node.name;
+        line += nodeDisplayName;
 
         output.push(line);
 
