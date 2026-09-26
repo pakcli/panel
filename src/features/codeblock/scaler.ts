@@ -1617,6 +1617,9 @@ export class CodeblockScaler {
 				});
 			} else {
 				// Mode 1 ('all-lines') or Mode 2 ('current'): 1 bottom slider bar
+				// First reset --codeblock-scroll-width to accurately read natural text widths
+				currentBlockLines.forEach((l) => l.style.removeProperty('--codeblock-scroll-width'));
+
 				let maxScrollWidth = 0;
 				currentBlockLines.forEach((l) => {
 					if (l.scrollWidth > maxScrollWidth) maxScrollWidth = l.scrollWidth;
@@ -1639,9 +1642,11 @@ export class CodeblockScaler {
 					line.style.setProperty('box-sizing', 'border-box', 'important');
 
 					if (isAllLines) {
-						// Mode 1: 1 slider controls all lines together by expanding scrollWidth
+						// Mode 1: 1 slider controls all lines together as a whole block
+						const naturalWidth = line.scrollWidth;
+						const extraWidth = Math.max(0, maxScrollWidth - naturalWidth);
 						line.classList.add('pakcli-codeblock-line-all-synced');
-						line.style.setProperty('--codeblock-scroll-width', `${maxScrollWidth}px`);
+						line.style.setProperty('--codeblock-scroll-width', `${extraWidth}px`);
 					} else {
 						// Mode 2: current (flowing lines only)
 						line.classList.remove('pakcli-codeblock-line-all-synced');
