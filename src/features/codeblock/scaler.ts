@@ -1002,7 +1002,7 @@ export class CodeblockScaler {
 					break;
 				}
 				const clone = nextLine.cloneNode(true) as HTMLElement;
-				clone.querySelectorAll('.copy-code-button, .pakcli-cb-copy-btn, .code-block-flair, button').forEach(el => el.remove());
+				clone.querySelectorAll('.copy-code-button, .pakcli-cb-copy-btn, .code-block-flair, .pakcli-codeblock-flowclip-bar, button').forEach(el => el.remove());
 				codeLines.push(clone.textContent ?? '');
 				nextLine = nextLine.nextElementSibling as HTMLElement | null;
 			}
@@ -1015,7 +1015,7 @@ export class CodeblockScaler {
 				const pre = (container.tagName === 'PRE' ? container : container.querySelector('pre')) as HTMLElement | null;
 				const codeEl = (pre?.querySelector('code') ?? pre ?? container.querySelector('code') ?? container) as HTMLElement;
 				const clone = (codeEl || pre || container).cloneNode(true) as HTMLElement;
-				clone.querySelectorAll('.copy-code-button, .pakcli-cb-copy-btn, .code-block-flair, .code-block-header, button').forEach((el) => el.remove());
+				clone.querySelectorAll('.copy-code-button, .pakcli-cb-copy-btn, .code-block-flair, .code-block-header, .pakcli-codeblock-flowclip-bar, button').forEach((el) => el.remove());
 				rawCode = clone.textContent ?? '';
 			}
 		}
@@ -1237,11 +1237,19 @@ export class CodeblockScaler {
 
 			const behavior = this.getBehaviorForLanguage(currentLanguage);
 
-			currentBlockLines.forEach((line) => {
-				line.classList.remove('pakcli-codeblock-wrap', 'pakcli-codeblock-line-flowclip', 'pakcli-codeblock-line-scalefit');
-				line.style.setProperty('contain', 'none', 'important');
-				if (behavior === 'wrap') {
+			// Clean up any stray bars from lines that are not the last line
+			currentBlockLines.forEach((line, idx) => {
+				if (idx !== currentBlockLines.length - 1) {
+					const stray = line.querySelector('.pakcli-codeblock-flowclip-bar');
+					if (stray) stray.remove();
+				}
+			});
+
+			if (behavior === 'wrap') {
+				currentBlockLines.forEach((line) => {
+					line.classList.remove('pakcli-codeblock-line-flowclip', 'pakcli-codeblock-line-scalefit');
 					line.classList.add('pakcli-codeblock-wrap');
+					line.style.setProperty('contain', 'none', 'important');
 					line.style.setProperty('white-space', 'pre-wrap', 'important');
 					line.style.setProperty('word-break', 'break-all', 'important');
 					line.style.setProperty('overflow-wrap', 'anywhere', 'important');
@@ -1251,8 +1259,22 @@ export class CodeblockScaler {
 					line.style.setProperty('width', 'auto', 'important');
 					line.style.setProperty('min-width', '0', 'important');
 					line.style.setProperty('box-sizing', 'border-box', 'important');
-				} else if (behavior === 'scalefit') {
+					line.scrollLeft = 0;
+
+					const oldHandler = (line as any)._pakcliScrollHandler;
+					if (oldHandler) {
+						line.removeEventListener('scroll', oldHandler);
+						(line as any)._pakcliScrollHandler = null;
+					}
+
+					const bar = line.querySelector('.pakcli-codeblock-flowclip-bar');
+					if (bar) bar.remove();
+				});
+			} else if (behavior === 'scalefit') {
+				currentBlockLines.forEach((line) => {
+					line.classList.remove('pakcli-codeblock-wrap', 'pakcli-codeblock-line-flowclip');
 					line.classList.add('pakcli-codeblock-line-scalefit');
+					line.style.setProperty('contain', 'none', 'important');
 					line.style.setProperty('white-space', 'pre', 'important');
 					line.style.setProperty('font-size', 'min(var(--code-size, 13px), 2.2vw)', 'important');
 					line.style.setProperty('overflow-x', 'auto', 'important');
@@ -1260,8 +1282,16 @@ export class CodeblockScaler {
 					line.style.setProperty('width', 'auto', 'important');
 					line.style.setProperty('min-width', '0', 'important');
 					line.style.setProperty('box-sizing', 'border-box', 'important');
-				} else {
+
+					const bar = line.querySelector('.pakcli-codeblock-flowclip-bar');
+					if (bar) bar.remove();
+				});
+			} else {
+				// FLOWCLIP: 1 CODEBLOCK = 1 SINGLE HORIZONTAL SCROLLBAR
+				currentBlockLines.forEach((line) => {
+					line.classList.remove('pakcli-codeblock-wrap', 'pakcli-codeblock-line-scalefit');
 					line.classList.add('pakcli-codeblock-line-flowclip');
+					line.style.setProperty('contain', 'none', 'important');
 					line.style.setProperty('white-space', 'pre', 'important');
 					line.style.setProperty('word-break', 'normal', 'important');
 					line.style.setProperty('word-wrap', 'normal', 'important');
@@ -1271,8 +1301,86 @@ export class CodeblockScaler {
 					line.style.setProperty('width', 'auto', 'important');
 					line.style.setProperty('min-width', '0', 'important');
 					line.style.setProperty('box-sizing', 'border-box', 'important');
+				});
+
+				// Calculate max scroll width and minimum client width across lines in this block
+				let maxScrollWidth = 0;
+				let minClientWidth = Infinity;
+				for (const line of currentBlockLines) {
+					if (line.scrollWidth > maxScrollWidth) {
+						maxScrollWidth = line.scrollWidth;
+					}
+					if (line.clientWidth > 0 && line.clientWidth < minClientWidth) {
+						minClientWidth = line.clientWidth;
+					}
 				}
-			});
+
+				const lastLine = currentBlockLines[currentBlockLines.length - 1];
+				const clientW = minClientWidth !== Infinity ? minClientWidth : (lastLine?.clientWidth || 0);
+				const hasOverflow = clientW > 0 && maxScrollWidth > clientW + 4;
+
+				let bar = lastLine?.querySelector('.pakcli-codeblock-flowclip-bar') as HTMLElement | null;
+
+				if (hasOverflow && lastLine) {
+					if (!bar) {
+						bar = document.createElement('div');
+						bar.className = 'pakcli-codeblock-flowclip-bar';
+						bar.setAttribute('contenteditable', 'false');
+						const inner = document.createElement('div');
+						inner.className = 'pakcli-codeblock-flowclip-bar-inner';
+						bar.appendChild(inner);
+						lastLine.appendChild(bar);
+					}
+					bar.style.display = 'block';
+					const inner = bar.querySelector('.pakcli-codeblock-flowclip-bar-inner') as HTMLElement;
+					if (inner) {
+						inner.style.width = `${maxScrollWidth}px`;
+					}
+
+					let isSyncing = false;
+					const blockLinesRef = [...currentBlockLines];
+
+					const syncAll = (targetScrollLeft: number, sourceEl?: HTMLElement) => {
+						if (isSyncing) return;
+						isSyncing = true;
+						try {
+							if (bar && bar !== sourceEl && bar.scrollLeft !== targetScrollLeft) {
+								bar.scrollLeft = targetScrollLeft;
+							}
+							for (const l of blockLinesRef) {
+								if (l !== sourceEl && l.scrollLeft !== targetScrollLeft) {
+									l.scrollLeft = targetScrollLeft;
+								}
+							}
+						} finally {
+							isSyncing = false;
+						}
+					};
+
+					bar.onscroll = () => {
+						syncAll(bar!.scrollLeft, bar!);
+					};
+
+					blockLinesRef.forEach((line) => {
+						const oldHandler = (line as any)._pakcliScrollHandler;
+						if (oldHandler) {
+							line.removeEventListener('scroll', oldHandler);
+						}
+						const handler = () => {
+							syncAll(line.scrollLeft, line);
+						};
+						(line as any)._pakcliScrollHandler = handler;
+						line.addEventListener('scroll', handler, { passive: true });
+					});
+				} else {
+					if (bar) {
+						bar.style.display = 'none';
+					}
+					currentBlockLines.forEach((l) => {
+						l.scrollLeft = 0;
+					});
+				}
+			}
 
 			currentBlockLines = [];
 			currentLanguage = '';
@@ -1309,5 +1417,6 @@ export class CodeblockScaler {
 			window.clearTimeout(this.debounceTimer);
 			this.debounceTimer = null;
 		}
+		document.querySelectorAll('.pakcli-codeblock-flowclip-bar').forEach((el) => el.remove());
 	}
 }
