@@ -359,7 +359,7 @@ body.pakcli-flowclip {
         white-space: pre !important;
         word-break: normal !important;
         word-wrap: normal !important;
-        overflow-x: auto !important;
+        overflow-x: hidden !important;
         overflow-y: hidden !important;
         max-width: 100% !important;
         width: auto !important;
@@ -500,16 +500,17 @@ pre.pakcli-codeblock-flowclip,
 }
 
 /* Per-block Flowclip: Live Preview CodeMirror lines (suppress individual scrollbars, fixed sticky bar at codeblock bottom) */
-body:not(.flowclip-mode-per-line) .markdown-source-view.mod-cm6 .cm-scroller .cm-content.cm-lineWrapping .cm-line.HyperMD-codeblock.pakcli-codeblock-line-flowclip,
-body:not(.flowclip-mode-per-line) .markdown-source-view.mod-cm6 .cm-content.cm-lineWrapping .cm-line.HyperMD-codeblock.pakcli-codeblock-line-flowclip,
-body:not(.flowclip-mode-per-line) .markdown-source-view.mod-cm6 .cm-line.HyperMD-codeblock.pakcli-codeblock-line-flowclip,
-body:not(.flowclip-mode-per-line) .cm-line.HyperMD-codeblock.pakcli-codeblock-line-flowclip,
-body:not(.flowclip-mode-per-line) .markdown-source-view.mod-cm6 .cm-line.pakcli-codeblock-line-flowclip,
-body:not(.flowclip-mode-per-line) .cm-line.pakcli-codeblock-line-flowclip {
+.markdown-source-view.mod-cm6 .cm-line.pakcli-codeblock-line-flowclip,
+.markdown-source-view.mod-cm6 .cm-line.HyperMD-codeblock.pakcli-codeblock-line-flowclip,
+.markdown-source-view.mod-cm6 .cm-scroller .cm-content .cm-line.pakcli-codeblock-line-flowclip,
+.cm-line.pakcli-codeblock-line-flowclip,
+.cm-line.HyperMD-codeblock.pakcli-codeblock-line-flowclip,
+.cm-line.pakcli-codeblock-line-all-synced {
     white-space: pre !important;
     word-break: normal !important;
     word-wrap: normal !important;
-    overflow-x: auto !important;
+    overflow-wrap: normal !important;
+    overflow-x: hidden !important;
     overflow-y: hidden !important;
     max-width: 100% !important;
     width: auto !important;
@@ -693,6 +694,55 @@ body pre.pakcli-codeblock-flowclip-native,
     min-width: 1px !important;
 }
 
+/* Codeblock In-Flow Bottom Slider Bar (Google <div class="rq1a2"> / VSCode style) */
+.cm-line.HyperMD-codeblock .pakcli-codeblock-slider-bar,
+.pakcli-codeblock-slider-bar {
+    display: none;
+    width: 100% !important;
+    max-width: 100% !important;
+    height: 12px !important;
+    min-height: 12px !important;
+    max-height: 12px !important;
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
+    box-sizing: border-box !important;
+    pointer-events: auto !important;
+    margin-top: 4px !important;
+    margin-bottom: 2px !important;
+    background: transparent !important;
+    border-radius: 0 0 6px 6px !important;
+    user-select: none !important;
+
+    scrollbar-width: thin !important;
+    scrollbar-color: var(--scrollbar-thumb-bg, rgba(128, 128, 128, 0.5)) transparent !important;
+
+    &::-webkit-scrollbar {
+        display: block !important;
+        height: 8px !important;
+        width: auto !important;
+    }
+    &::-webkit-scrollbar-track {
+        display: block !important;
+        background: rgba(128, 128, 128, 0.08) !important;
+        border-radius: 4px !important;
+    }
+    &::-webkit-scrollbar-thumb {
+        display: block !important;
+        background: var(--scrollbar-thumb-bg, rgba(128, 128, 128, 0.5)) !important;
+        border-radius: 4px !important;
+        &:hover {
+            background: var(--scrollbar-active-thumb-bg, var(--interactive-accent, rgba(128, 128, 128, 0.85))) !important;
+        }
+    }
+}
+
+.pakcli-codeblock-slider-inner {
+    height: 1px !important;
+    display: block !important;
+    pointer-events: none !important;
+    min-width: 1px !important;
+}
+
 body pre.pakcli-codeblock-flowclip code,
 body .markdown-rendered pre.pakcli-codeblock-flowclip code,
 body .markdown-source-view pre.pakcli-codeblock-flowclip code,
@@ -790,81 +840,6 @@ body .markdown-source-view.mod-cm6 .cm-line.HyperMD-codeblock.pakcli-codeblock-l
     }
 }
 
-/* ─── Codeblock Flowclip Single Horizontal Scrollbar on End Line ─── */
-body .markdown-source-view.mod-cm6 .cm-line.HyperMD-codeblock.pakcli-codeblock-end-scroll,
-.cm-line.HyperMD-codeblock.pakcli-codeblock-end-scroll {
-    white-space: pre !important;
-    word-break: normal !important;
-    word-wrap: normal !important;
-    overflow-x: auto !important;
-    overflow-y: hidden !important;
-    max-width: 100% !important;
-    width: auto !important;
-    min-width: 0 !important;
-    contain: none !important;
-    box-sizing: border-box !important;
-    min-height: 28px !important;
-    padding-bottom: 2px !important;
-
-    /* Prominent visible horizontal scrollbar handle */
-    scrollbar-width: thin !important;
-    scrollbar-color: var(--scrollbar-thumb-bg, rgba(128, 128, 128, 0.6)) var(--background-modifier-border, rgba(128, 128, 128, 0.15)) !important;
-    -ms-overflow-style: auto !important;
-
-    &::-webkit-scrollbar {
-        display: block !important;
-        height: 10px !important;
-        width: auto !important;
-    }
-    &::-webkit-scrollbar-track {
-        display: block !important;
-        background: var(--background-modifier-border, rgba(128, 128, 128, 0.15)) !important;
-        border-radius: 6px !important;
-    }
-    &::-webkit-scrollbar-thumb {
-        display: block !important;
-        background: var(--scrollbar-thumb-bg, rgba(128, 128, 128, 0.6)) !important;
-        border-radius: 6px !important;
-        border: 2px solid transparent !important;
-        background-clip: padding-box !important;
-    }
-    &::-webkit-scrollbar-thumb:hover {
-        background: var(--scrollbar-active-thumb-bg, var(--interactive-accent, rgba(128, 128, 128, 0.9))) !important;
-    }
-
-    &::after {
-        content: "" !important;
-        display: inline-block !important;
-        width: var(--codeblock-scroll-width, 0px) !important;
-        height: 1px !important;
-        pointer-events: none !important;
-    }
-
-    /* Keep the ``` text anchored at left margin */
-    > * {
-        position: sticky !important;
-        left: 0 !important;
-        z-index: 1 !important;
-    }
-}
-
-.pakcli-codeblock-slider {
-    display: block;
-    max-width: 100%;
-    overflow-x: auto;
-    overflow-y: hidden;
-    margin: 6px 0;
-    padding: 0;
-    box-sizing: border-box;
-
-    .cm-line.HyperMD-codeblock {
-        white-space: pre;
-        word-break: normal;
-        word-wrap: normal;
-        overflow-x: visible;
-        overflow-y: visible;
-    }
-}
 
 /* ========================================================================= */
 /* Two-Section Codeblock & Folder Sync Component                              */
