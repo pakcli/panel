@@ -112,10 +112,17 @@ function parseLine(text: string): parseLineOutput {
     let depth = 0;
     let index = 0;
 
-    // Calculate depth from tabs
-    while (text.charAt(index) === "\t") {
-        depth++;
-        index++;
+    // Calculate depth from tabs (with 4-space indentation fallback)
+    while (index < text.length) {
+        if (text.charAt(index) === "\t") {
+            depth++;
+            index++;
+        } else if (text.substring(index, index + 4) === "    ") {
+            depth++;
+            index += 4;
+        } else {
+            break;
+        }
     }
     
     const raw = text.substring(index).trim();

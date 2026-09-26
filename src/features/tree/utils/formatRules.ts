@@ -25,16 +25,68 @@ Root
 		Logo.png
 \`\`\``;
 
+export const TREE_EXAMPLE_BRANCHES_CODEBLOCK = `\`\`\`tree
+-interactive:true
+-startshowlevel:4
+-levelnumbered:0
+-offsetlevelnumbered:0
+-currentview:2
+-header:capitalcase
+-title:Git Branches
+
+Branches
+	Feat/stable-features-step-by-step
+		remote
+			2026-09-26 12:42:35 [71430f2] fix(ytd): fix 1080p resolution clamping and range slider handle edge pinning
+		local
+			2026-09-26 12:42:35 [71430f2] fix(ytd): fix 1080p resolution clamping and range slider handle edge pinning
+	Feat-get-copy
+		remote
+			2026-09-23 16:30:55 [c4cb18a] feat(scriptSync): add diff viewer with swap and directional apply actions
+		local
+			2026-09-23 16:30:55 [c4cb18a] feat(scriptSync): add diff viewer with swap and directional apply actions
+	Feat-stable-features-step-by-step
+		remote
+			2026-09-26 12:45:44 [41f7e20] Merge branch 'feat/stable-features-step-by-step'
+		local
+			2026-09-26 12:45:44 [41f7e20] Merge branch 'feat/stable-features-step-by-step'
+	Main
+		remote
+			2026-09-26 12:45:44 [41f7e20] Merge branch 'feat/stable-features-step-by-step'
+		local
+			- [-] -
+	Master
+		remote
+			2026-08-02 10:56:53 [07ceb81] Fix the year
+		local
+			2026-08-02 10:56:53 [07ceb81] Fix the year
+	Table
+		remote
+			2026-09-01 21:11:25 [b7ea036] Update plugin ID in manifest.json
+		local
+			- [-] -
+\`\`\``;
+
 export const TREE_FORMAT_RULES_MD = `# Tree Diagram Codeblock Specification & AI Format Prompt
 
 Use the following syntax and guidelines when generating or editing \`\`\`tree codeblocks for Obsidian.
 
-## 1. Example Template
+## 1. Example Templates
+
+### Template A: Standard Folder Structure (Table FullView)
 ${TREE_EXAMPLE_CODEBLOCK}
 
-## 2. Character Casing Convention (CRITICAL)
-- **lowercase = header / columns**: Folder names, categories, and branch headers are written in **lowercase** (e.g. \`documentation\`, \`src\`, \`assets\`). In Table FullView (\`-currentview:2\`), all-lowercase nodes automatically become **Table Column Headers**.
-- **Capital = isi / hierarchy**: Content items, files, leaf notes, and hierarchical parents are **Capitalized** (e.g. \`Root\`, \`Features\`, \`Main.ts\`, \`Overview.md\`, \`Logo.png\`, \`[[Quickstart Guide]]\`).
+### Template B: Multi-Column Matrix Table (e.g. Git Branches / Comparison)
+${TREE_EXAMPLE_BRANCHES_CODEBLOCK}
+
+## 2. Character Casing Convention (CRITICAL FOR TABLES)
+The Table View engine automatically distinguishes between **Table Columns** and **Table Rows** using character casing:
+- **lowercase = Column Header**: Nodes written in **all lowercase** (e.g. \`remote\`, \`local\`, \`documentation\`, \`src\`, \`assets\`) automatically become **Table Column Headers**.
+  • **DO NOT** capitalize column names in the source codeblock (e.g. write \`remote\`, NOT \`Remote:\`).
+  • **DO NOT** add trailing colons \`:\` to column names.
+  • Add \`-header:capitalcase\` to the flags so the table displays them capitalized in the UI (\`Remote\`, \`Local\`, \`Documentation\`).
+- **Capital = Row Hierarchy / Isi (Content)**: Nodes containing at least one **Capital letter** (e.g. \`Branches\`, \`Main\`, \`Master\`, \`Feat/...\`, \`Overview.md\`, \`Logo.png\`) become **Row Items** or cell content.
+  • If a branch name is \`main\` or \`master\` in all lowercase, capitalize it as \`Main\` or \`Master\` so the table engine recognizes it as a row rather than a column!
 
 ## 3. Codeblock Header Directives & Defaults
 Place flags at the top of the codeblock. Each directive starts with \`-\` followed by \`key:value\`:
@@ -64,49 +116,44 @@ Place flags at the top of the codeblock. Each directive starts with \`-\` follow
 - \`-header:capitalcase\` (default: \`lowercase\`)
   Controls header casing in Tree Diagram and Table Headers:
   • \`lowercase\` = Folder and category headers formatted in lowercase [DEFAULT]
-  • \`capitalcase\` = Headers formatted with capitalized words (e.g. \`documentation\` -> \`Documentation\`, \`src\` -> \`Src\`, \`assets\` -> \`Assets\`)
+  • \`capitalcase\` = Headers formatted with capitalized words (e.g. \`remote\` -> \`Remote\`, \`local\` -> \`Local\`)
 
 ## 4. Hierarchy & Indentation Rules
-- **CRITICAL**: Indentation MUST use literal TAB characters (\`\\t\`), never spaces!
-- **Depth 0 (no tabs)**: Defines a Root Node (header). Multiple lines at depth 0 create multiple separate root trees.
-- **Depth 1 (1 tab \`\\t\`)**: Direct child of the preceding Root Node.
-- **Depth 2 (2 tabs \`\\t\\t\`)**: Direct child of the preceding Depth 1 node.
-- **Depth N (N tabs)**: Child of the nearest preceding node with depth N-1.
+- **CRITICAL**: Indentation MUST use literal TAB characters (\`\\t\`), or 4 spaces per depth. Never use irregular spacing!
+- **Depth 0 (no tabs)**: Root Node (Row header / Parent).
+- **Depth 1 (1 tab \`\\t\`)**: Direct child (Sub-row or Column).
+- **Depth 2 (2 tabs \`\\t\\t\`)**: Content column or row value.
+- **Depth 3 (3 tabs \`\\t\\t\\t\`)**: Cell content values.
 
-## 5. Node Labels & Obsidian Links
-- Plain text file or folder names: \`FolderName\`, \`Index.ts\`, \`Report.pdf\`
-- Obsidian WikiLinks: \`[[Note Name]]\` or with aliases \`[[Note Name|Display Alias]]\`
-- Mixed text with links: \`subfolder - [[Meeting Notes]]\`
-- Nodes containing only a wikilink will automatically use the alias (or target note name) as their label.
-
-## 6. Quick AI Prompt Snippet
-Copy and paste this instruction when asking an AI assistant to generate a tree:
-"Generate a folder tree diagram inside a \`\`\`tree codeblock. Remember character case convention: lowercase for folder headers/columns (documentation, src, assets) and Capitalized for isi/hierarchy (Root, Features, Main.ts, Readme.md). Include flags (-interactive:false, -startshowlevel:0, -currentview:2, -header:capitalcase, -title:Project Structure). Use literal tabs for indentation."
+## 5. Quick AI Prompt Snippet
+Copy and paste this instruction when asking an AI assistant to generate a table:
+"Generate a table inside a \`\`\`tree codeblock. Remember character case convention: all-lowercase for column headers (remote, local, documentation) and Capitalized for row items & isi (Branches, Main, Master, Overview.md). Do not use trailing colons on column names. Include flags (-interactive:true, -startshowlevel:4, -currentview:2, -header:capitalcase, -title:Git Branches). Use literal tabs for indentation."
 `;
 
 export const TREE_FORMAT_RULES_BRIEF = `\`\`\`tree
--interactive:false
--startshowlevel:0
+-interactive:true
+-startshowlevel:4
 -levelnumbered:0
 -offsetlevelnumbered:0
 -currentview:2
 -header:capitalcase
--title:Project Structure
+-title:Git Branches
 
-Root
-	documentation
-		Overview.md
-		[[guides/quickstart|Quickstart Guide]]
-	src
-		Features
-			Tree.ts
-		Main.ts
-	assets
-		Logo.png
+Branches
+	Feat/stable-features-step-by-step
+		remote
+			2026-09-26 12:42:35 [71430f2] fix(ytd): fix 1080p resolution clamping and range slider handle edge pinning
+		local
+			2026-09-26 12:42:35 [71430f2] fix(ytd): fix 1080p resolution clamping and range slider handle edge pinning
+	Main
+		remote
+			2026-09-26 12:45:44 [41f7e20] Merge branch 'feat/stable-features-step-by-step'
+		local
+			- [-] -
 \`\`\`
-Rules:
-1. Casing: lowercase = header/columns (documentation, src, assets), Capital = isi/hierarchy (Root, Features, Main.ts, Logo.png).
-2. Indentation: MUST use literal TAB (\\t) characters, not spaces.
-3. Views: -currentview:1 (Tree), 2 (Table FullView), 3 (Table FolderView).
-4. Directives: -interactive:false, -startshowlevel:0, -levelnumbered:0, -offsetlevelnumbered:0, -currentview:2, -header:capitalcase, -title:Project Structure.
-5. Obsidian wikilinks [[Target|Alias]] are fully supported.`;
+Rules for Table View:
+1. Columns MUST be all-lowercase: 'remote', 'local' (NO capitals, NO colons ':').
+2. Rows MUST have capital letters: 'Branches', 'Main', 'Master' (all-lowercase rows will mistakenly become columns!).
+3. Use -header:capitalcase to display columns as 'Remote', 'Local' in the table header.
+4. Indentation: MUST use literal TAB (\\t) characters, not irregular spaces.
+5. Views: -currentview:1 (Tree), 2 (Table FullView), 3 (Table FolderView).`;
