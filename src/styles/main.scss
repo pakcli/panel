@@ -508,17 +508,80 @@ body .markdown-source-view.mod-cm6 .cm-line.HyperMD-codeblock.pakcli-codeblock-l
     }
 }
 
-/* Hide native scrollbar on Reading View flowclip <pre> — replaced by .pakcli-cb-sticky-bar */
-body pre.pakcli-codeblock-flowclip,
-.markdown-rendered pre.pakcli-codeblock-flowclip,
-.markdown-source-view pre.pakcli-codeblock-flowclip,
-.cm-embed-block pre.pakcli-codeblock-flowclip {
+/* Hide native scrollbar on Reading View flowclip <pre> — replaced by .pakcli-cb-sticky-bar (except in per-line/native mode) */
+body pre.pakcli-codeblock-flowclip:not(.pakcli-codeblock-flowclip-native),
+.markdown-rendered pre.pakcli-codeblock-flowclip:not(.pakcli-codeblock-flowclip-native),
+.markdown-source-view pre.pakcli-codeblock-flowclip:not(.pakcli-codeblock-flowclip-native),
+.cm-embed-block pre.pakcli-codeblock-flowclip:not(.pakcli-codeblock-flowclip-native) {
     scrollbar-width: none !important;
     -ms-overflow-style: none !important;
     &::-webkit-scrollbar {
         display: none !important;
         height: 0 !important;
         width: 0 !important;
+    }
+}
+
+/* Mode 1: All Lines Synced — pseudo-element sets shared scrollWidth so short lines move together */
+body .markdown-source-view.mod-cm6 .cm-line.HyperMD-codeblock.pakcli-codeblock-line-all-synced,
+.cm-line.HyperMD-codeblock.pakcli-codeblock-line-all-synced {
+    position: relative !important;
+    &::after {
+        content: "" !important;
+        position: absolute !important;
+        top: 0 !important;
+        left: 0 !important;
+        width: var(--codeblock-scroll-width, 0px) !important;
+        height: 1px !important;
+        pointer-events: none !important;
+        visibility: hidden !important;
+    }
+}
+
+/* Mode 3: Per-Line Slider — each overflowing line has its own individual visible scrollbar */
+body .markdown-source-view.mod-cm6 .cm-line.HyperMD-codeblock.pakcli-codeblock-line-per-line,
+.cm-line.HyperMD-codeblock.pakcli-codeblock-line-per-line {
+    scrollbar-width: thin !important;
+    scrollbar-color: var(--scrollbar-thumb-bg, rgba(128, 128, 128, 0.6)) transparent !important;
+    -ms-overflow-style: auto !important;
+    &::-webkit-scrollbar {
+        display: block !important;
+        height: 8px !important;
+        width: auto !important;
+    }
+    &::-webkit-scrollbar-track {
+        display: block !important;
+        background: rgba(128, 128, 128, 0.1) !important;
+        border-radius: 4px !important;
+    }
+    &::-webkit-scrollbar-thumb {
+        display: block !important;
+        background: var(--scrollbar-thumb-bg, rgba(128, 128, 128, 0.6)) !important;
+        border-radius: 4px !important;
+    }
+    &::-webkit-scrollbar-thumb:hover {
+        background: var(--scrollbar-active-thumb-bg, var(--interactive-accent, rgba(128, 128, 128, 0.9))) !important;
+    }
+}
+
+/* Reading View native scrollbar for Mode 3 */
+body pre.pakcli-codeblock-flowclip-native,
+.markdown-rendered pre.pakcli-codeblock-flowclip-native {
+    scrollbar-width: thin !important;
+    scrollbar-color: var(--scrollbar-thumb-bg, rgba(128, 128, 128, 0.6)) transparent !important;
+    -ms-overflow-style: auto !important;
+    &::-webkit-scrollbar {
+        display: block !important;
+        height: 10px !important;
+    }
+    &::-webkit-scrollbar-track {
+        display: block !important;
+        background: rgba(128, 128, 128, 0.1) !important;
+    }
+    &::-webkit-scrollbar-thumb {
+        display: block !important;
+        background: var(--scrollbar-thumb-bg, rgba(128, 128, 128, 0.6)) !important;
+        border-radius: 5px !important;
     }
 }
 

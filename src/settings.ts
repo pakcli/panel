@@ -160,6 +160,9 @@ export interface PakCLITableSettings extends
 {
     dateFormat: string;
     codeblockWrapMode: 'flowclip' | 'wrap' | 'scalefit';
+    flowclipSliderMode?: 'all-lines' | 'current' | 'per-line';
+    flowclipSaveState?: boolean;
+    flowclipScrollStates?: Record<string, number>;
     codeblockLanguageRules: CodeblockLanguageRule[];
     enableAssetDrag: boolean;
     enableCsvEditor?: boolean;
@@ -277,6 +280,9 @@ export const DEFAULT_TABLE_SETTINGS: PakCLITableSettings = {
     ...DEFAULT_RIBBON_MANAGER_SETTINGS,
     dateFormat: '_{yyyy}{mm}{dd}',
     codeblockWrapMode: 'flowclip',
+    flowclipSliderMode: 'all-lines',
+    flowclipSaveState: true,
+    flowclipScrollStates: {},
     codeblockLanguageRules: [
         { id: '1', language: 'ascii', behavior: 'scalefit' }
     ],

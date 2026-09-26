@@ -4912,6 +4912,37 @@ export default class PakCLITablePlugin extends Plugin {
 					});
 
 				new Setting(containerEl)
+					.setName('Flowclip Slider Mode')
+					.setDesc('How the horizontal scrollbar and codeblock lines behave in Flowclip mode.')
+					.addDropdown((d) => {
+						d.addOption('all-lines', '1. All Lines Synced (1 slider controls whole block) [Default]')
+							.addOption('current', '2. Flowing Lines Only (1 slider controls flowing lines)')
+							.addOption('per-line', '3. Per-Line Slider (1 flowing line has 1 slider bar)')
+							.setValue(this.settings.flowclipSliderMode || 'all-lines')
+							.onChange(async (v: string) => {
+								this.settings.flowclipSliderMode = v as 'all-lines' | 'current' | 'per-line';
+								// Reset saved scroll state on mode switch as requested
+								this.settings.flowclipScrollStates = {};
+								await this.saveSettings();
+								this.codeblockScaler.rescaleAll();
+							});
+					});
+
+				new Setting(containerEl)
+					.setName('Save Flowclip Scroll State')
+					.setDesc('Save horizontal scroll percentage across app reloads. Only resets on switching slider mode.')
+					.addToggle((t) => {
+						t.setValue(this.settings.flowclipSaveState !== false)
+							.onChange(async (v) => {
+								this.settings.flowclipSaveState = v;
+								if (!v) {
+									this.settings.flowclipScrollStates = {};
+								}
+								await this.saveSettings();
+							});
+					});
+
+				new Setting(containerEl)
 					.setName('Enable Native Asset Drag & Drop')
 					.setDesc('Allow dragging images, PDFs, and media directly out of rendered codeblocks.')
 					.addToggle((t) => {

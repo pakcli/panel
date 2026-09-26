@@ -289,6 +289,31 @@ export class CodeblockScaler {
 		}, 40);
 	}
 
+	get flowclipMode(): 'all-lines' | 'current' | 'per-line' {
+		return this.plugin.settings.flowclipSliderMode || 'all-lines';
+	}
+
+	private saveDebounceTimer: number | null = null;
+	saveScrollState(key: string, pct: number): void {
+		if (this.plugin.settings.flowclipSaveState === false) return;
+		if (!this.plugin.settings.flowclipScrollStates) {
+			this.plugin.settings.flowclipScrollStates = {};
+		}
+		this.plugin.settings.flowclipScrollStates[key] = Math.round(pct * 1000) / 1000;
+		if (this.saveDebounceTimer !== null) {
+			window.clearTimeout(this.saveDebounceTimer);
+		}
+		this.saveDebounceTimer = window.setTimeout(() => {
+			this.plugin.saveSettings();
+			this.saveDebounceTimer = null;
+		}, 400);
+	}
+
+	getSavedScrollPct(key: string): number {
+		if (this.plugin.settings.flowclipSaveState === false) return 0;
+		return this.plugin.settings.flowclipScrollStates?.[key] || 0;
+	}
+
 	isElementVisibleInActiveView(el: HTMLElement): boolean {
 		if (!el || !el.isConnected) return false;
 
@@ -344,15 +369,20 @@ export class CodeblockScaler {
 		this.isProcessing = true;
 
 		try {
-			// Clean up any sticky bars whose anchor element is no longer visible in active view
-			document.querySelectorAll<HTMLElement>('.pakcli-cb-sticky-bar').forEach((bar) => {
-				const anchor = (bar as any)._pakcliAnchor as HTMLElement | undefined;
-				if (!anchor || !anchor.isConnected) {
-					bar.remove();
-				} else if (!this.isElementVisibleInActiveView(anchor)) {
-					bar.style.setProperty('display', 'none', 'important');
-				}
-			});
+			if (this.flowclipMode === 'per-line') {
+				// In per-line mode, remove all floating sticky bars
+				document.querySelectorAll<HTMLElement>('.pakcli-cb-sticky-bar').forEach((bar) => bar.remove());
+			} else {
+				// Clean up any sticky bars whose anchor element is no longer visible in active view
+				document.querySelectorAll<HTMLElement>('.pakcli-cb-sticky-bar').forEach((bar) => {
+					const anchor = (bar as any)._pakcliAnchor as HTMLElement | undefined;
+					if (!anchor || !anchor.isConnected) {
+						bar.remove();
+					} else if (!this.isElementVisibleInActiveView(anchor)) {
+						bar.style.setProperty('display', 'none', 'important');
+					}
+				});
+			}
 
 			// 1. Process all open markdown views across all leaves
 			this.plugin.app.workspace.iterateAllLeaves((leaf) => {
@@ -690,7 +720,8 @@ export class CodeblockScaler {
 						codeEl.style.setProperty('max-width', '100%', 'important');
 					}
 				} else {
-					// Flowclip: horizontal overflow — hide native scrollbar on pre, inject sticky bar
+					// Flowclip: horizontal overflow
+					pre.classList.remove('pakcli-codeblock-wrap', 'pakcli-codeblock-scalefit');
 					pre.classList.add('pakcli-codeblock-flowclip');
 					pre.style.setProperty('white-space', 'pre', 'important');
 					pre.style.setProperty('word-break', 'normal', 'important');
@@ -702,9 +733,6 @@ export class CodeblockScaler {
 					pre.style.setProperty('min-width', '0', 'important');
 					pre.style.setProperty('box-sizing', 'border-box', 'important');
 					pre.style.setProperty('contain', 'none', 'important');
-					// Hide the native scrollbar on the pre — the sticky bar replaces it
-					pre.style.setProperty('scrollbar-width', 'none', 'important');
-					(pre.style as any)['-ms-overflow-style'] = 'none';
 
 					const embedBlock = pre.closest('.cm-embed-block') as HTMLElement | null;
 					if (embedBlock) {
@@ -731,8 +759,42 @@ export class CodeblockScaler {
 						codeEl.style.setProperty('box-sizing', 'border-box', 'important');
 					}
 
-					// Inject sticky scrollbar (once per pre)
-					this.injectStickyBarForPre(pre);
+					if (this.flowclipMode === 'per-line') {
+						// Mode 3: Native scrollbar on <pre>
+						pre.classList.add('pakcli-codeblock-flowclip-native');
+						pre.style.setProperty('scrollbar-width', 'thin', 'important');
+						(pre.style as any)['-ms-overflow-style'] = 'auto';
+
+						if ((pre as any)._pakcliStickyBar) {
+							(pre as any)._pakcliStickyBar.remove();
+							(pre as any)._pakcliStickyBar = null;
+							(pre as any)._pakcliStickyPositionBar = null;
+						}
+
+						const filePath = this.plugin.app.workspace.getActiveFile()?.path || 'unknown';
+						const snippet = (pre.textContent || '').trim().substring(0, 30).replace(/\s+/g, '_');
+						const key = `${filePath}::pre::${snippet}`;
+						const savedPct = this.getSavedScrollPct(key);
+						if (savedPct > 0) {
+							const maxScroll = pre.scrollWidth - pre.clientWidth;
+							if (maxScroll > 0) pre.scrollLeft = Math.round(savedPct * maxScroll);
+						}
+						const oldHandler = (pre as any)._pakcliPreNativeScroll;
+						if (oldHandler) pre.removeEventListener('scroll', oldHandler);
+						const handler = () => {
+							const maxScroll = pre.scrollWidth - pre.clientWidth;
+							if (maxScroll > 0) this.saveScrollState(key, pre.scrollLeft / maxScroll);
+						};
+						(pre as any)._pakcliPreNativeScroll = handler;
+						pre.addEventListener('scroll', handler, { passive: true });
+					} else {
+						// Mode 1 ('all-lines') or Mode 2 ('current'): 1 bottom sticky bar
+						pre.classList.remove('pakcli-codeblock-flowclip-native');
+						pre.style.setProperty('scrollbar-width', 'none', 'important');
+						(pre.style as any)['-ms-overflow-style'] = 'none';
+
+						this.injectStickyBarForPre(pre);
+					}
 				}
 			}
 
@@ -837,16 +899,35 @@ export class CodeblockScaler {
 			}, 50);
 		};
 
+		const filePath = this.plugin.app.workspace.getActiveFile()?.path || 'unknown';
+		const snippet = (pre.textContent || '').trim().substring(0, 30).replace(/\s+/g, '_');
+		const key = `${filePath}::pre::${snippet}`;
+
+		// Restore saved scroll percentage
+		const savedPct = this.getSavedScrollPct(key);
+		if (savedPct > 0) {
+			const maxScroll = pre.scrollWidth - pre.clientWidth;
+			if (maxScroll > 0) {
+				const target = Math.round(savedPct * maxScroll);
+				pre.scrollLeft = target;
+				bar.scrollLeft = target;
+			}
+		}
+
 		pre.addEventListener('scroll', () => {
 			if (isSyncing) return;
 			setSyncing();
 			bar.scrollLeft = pre.scrollLeft;
+			const maxScroll = pre.scrollWidth - pre.clientWidth;
+			if (maxScroll > 0) this.saveScrollState(key, pre.scrollLeft / maxScroll);
 		}, { passive: true });
 
 		bar.addEventListener('scroll', () => {
 			if (isSyncing) return;
 			setSyncing();
 			pre.scrollLeft = bar.scrollLeft;
+			const maxScroll = pre.scrollWidth - pre.clientWidth;
+			if (maxScroll > 0) this.saveScrollState(key, bar.scrollLeft / maxScroll);
 		}, { passive: true });
 
 		const onWindowScroll = (e: Event) => {
@@ -1492,10 +1573,59 @@ export class CodeblockScaler {
 					line.style.setProperty('box-sizing', 'border-box', 'important');
 					line.style.removeProperty('--codeblock-scroll-width');
 				});
-			} else {
-				// FLOWCLIP: 1 CODEBLOCK = 1 SINGLE HORIZONTAL SCROLLBAR AT BOTTOM LINE
+			} else if (this.flowclipMode === 'per-line') {
+				// Mode 3: 1 line flowing 1 slider bar
 				currentBlockLines.forEach((line) => {
-					line.classList.remove('pakcli-codeblock-wrap', 'pakcli-codeblock-line-scalefit');
+					// Clean up any sticky bars
+					if ((line as any)._pakcliStickyBar) {
+						(line as any)._pakcliStickyBar.remove();
+						(line as any)._pakcliStickyBar = null;
+						(line as any)._pakcliStickyPositionBar = null;
+						(line as any)._pakcliBindLineScroll = null;
+					}
+					line.classList.remove('pakcli-codeblock-wrap', 'pakcli-codeblock-line-scalefit', 'pakcli-codeblock-line-all-synced', 'pakcli-codeblock-line-flowclip', 'pakcli-codeblock-end-scroll');
+					line.classList.add('pakcli-codeblock-line-per-line');
+					line.style.setProperty('contain', 'none', 'important');
+					line.style.setProperty('white-space', 'pre', 'important');
+					line.style.setProperty('word-break', 'normal', 'important');
+					line.style.setProperty('word-wrap', 'normal', 'important');
+					line.style.setProperty('overflow-x', 'auto', 'important');
+					line.style.setProperty('overflow-y', 'hidden', 'important');
+					line.style.setProperty('max-width', '100%', 'important');
+					line.style.setProperty('width', 'auto', 'important');
+					line.style.setProperty('min-width', '0', 'important');
+					line.style.setProperty('box-sizing', 'border-box', 'important');
+					line.style.removeProperty('--codeblock-scroll-width');
+
+					// Save & restore state for per-line
+					const filePath = this.plugin.app.workspace.getActiveFile()?.path || 'unknown';
+					const snippet = (line.textContent || '').trim().substring(0, 30).replace(/\s+/g, '_');
+					const key = `${filePath}::line::${snippet}`;
+					const savedPct = this.getSavedScrollPct(key);
+					if (savedPct > 0) {
+						const maxScroll = line.scrollWidth - line.clientWidth;
+						if (maxScroll > 0) line.scrollLeft = Math.round(savedPct * maxScroll);
+					}
+					const oldHandler = (line as any)._pakcliPerLineScroll;
+					if (oldHandler) line.removeEventListener('scroll', oldHandler);
+					const handler = () => {
+						const maxScroll = line.scrollWidth - line.clientWidth;
+						if (maxScroll > 0) this.saveScrollState(key, line.scrollLeft / maxScroll);
+					};
+					(line as any)._pakcliPerLineScroll = handler;
+					line.addEventListener('scroll', handler, { passive: true });
+				});
+			} else {
+				// Mode 1 ('all-lines') or Mode 2 ('current'): 1 bottom slider bar
+				let maxScrollWidth = 0;
+				currentBlockLines.forEach((l) => {
+					if (l.scrollWidth > maxScrollWidth) maxScrollWidth = l.scrollWidth;
+				});
+
+				const isAllLines = this.flowclipMode === 'all-lines';
+
+				currentBlockLines.forEach((line) => {
+					line.classList.remove('pakcli-codeblock-wrap', 'pakcli-codeblock-line-scalefit', 'pakcli-codeblock-line-per-line', 'pakcli-codeblock-end-scroll');
 					line.classList.add('pakcli-codeblock-line-flowclip');
 					line.style.setProperty('contain', 'none', 'important');
 					line.style.setProperty('white-space', 'pre', 'important');
@@ -1507,8 +1637,16 @@ export class CodeblockScaler {
 					line.style.setProperty('width', 'auto', 'important');
 					line.style.setProperty('min-width', '0', 'important');
 					line.style.setProperty('box-sizing', 'border-box', 'important');
-					line.classList.remove('pakcli-codeblock-end-scroll');
-					line.style.removeProperty('--codeblock-scroll-width');
+
+					if (isAllLines) {
+						// Mode 1: 1 slider controls all lines together by expanding scrollWidth
+						line.classList.add('pakcli-codeblock-line-all-synced');
+						line.style.setProperty('--codeblock-scroll-width', `${maxScrollWidth}px`);
+					} else {
+						// Mode 2: current (flowing lines only)
+						line.classList.remove('pakcli-codeblock-line-all-synced');
+						line.style.removeProperty('--codeblock-scroll-width');
+					}
 				});
 
 				const lastLine = currentBlockLines[currentBlockLines.length - 1];
@@ -1655,9 +1793,36 @@ export class CodeblockScaler {
 			}
 		};
 
+		const filePath = this.plugin.app.workspace.getActiveFile()?.path || 'unknown';
+		const snippet = (blockLines[0]?.textContent || '').trim().substring(0, 30).replace(/\s+/g, '_');
+		const key = `${filePath}::cm::${snippet}`;
+
+		// Restore saved scroll percentage
+		const savedPct = this.getSavedScrollPct(key);
+		if (savedPct > 0) {
+			window.requestAnimationFrame(() => {
+				const lines: HTMLElement[] = (lastLine as any)._pakcliBlockLines || [lastLine];
+				let maxW = 0;
+				for (const l of lines) if (l.scrollWidth > maxW) maxW = l.scrollWidth;
+				const maxScroll = maxW - lastLine.getBoundingClientRect().width;
+				if (maxScroll > 0) {
+					const target = Math.round(savedPct * maxScroll);
+					bar.scrollLeft = target;
+					syncLines(target);
+				}
+			});
+		}
+
 		bar.addEventListener('scroll', () => {
 			if (isSyncing) return;
 			syncLines(bar.scrollLeft);
+			const lines: HTMLElement[] = (lastLine as any)._pakcliBlockLines || [lastLine];
+			let maxW = 0;
+			for (const l of lines) if (l.scrollWidth > maxW) maxW = l.scrollWidth;
+			const maxScroll = maxW - lastLine.getBoundingClientRect().width;
+			if (maxScroll > 0) {
+				this.saveScrollState(key, bar.scrollLeft / maxScroll);
+			}
 		}, { passive: true });
 
 		const bindLineScroll = (line: HTMLElement) => {
@@ -1672,6 +1837,10 @@ export class CodeblockScaler {
 					if (l !== line && l.scrollLeft !== line.scrollLeft) {
 						l.scrollLeft = line.scrollLeft;
 					}
+				}
+				const maxScroll = line.scrollWidth - line.clientWidth;
+				if (maxScroll > 0) {
+					this.saveScrollState(key, line.scrollLeft / maxScroll);
 				}
 			};
 			(line as any)._pakcliScrollHandler = handler;
