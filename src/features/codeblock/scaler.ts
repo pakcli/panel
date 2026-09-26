@@ -123,6 +123,8 @@ export class CodeblockScaler {
 	constructor(private plugin: PakCLIPlugin) { }
 
 	init(): void {
+		// Clean up any stale/orphaned bars from previous reloads or hot module replacements
+		document.querySelectorAll('.pakcli-codeblock-flowclip-bar, .pakcli-cb-sticky-bar').forEach((el) => el.remove());
 		// 0. Patch navigator.clipboard.writeText as safety net
 		this.patchClipboardWriteText();
 		// 1. Register CodeMirror 6 Live Preview Extension for real-time line tagging
@@ -287,11 +289,71 @@ export class CodeblockScaler {
 		}, 40);
 	}
 
+	isElementVisibleInActiveView(el: HTMLElement): boolean {
+		if (!el || !el.isConnected) return false;
+
+		// 1. If element or any ancestor is display: none, offsetParent is null (unless position: fixed)
+		if (el.offsetParent === null && window.getComputedStyle(el).position !== 'fixed') {
+			return false;
+		}
+
+		// 2. Find the owning MarkdownView across all leaves
+		let ownerView: MarkdownView | null = null;
+		this.plugin.app.workspace.iterateAllLeaves((leaf) => {
+			if (!ownerView && leaf.view instanceof MarkdownView) {
+				if (leaf.view.containerEl.contains(el)) {
+					ownerView = leaf.view;
+				}
+			}
+		});
+
+		if (ownerView) {
+			// If the leaf container itself is hidden (e.g. background tab), reject
+			if ((ownerView as MarkdownView).containerEl.offsetParent === null) return false;
+			const csContainer = window.getComputedStyle((ownerView as MarkdownView).containerEl);
+			if (csContainer.display === 'none' || csContainer.visibility === 'hidden') return false;
+
+			const mode = (ownerView as MarkdownView).getMode(); // 'source' or 'preview'
+			const isInsideSource = !!el.closest('.markdown-source-view');
+			const isInsideRendered = !!el.closest('.markdown-rendered');
+			const isInsideEmbed = !!el.closest('.cm-embed-block');
+
+			if (mode === 'preview') {
+				// Reading View: ONLY elements inside .markdown-rendered are valid
+				if (isInsideSource) return false;
+				if (!isInsideRendered) return false;
+			} else if (mode === 'source') {
+				// Live Preview / Editing View: ONLY elements inside .markdown-source-view are valid
+				// Background .markdown-rendered is strictly rejected
+				if (isInsideRendered && !isInsideEmbed && !isInsideSource) return false;
+				if (!isInsideSource && !isInsideEmbed) return false;
+			}
+		} else {
+			// Fallback: Check standard DOM hierarchy (e.g. popover preview)
+			const popover = el.closest('.popover');
+			if (popover && (popover as HTMLElement).offsetParent === null) {
+				return false;
+			}
+		}
+
+		return true;
+	}
+
 	rescaleAll(): void {
 		if (this.isProcessing) return;
 		this.isProcessing = true;
 
 		try {
+			// Clean up any sticky bars whose anchor element is no longer visible in active view
+			document.querySelectorAll<HTMLElement>('.pakcli-cb-sticky-bar').forEach((bar) => {
+				const anchor = (bar as any)._pakcliAnchor as HTMLElement | undefined;
+				if (!anchor || !anchor.isConnected) {
+					bar.remove();
+				} else if (!this.isElementVisibleInActiveView(anchor)) {
+					bar.style.setProperty('display', 'none', 'important');
+				}
+			});
+
 			// 1. Process all open markdown views across all leaves
 			this.plugin.app.workspace.iterateAllLeaves((leaf) => {
 				if (leaf.view instanceof MarkdownView && leaf.view.contentEl) {
@@ -541,6 +603,12 @@ export class CodeblockScaler {
 		container.querySelectorAll('pre').forEach((p) => preElements.push(p as HTMLElement));
 
 		preElements.forEach((pre) => {
+			if (!this.isElementVisibleInActiveView(pre)) {
+				if ((pre as any)._pakcliStickyBar) {
+					(pre as any)._pakcliStickyBar.style.setProperty('display', 'none', 'important');
+				}
+				return;
+			}
 			const codeEl = pre.querySelector('code') ?? pre;
 			const behavior = this.getBehaviorForElement(pre, codeEl);
 
@@ -675,7 +743,16 @@ export class CodeblockScaler {
 		// 2. Live Preview CodeMirror lines (.cm-line.HyperMD-codeblock)
 		const cmLines = container.querySelectorAll('.cm-line.HyperMD-codeblock');
 		if (cmLines.length > 0) {
-			this.processCmLines(cmLines);
+			const firstLine = cmLines[0] as HTMLElement;
+			if (this.isElementVisibleInActiveView(firstLine)) {
+				this.processCmLines(cmLines);
+			} else {
+				cmLines.forEach((l) => {
+					if ((l as any)._pakcliStickyBar) {
+						(l as any)._pakcliStickyBar.style.setProperty('display', 'none', 'important');
+					}
+				});
+			}
 		}
 	}
 
@@ -704,6 +781,7 @@ export class CodeblockScaler {
 		inner.className = 'pakcli-cb-sticky-inner';
 		bar.appendChild(inner);
 		document.body.appendChild(bar);
+		(bar as any)._pakcliAnchor = pre;
 		(pre as any)._pakcliStickyBar = bar;
 
 		const BAR_H = CodeblockScaler.BAR_H;
@@ -718,9 +796,12 @@ export class CodeblockScaler {
 		};
 
 		const positionBar = () => {
-			if (!pre.isConnected) {
-				bar.remove();
-				cleanup();
+			if (!this.isElementVisibleInActiveView(pre)) {
+				bar.style.setProperty('display', 'none', 'important');
+				if (!pre.isConnected) {
+					bar.remove();
+					cleanup();
+				}
 				return;
 			}
 			const rect = pre.getBoundingClientRect();
@@ -1466,6 +1547,17 @@ export class CodeblockScaler {
 	 * Sits strictly at the bottom of the codeblock and shares identical mechanics with Reading View.
 	 */
 	private injectStickyBarForCmBlock(lastLine: HTMLElement, blockLines: HTMLElement[]): void {
+		// Clean up any old bars previously attached to earlier lines in this exact block
+		for (const l of blockLines) {
+			if (l !== lastLine && (l as any)._pakcliStickyBar) {
+				const oldBar = (l as any)._pakcliStickyBar as HTMLElement;
+				oldBar.remove();
+				(l as any)._pakcliStickyBar = null;
+				(l as any)._pakcliStickyPositionBar = null;
+				(l as any)._pakcliBindLineScroll = null;
+			}
+		}
+
 		// Store updated lines for this codeblock
 		(lastLine as any)._pakcliBlockLines = blockLines.slice();
 
@@ -1489,6 +1581,7 @@ export class CodeblockScaler {
 		inner.className = 'pakcli-cb-sticky-inner';
 		bar.appendChild(inner);
 		document.body.appendChild(bar);
+		(bar as any)._pakcliAnchor = lastLine;
 		(lastLine as any)._pakcliStickyBar = bar;
 
 		const BAR_H = CodeblockScaler.BAR_H;
@@ -1504,9 +1597,12 @@ export class CodeblockScaler {
 		};
 
 		const positionBar = () => {
-			if (!lastLine.isConnected) {
-				bar.remove();
-				cleanup();
+			if (!this.isElementVisibleInActiveView(lastLine)) {
+				bar.style.setProperty('display', 'none', 'important');
+				if (!lastLine.isConnected) {
+					bar.remove();
+					cleanup();
+				}
 				return;
 			}
 
