@@ -27,11 +27,17 @@ export function createCodeblockLivePreviewPlugin(scaler: CodeblockScaler) {
 	return ViewPlugin.fromClass(
 		class {
 			constructor(view: EditorView) {
-				scaler.processContainer(view.dom);
+				scaler.processContainer(view.dom, view);
 			}
 			update(update: ViewUpdate) {
-				if (update.docChanged || update.viewportChanged) {
-					scaler.processContainer(update.view.dom);
+				if (
+					update.docChanged ||
+					update.viewportChanged ||
+					update.geometryChanged ||
+					update.heightChanged ||
+					update.focusChanged
+				) {
+					scaler.processContainer(update.view.dom, update.view);
 				}
 			}
 		}
@@ -119,6 +125,9 @@ export class CodeblockScaler {
 	private observer: MutationObserver | null = null;
 	private pendingClipboardTransform: { timestamp: number; lang: string; template: string; replaceExisting?: boolean } | null = null;
 	private cmStickyBars: StickyBarEntry[] = [];
+	private blockMaxScrollWidthCache = new Map<string, number>();
+	private blockCurrentScrollLeft = new Map<string, number>();
+	private activeCmBars = new Map<string, HTMLElement>();
 
 	constructor(private plugin: PakCLIPlugin) { }
 
@@ -322,7 +331,13 @@ export class CodeblockScaler {
 			return false;
 		}
 
-		// 2. Find the owning MarkdownView across all leaves
+		// 2. Source Mode check: EDITMODE SOURCEMODE = NO NEED SLIDER
+		const sourceViewEl = el.closest('.markdown-source-view');
+		if (sourceViewEl && !sourceViewEl.classList.contains('is-live-preview')) {
+			return false;
+		}
+
+		// 3. Find the owning MarkdownView across all leaves
 		let ownerView: MarkdownView | null = null;
 		this.plugin.app.workspace.iterateAllLeaves((leaf) => {
 			if (!ownerView && leaf.view instanceof MarkdownView) {
@@ -337,6 +352,11 @@ export class CodeblockScaler {
 			if ((ownerView as MarkdownView).containerEl.offsetParent === null) return false;
 			const csContainer = window.getComputedStyle((ownerView as MarkdownView).containerEl);
 			if (csContainer.display === 'none' || csContainer.visibility === 'hidden') return false;
+
+			// If view is explicitly in source mode (raw markdown):
+			if ((ownerView as any).currentMode?.sourceMode === true) {
+				return false; // EDITMODE SOURCEMODE = NO NEED SLIDER
+			}
 
 			const mode = (ownerView as MarkdownView).getMode(); // 'source' or 'preview'
 			const isInsideSource = !!el.closest('.markdown-source-view');
@@ -380,6 +400,8 @@ export class CodeblockScaler {
 						bar.remove();
 					} else if (!this.isElementVisibleInActiveView(anchor)) {
 						bar.style.setProperty('display', 'none', 'important');
+					} else {
+						(anchor as any)._pakcliStickyPositionBar?.();
 					}
 				});
 			}
@@ -624,7 +646,20 @@ export class CodeblockScaler {
 		return this.getBehaviorForLanguage(lang);
 	}
 
-	processContainer(container: HTMLElement): void {
+	processContainer(container: HTMLElement, editorView?: EditorView): void {
+		// If inside raw Source Mode, user requested: EDITMODE SOURCEMODE = NO NEED SLIDER
+		const sourceViewEl = container.closest('.markdown-source-view') || (container.matches?.('.markdown-source-view') ? container : null);
+		if (sourceViewEl && !sourceViewEl.classList.contains('is-live-preview')) {
+			return;
+		}
+
+		if (!editorView) {
+			const activeMdView = this.plugin.app.workspace.getActiveViewOfType(MarkdownView);
+			if (activeMdView && activeMdView.containerEl.contains(container)) {
+				editorView = (activeMdView.editor as any)?.cm as EditorView | undefined;
+			}
+		}
+
 		// 1. All <pre> elements (Reading View AND Live Preview embed widgets)
 		const preElements: HTMLElement[] = [];
 		if (container.matches && container.matches('pre')) {
@@ -803,18 +838,15 @@ export class CodeblockScaler {
 		});
 
 		// 2. Live Preview CodeMirror lines (.cm-line.HyperMD-codeblock)
-		const cmLines = container.querySelectorAll('.cm-line.HyperMD-codeblock');
+		let cmLines: HTMLElement[] = [];
+		if (container.matches && container.matches('.cm-line.HyperMD-codeblock')) {
+			const parent = container.parentElement || container;
+			cmLines = Array.from(parent.querySelectorAll('.cm-line.HyperMD-codeblock'));
+		} else {
+			cmLines = Array.from(container.querySelectorAll('.cm-line.HyperMD-codeblock'));
+		}
 		if (cmLines.length > 0) {
-			const firstLine = cmLines[0] as HTMLElement;
-			if (this.isElementVisibleInActiveView(firstLine)) {
-				this.processCmLines(cmLines);
-			} else {
-				cmLines.forEach((l) => {
-					if ((l as any)._pakcliStickyBar) {
-						(l as any)._pakcliStickyBar.style.setProperty('display', 'none', 'important');
-					}
-				});
-			}
+			this.processCmLines(cmLines, editorView);
 		}
 	}
 
@@ -827,6 +859,8 @@ export class CodeblockScaler {
 	 * when the block extends below the viewport.
 	 */
 	private injectStickyBarForPre(pre: HTMLElement): void {
+		if (this.flowclipMode === 'per-line') return;
+
 		// If already inited, just refresh the bar position
 		if ((pre as any)._pakcliStickyBar) {
 			const fn: (() => void) | undefined = (pre as any)._pakcliStickyPositionBar;
@@ -858,6 +892,10 @@ export class CodeblockScaler {
 		};
 
 		const positionBar = () => {
+			if (this.flowclipMode === 'per-line') {
+				bar.style.setProperty('display', 'none', 'important');
+				return;
+			}
 			if (!this.isElementVisibleInActiveView(pre)) {
 				bar.style.setProperty('display', 'none', 'important');
 				if (!pre.isConnected) {
@@ -871,14 +909,14 @@ export class CodeblockScaler {
 			const cw = rect.width;
 			const hasOverflow = sw > cw + 2;
 			const viewH = window.innerHeight;
-			const isVisible = rect.bottom >= BAR_H && rect.bottom <= viewH + BAR_H && rect.top < viewH;
+			const isVisible = rect.top < viewH && rect.bottom > 0;
 			if (!hasOverflow || !isVisible) {
 				bar.style.setProperty('display', 'none', 'important');
 				return;
 			}
 
-			// Position at bottom of the codeblock (not bottom of screen)
-			const barTop = rect.bottom - BAR_H;
+			// Position at bottom of the codeblock (clamped to viewport bottom if block extends below)
+			const barTop = Math.min(rect.bottom, viewH) - BAR_H;
 
 			bar.style.setProperty('display', 'block', 'important');
 			bar.style.setProperty('left', `${rect.left}px`, 'important');
@@ -1521,7 +1559,18 @@ export class CodeblockScaler {
 		pre.appendChild(btn);
 	}
 
-	private processCmLines(cmLines: NodeListOf<Element>): void {
+	private processCmLines(cmLines: HTMLElement[], editorView?: EditorView): void {
+		if (!editorView) {
+			const firstEl = cmLines[0];
+			editorView = (firstEl?.closest('.cm-editor') as any)?.cmView?.view as EditorView | undefined;
+		}
+		if (!editorView) {
+			const activeMdView = this.plugin.app.workspace.getActiveViewOfType(MarkdownView);
+			if (activeMdView) {
+				editorView = (activeMdView.editor as any)?.cm as EditorView | undefined;
+			}
+		}
+
 		let currentBlockLines: HTMLElement[] = [];
 		let currentLanguage = '';
 
@@ -1538,7 +1587,7 @@ export class CodeblockScaler {
 
 			if (behavior === 'wrap') {
 				currentBlockLines.forEach((line) => {
-					line.classList.remove('pakcli-codeblock-line-flowclip', 'pakcli-codeblock-line-scalefit', 'pakcli-codeblock-end-scroll');
+					line.classList.remove('pakcli-codeblock-line-flowclip', 'pakcli-codeblock-line-scalefit', 'pakcli-codeblock-end-scroll', 'pakcli-codeblock-line-all-synced', 'pakcli-codeblock-line-per-line');
 					line.classList.add('pakcli-codeblock-wrap');
 					line.style.setProperty('contain', 'none', 'important');
 					line.style.setProperty('white-space', 'pre-wrap', 'important');
@@ -1551,6 +1600,8 @@ export class CodeblockScaler {
 					line.style.setProperty('min-width', '0', 'important');
 					line.style.setProperty('box-sizing', 'border-box', 'important');
 					line.style.removeProperty('--codeblock-scroll-width');
+					line.style.removeProperty('padding-right');
+					line.style.removeProperty('padding-bottom');
 					line.scrollLeft = 0;
 
 					const oldHandler = (line as any)._pakcliScrollHandler;
@@ -1561,7 +1612,7 @@ export class CodeblockScaler {
 				});
 			} else if (behavior === 'scalefit') {
 				currentBlockLines.forEach((line) => {
-					line.classList.remove('pakcli-codeblock-wrap', 'pakcli-codeblock-line-flowclip', 'pakcli-codeblock-end-scroll');
+					line.classList.remove('pakcli-codeblock-wrap', 'pakcli-codeblock-line-flowclip', 'pakcli-codeblock-end-scroll', 'pakcli-codeblock-line-all-synced', 'pakcli-codeblock-line-per-line');
 					line.classList.add('pakcli-codeblock-line-scalefit');
 					line.style.setProperty('contain', 'none', 'important');
 					line.style.setProperty('white-space', 'pre', 'important');
@@ -1572,9 +1623,11 @@ export class CodeblockScaler {
 					line.style.setProperty('min-width', '0', 'important');
 					line.style.setProperty('box-sizing', 'border-box', 'important');
 					line.style.removeProperty('--codeblock-scroll-width');
+					line.style.removeProperty('padding-right');
+					line.style.removeProperty('padding-bottom');
 				});
 			} else if (this.flowclipMode === 'per-line') {
-				// Mode 3: 1 line flowing 1 slider bar
+				// Mode 3: 1 line flowing 1 slider bar (no sticky bar, native scrollbar on each flowing line)
 				currentBlockLines.forEach((line) => {
 					// Clean up any sticky bars
 					if ((line as any)._pakcliStickyBar) {
@@ -1583,6 +1636,12 @@ export class CodeblockScaler {
 						(line as any)._pakcliStickyPositionBar = null;
 						(line as any)._pakcliBindLineScroll = null;
 					}
+					const oldHandler = (line as any)._pakcliScrollHandler;
+					if (oldHandler) {
+						line.removeEventListener('scroll', oldHandler);
+						(line as any)._pakcliScrollHandler = null;
+					}
+
 					line.classList.remove('pakcli-codeblock-wrap', 'pakcli-codeblock-line-scalefit', 'pakcli-codeblock-line-all-synced', 'pakcli-codeblock-line-flowclip', 'pakcli-codeblock-end-scroll');
 					line.classList.add('pakcli-codeblock-line-per-line');
 					line.style.setProperty('contain', 'none', 'important');
@@ -1595,7 +1654,10 @@ export class CodeblockScaler {
 					line.style.setProperty('width', 'auto', 'important');
 					line.style.setProperty('min-width', '0', 'important');
 					line.style.setProperty('box-sizing', 'border-box', 'important');
+					line.style.setProperty('padding-bottom', '6px', 'important');
+					line.style.removeProperty('--codeblock-spacer-width');
 					line.style.removeProperty('--codeblock-scroll-width');
+					line.style.removeProperty('padding-right');
 
 					// Save & restore state for per-line
 					const filePath = this.plugin.app.workspace.getActiveFile()?.path || 'unknown';
@@ -1606,8 +1668,8 @@ export class CodeblockScaler {
 						const maxScroll = line.scrollWidth - line.clientWidth;
 						if (maxScroll > 0) line.scrollLeft = Math.round(savedPct * maxScroll);
 					}
-					const oldHandler = (line as any)._pakcliPerLineScroll;
-					if (oldHandler) line.removeEventListener('scroll', oldHandler);
+					const oldPerLine = (line as any)._pakcliPerLineScroll;
+					if (oldPerLine) line.removeEventListener('scroll', oldPerLine);
 					const handler = () => {
 						const maxScroll = line.scrollWidth - line.clientWidth;
 						if (maxScroll > 0) this.saveScrollState(key, line.scrollLeft / maxScroll);
@@ -1617,51 +1679,136 @@ export class CodeblockScaler {
 				});
 			} else {
 				// Mode 1 ('all-lines') or Mode 2 ('current'): 1 bottom slider bar
-				// First reset padding-right and --codeblock-scroll-width to accurately read natural text widths
+				// Derive stable block key and scan full document text for true codeblock max width
+				const filePath = this.plugin.app.workspace.getActiveFile()?.path || 'unknown';
+				let blockKey = '';
+				let docMaxEstimatedWidth = 0;
+				if (editorView) {
+					try {
+						const firstL = currentBlockLines[0];
+						const pos = editorView.posAtDOM(firstL);
+						const cmL = editorView.state.doc.lineAt(pos);
+						let startLn = cmL.number;
+						for (let ln = cmL.number; ln >= 1; ln--) {
+							const t = editorView.state.doc.line(ln).text.trim();
+							if (t.startsWith('```')) {
+								startLn = ln;
+								break;
+							}
+						}
+						blockKey = `${filePath}::cm::block_${startLn}`;
+
+						let maxLen = 0;
+						for (let ln = startLn; ln <= editorView.state.doc.lines; ln++) {
+							const t = editorView.state.doc.line(ln).text;
+							if (t.length > maxLen) maxLen = t.length;
+							if (ln > startLn && t.trim().startsWith('```')) break;
+						}
+						docMaxEstimatedWidth = Math.round(maxLen * 8.6) + 60;
+					} catch (e) {
+						// ignore
+					}
+				}
+				if (!blockKey) {
+					const snippet = (currentBlockLines[0]?.textContent || '').trim().substring(0, 30).replace(/\s+/g, '_');
+					blockKey = `${filePath}::cm::${snippet}`;
+				}
+
+				// Capture any existing scroll offset before styling
+				const existingScroll = this.blockCurrentScrollLeft.get(blockKey) ??
+					currentBlockLines.find((l) => l.scrollLeft > 0)?.scrollLeft ?? 0;
+				if (existingScroll > 0) {
+					this.blockCurrentScrollLeft.set(blockKey, existingScroll);
+				}
+
+				// CRITICAL: First apply white-space: pre !important to ALL lines
+				// so browser un-wraps text and accurately measures true scrollWidth!
 				currentBlockLines.forEach((l) => {
-					l.style.removeProperty('padding-right');
+					l.classList.remove('pakcli-codeblock-wrap', 'pakcli-codeblock-line-scalefit', 'pakcli-codeblock-line-per-line');
+					l.classList.add('pakcli-codeblock-line-flowclip');
+					l.style.setProperty('white-space', 'pre', 'important');
+					l.style.setProperty('word-break', 'normal', 'important');
+					l.style.setProperty('word-wrap', 'normal', 'important');
+					l.style.setProperty('overflow-x', 'auto', 'important');
+					l.style.setProperty('overflow-y', 'hidden', 'important');
+					l.style.setProperty('max-width', '100%', 'important');
+					l.style.setProperty('width', 'auto', 'important');
+					l.style.setProperty('min-width', '0', 'important');
+					l.style.setProperty('box-sizing', 'border-box', 'important');
 					l.style.removeProperty('--codeblock-scroll-width');
+					l.style.removeProperty('padding-bottom');
+
+					const perLineHandler = (l as any)._pakcliPerLineScroll;
+					if (perLineHandler) {
+						l.removeEventListener('scroll', perLineHandler);
+						(l as any)._pakcliPerLineScroll = null;
+					}
 				});
 
-				let maxScrollWidth = 0;
+				let naturalMaxScrollWidth = 0;
 				currentBlockLines.forEach((l) => {
-					if (l.scrollWidth > maxScrollWidth) maxScrollWidth = l.scrollWidth;
+					const isFence = l.classList.contains('HyperMD-codeblock-begin') || l.classList.contains('HyperMD-codeblock-end');
+					if (isFence) {
+						l.style.setProperty('overflow-x', 'hidden', 'important');
+						return;
+					}
+					let sw = (l as any)._pakcliNaturalScrollWidth;
+					if (!sw) {
+						sw = l.scrollWidth;
+						(l as any)._pakcliNaturalScrollWidth = sw;
+					}
+					if (sw > naturalMaxScrollWidth) naturalMaxScrollWidth = sw;
 				});
+
+				// Cache remembers the widest line even when scrolled offscreen
+				const cached = this.blockMaxScrollWidthCache.get(blockKey) || 0;
+				const currentMax = Math.max(cached, naturalMaxScrollWidth, docMaxEstimatedWidth);
+				if (currentMax > 0) {
+					this.blockMaxScrollWidthCache.set(blockKey, currentMax);
+				}
 
 				const isAllLines = this.flowclipMode === 'all-lines';
 
 				currentBlockLines.forEach((line) => {
-					line.classList.remove('pakcli-codeblock-wrap', 'pakcli-codeblock-line-scalefit', 'pakcli-codeblock-line-per-line', 'pakcli-codeblock-end-scroll');
-					line.classList.add('pakcli-codeblock-line-flowclip');
-					line.style.setProperty('contain', 'none', 'important');
-					line.style.setProperty('white-space', 'pre', 'important');
-					line.style.setProperty('word-break', 'normal', 'important');
-					line.style.setProperty('word-wrap', 'normal', 'important');
-					line.style.setProperty('overflow-x', 'auto', 'important');
-					line.style.setProperty('overflow-y', 'hidden', 'important');
-					line.style.setProperty('max-width', '100%', 'important');
-					line.style.setProperty('width', 'auto', 'important');
-					line.style.setProperty('min-width', '0', 'important');
+					const isFence = line.classList.contains('HyperMD-codeblock-begin') || line.classList.contains('HyperMD-codeblock-end');
+					if (isFence) {
+						line.style.setProperty('overflow-x', 'hidden', 'important');
+						line.style.removeProperty('--codeblock-spacer-width');
+						line.style.removeProperty('padding-right');
+						line.scrollLeft = 0;
+						return;
+					}
 
 					if (isAllLines) {
 						// Mode 1: 1 slider controls all lines together as a whole block
-						// Set box-sizing content-box and padding-right to maxScrollWidth so
-						// EVERY line's scrollWidth >= maxScrollWidth and all lines scroll in lockstep
 						line.classList.add('pakcli-codeblock-line-all-synced');
-						line.style.setProperty('box-sizing', 'content-box', 'important');
-						line.style.setProperty('padding-right', `${maxScrollWidth}px`, 'important');
-						line.style.setProperty('--codeblock-scroll-width', `${maxScrollWidth}px`);
+						const sw = (line as any)._pakcliNaturalScrollWidth || line.scrollWidth;
+						const spacerWidth = Math.max(0, currentMax - sw + 150);
+						line.style.setProperty('--codeblock-spacer-width', `${spacerWidth}px`);
+						line.style.setProperty('padding-right', `${spacerWidth}px`, 'important');
 					} else {
 						// Mode 2: current (flowing lines only)
 						line.classList.remove('pakcli-codeblock-line-all-synced');
-						line.style.setProperty('box-sizing', 'border-box', 'important');
+						line.style.removeProperty('--codeblock-spacer-width');
 						line.style.removeProperty('padding-right');
-						line.style.removeProperty('--codeblock-scroll-width');
+						if (line.scrollWidth <= line.clientWidth) {
+							line.scrollLeft = 0;
+						}
 					}
 				});
 
-				const lastLine = currentBlockLines[currentBlockLines.length - 1];
-				this.injectStickyBarForCmBlock(lastLine, currentBlockLines);
+				// Anchor to the last line with height > 0 (avoids collapsed HyperMD-codeblock-end)
+				let anchorLine = currentBlockLines[currentBlockLines.length - 1];
+				for (let i = currentBlockLines.length - 1; i >= 0; i--) {
+					const l = currentBlockLines[i];
+					if (l.offsetHeight > 0 || l.getBoundingClientRect().height > 0) {
+						anchorLine = l;
+						break;
+					}
+				}
+				(anchorLine as any)._pakcliNaturalMaxScrollWidth = currentMax;
+				(anchorLine as any)._pakcliBlockKey = blockKey;
+				this.injectStickyBarForCmBlock(anchorLine, currentBlockLines, blockKey);
 			}
 
 			currentBlockLines = [];
@@ -1674,12 +1821,42 @@ export class CodeblockScaler {
 
 			if (line.classList.contains('HyperMD-codeblock-begin')) {
 				flushBlock();
-				currentLanguage = text.replace(/^`+/, '').trim().toLowerCase();
+
+				let lang = '';
+				if (editorView) {
+					try {
+						const pos = editorView.posAtDOM(line);
+						const docLine = editorView.state.doc.lineAt(pos);
+						const t = docLine.text.trim();
+						if (t.startsWith('```')) {
+							lang = t.replace(/^`+/, '').trim().toLowerCase();
+						}
+					} catch (e) {
+						// ignore
+					}
+				}
+				if (!lang) {
+					const flair = line.querySelector('.code-block-flair, .code-block-language, .code-language');
+					const flairText = flair?.textContent?.trim().toLowerCase() || '';
+					if (text.startsWith('```')) {
+						lang = text.replace(/^`+/, '').trim().toLowerCase();
+					} else if (flairText && flairText !== 'copy') {
+						lang = flairText;
+					} else {
+						lang = line.getAttribute('data-language') || line.getAttribute('data-lang') || '';
+					}
+				}
+				currentLanguage = lang;
 				currentBlockLines.push(line);
 			} else if (line.classList.contains('HyperMD-codeblock-end')) {
 				currentBlockLines.push(line);
 				flushBlock();
 			} else {
+				// Only split if previous sibling is a real .cm-line that is NOT a codeblock
+				const prev = line.previousElementSibling;
+				if (prev && prev.classList.contains('cm-line') && !prev.classList.contains('HyperMD-codeblock')) {
+					flushBlock();
+				}
 				if (!currentLanguage && text.startsWith('```')) {
 					currentLanguage = text.replace(/^`+/, '').trim().toLowerCase();
 				}
@@ -1692,15 +1869,19 @@ export class CodeblockScaler {
 
 	/**
 	 * Injects a fixed-position scrollbar for a Live Preview CodeMirror codeblock.
-	 * Anchored to the bottom line (lastLine) of the codeblock.
+	 * Anchored to the bottom visible line (anchorLine) of the codeblock.
 	 * Sits strictly at the bottom of the codeblock and shares identical mechanics with Reading View.
 	 */
-	private injectStickyBarForCmBlock(lastLine: HTMLElement, blockLines: HTMLElement[]): void {
+	private injectStickyBarForCmBlock(anchorLine: HTMLElement, blockLines: HTMLElement[], blockKey: string): void {
+		if (this.flowclipMode === 'per-line') return;
+
 		// Clean up any old bars previously attached to earlier lines in this exact block
 		for (const l of blockLines) {
-			if (l !== lastLine && (l as any)._pakcliStickyBar) {
+			if (l !== anchorLine && (l as any)._pakcliStickyBar) {
 				const oldBar = (l as any)._pakcliStickyBar as HTMLElement;
-				oldBar.remove();
+				if (this.activeCmBars.get(blockKey) !== oldBar) {
+					oldBar.remove();
+				}
 				(l as any)._pakcliStickyBar = null;
 				(l as any)._pakcliStickyPositionBar = null;
 				(l as any)._pakcliBindLineScroll = null;
@@ -1708,83 +1889,104 @@ export class CodeblockScaler {
 		}
 
 		// Store updated lines for this codeblock
-		(lastLine as any)._pakcliBlockLines = blockLines.slice();
+		(anchorLine as any)._pakcliBlockLines = blockLines.slice();
 
-		// Add padding-bottom to lastLine so text/backticks are not covered by the 14px bar
-		lastLine.style.setProperty('padding-bottom', `${CodeblockScaler.BAR_H}px`, 'important');
-		lastLine.style.setProperty('box-sizing', 'content-box', 'important');
-
-		// If already inited, bind any new lines and refresh the bar position
-		if ((lastLine as any)._pakcliStickyBar) {
-			const bindFn: ((line: HTMLElement) => void) | undefined = (lastLine as any)._pakcliBindLineScroll;
-			if (bindFn) blockLines.forEach(bindFn);
-			const fn: (() => void) | undefined = (lastLine as any)._pakcliStickyPositionBar;
-			if (fn) fn();
-			return;
-		}
-
-		// Build fixed bar
-		const bar = document.createElement('div');
-		bar.className = 'pakcli-cb-sticky-bar pakcli-cb-sticky-bar--fixed';
-		const inner = document.createElement('div');
-		inner.className = 'pakcli-cb-sticky-inner';
-		bar.appendChild(inner);
-		document.body.appendChild(bar);
-		(bar as any)._pakcliAnchor = lastLine;
-		(lastLine as any)._pakcliStickyBar = bar;
+		// Add padding-bottom to anchorLine so text/backticks are not covered by the 14px bar
+		anchorLine.style.setProperty('padding-bottom', `${CodeblockScaler.BAR_H}px`, 'important');
+		anchorLine.style.setProperty('box-sizing', 'content-box', 'important');
 
 		const BAR_H = CodeblockScaler.BAR_H;
+
+		// Reuse existing bar for this blockKey if present
+		let bar = this.activeCmBars.get(blockKey);
+		const isNewBar = !bar || !bar.isConnected;
+
+		if (isNewBar) {
+			bar = document.createElement('div');
+			bar.className = 'pakcli-cb-sticky-bar pakcli-cb-sticky-bar--fixed';
+			const inner = document.createElement('div');
+			inner.className = 'pakcli-cb-sticky-inner';
+			bar.appendChild(inner);
+			document.body.appendChild(bar);
+			this.activeCmBars.set(blockKey, bar);
+		}
+
+		(bar as any)._pakcliAnchor = anchorLine;
+		(anchorLine as any)._pakcliStickyBar = bar;
+		const inner = bar!.firstElementChild as HTMLElement;
 
 		const cleanup = () => {
 			window.removeEventListener('scroll', onWindowScroll, true);
 			window.removeEventListener('resize', positionBar);
 			io.disconnect();
-			(lastLine as any)._pakcliResizeObserver?.disconnect();
-			(lastLine as any)._pakcliStickyBar = null;
-			(lastLine as any)._pakcliStickyPositionBar = null;
-			(lastLine as any)._pakcliBindLineScroll = null;
+			(anchorLine as any)._pakcliResizeObserver?.disconnect();
+			(anchorLine as any)._pakcliStickyBar = null;
+			(anchorLine as any)._pakcliStickyPositionBar = null;
+			(anchorLine as any)._pakcliBindLineScroll = null;
 		};
 
 		const positionBar = () => {
-			if (!this.isElementVisibleInActiveView(lastLine)) {
-				bar.style.setProperty('display', 'none', 'important');
-				if (!lastLine.isConnected) {
-					bar.remove();
-					cleanup();
+			if (this.flowclipMode === 'per-line') {
+				bar!.style.setProperty('display', 'none', 'important');
+				return;
+			}
+
+			if (!this.isElementVisibleInActiveView(anchorLine)) {
+				bar!.style.setProperty('display', 'none', 'important');
+				if (!anchorLine.isConnected) {
+					const anyConnected = ((anchorLine as any)._pakcliBlockLines || []).some((l: HTMLElement) => l.isConnected);
+					if (!anyConnected) {
+						bar!.remove();
+						this.activeCmBars.delete(blockKey);
+						cleanup();
+					}
 				}
 				return;
 			}
 
-			const lines: HTMLElement[] = (lastLine as any)._pakcliBlockLines || [lastLine];
-			const lastLineRect = lastLine.getBoundingClientRect();
+			const lines: HTMLElement[] = (anchorLine as any)._pakcliBlockLines || [anchorLine];
+			const firstLine = lines.find((l) => l.getBoundingClientRect().height > 0) || lines[0] || anchorLine;
+			const firstLineRect = firstLine.getBoundingClientRect();
+			const anchorRect = anchorLine.getBoundingClientRect();
 			const viewH = window.innerHeight;
-			const blockBottom = lastLineRect.bottom;
-			const isVisible = blockBottom >= BAR_H && blockBottom <= viewH + BAR_H;
+
+			// Visible if the codeblock overlaps the viewport vertically
+			const isVisible = firstLineRect.top < viewH && anchorRect.bottom > 0;
 
 			// Dynamically compute max scrollWidth across all lines
-			let maxScrollWidth = 0;
-			const lineW = lastLineRect.width;
-			for (const l of lines) {
-				if (l.scrollWidth > maxScrollWidth) maxScrollWidth = l.scrollWidth;
-			}
+			const maxScrollWidth = (anchorLine as any)._pakcliNaturalMaxScrollWidth || this.blockMaxScrollWidthCache.get(blockKey) || 0;
+			const scroller = anchorLine.closest('.cm-scroller, .cm-editor, .markdown-source-view') as HTMLElement | null;
+			const editorRect = scroller?.getBoundingClientRect();
+
+			const measuredLine = lines.find((l) => l.getBoundingClientRect().width > 0) || anchorLine;
+			const measuredRect = measuredLine.getBoundingClientRect();
+			const lineW = measuredRect.width > 0 ? measuredRect.width : (editorRect ? editorRect.width : 600);
+			const lineLeft = measuredRect.left > 0 ? measuredRect.left : (editorRect ? editorRect.left : 0);
 			const hasOverflow = lineW > 0 && maxScrollWidth > lineW + 2;
 
 			if (!isVisible || !hasOverflow) {
-				bar.style.setProperty('display', 'none', 'important');
+				bar!.style.setProperty('display', 'none', 'important');
 				return;
 			}
 
-			const barTop = blockBottom - BAR_H;
+			// Position bar at the bottom of the codeblock, pinned to viewport bottom if block extends below viewport
+			const barTop = Math.min(anchorRect.bottom, viewH) - BAR_H;
 
-			bar.style.setProperty('display', 'block', 'important');
-			bar.style.setProperty('left', `${lastLineRect.left}px`, 'important');
-			bar.style.setProperty('width', `${lineW}px`, 'important');
-			bar.style.setProperty('top', `${barTop}px`, 'important');
+			bar!.style.setProperty('display', 'block', 'important');
+			bar!.style.setProperty('left', `${lineLeft}px`, 'important');
+			bar!.style.setProperty('width', `${lineW}px`, 'important');
+			bar!.style.setProperty('top', `${barTop}px`, 'important');
 			inner.style.setProperty('width', `${maxScrollWidth}px`, 'important');
-		};
-		(lastLine as any)._pakcliStickyPositionBar = positionBar;
 
-		// Two-way scroll sync with 50ms guard
+			// Preserve current scroll position on bar
+			const activeScroll = this.blockCurrentScrollLeft.get(blockKey);
+			if (activeScroll !== undefined && bar!.scrollLeft !== activeScroll) {
+				bar!.scrollLeft = activeScroll;
+			}
+		};
+		(anchorLine as any)._pakcliStickyPositionBar = positionBar;
+
+		// Two-way scroll sync with 100ms guard
 		let isSyncing = false;
 		let syncTimeout: number | null = null;
 		const setSyncing = () => {
@@ -1793,77 +1995,120 @@ export class CodeblockScaler {
 			syncTimeout = window.setTimeout(() => {
 				isSyncing = false;
 				syncTimeout = null;
-			}, 50);
+			}, 100);
 		};
 
 		const syncLines = (scrollLeft: number) => {
 			setSyncing();
-			const lines: HTMLElement[] = (lastLine as any)._pakcliBlockLines || [];
+			const lines: HTMLElement[] = (anchorLine as any)._pakcliBlockLines || [];
+			const isAllLines = this.flowclipMode === 'all-lines';
 			for (const l of lines) {
-				if (l.scrollLeft !== scrollLeft) l.scrollLeft = scrollLeft;
+				const isFence = l.classList.contains('HyperMD-codeblock-begin') || l.classList.contains('HyperMD-codeblock-end');
+				if (isFence) continue;
+
+				if (isAllLines) {
+					if (l.scrollLeft !== scrollLeft) l.scrollLeft = scrollLeft;
+				} else {
+					if (l.scrollWidth > l.clientWidth + 2) {
+						if (l.scrollLeft !== scrollLeft) l.scrollLeft = scrollLeft;
+					} else {
+						if (l.scrollLeft !== 0) l.scrollLeft = 0;
+					}
+				}
 			}
 		};
 
-		const filePath = this.plugin.app.workspace.getActiveFile()?.path || 'unknown';
-		const snippet = (blockLines[0]?.textContent || '').trim().substring(0, 30).replace(/\s+/g, '_');
-		const key = `${filePath}::cm::${snippet}`;
+		const getMaxScroll = () => {
+			const lines: HTMLElement[] = (anchorLine as any)._pakcliBlockLines || [anchorLine];
+			const measuredLine = lines.find((l) => l.getBoundingClientRect().width > 0) || anchorLine;
+			const lineW = measuredLine.getBoundingClientRect().width;
+			const maxW = (anchorLine as any)._pakcliNaturalMaxScrollWidth || this.blockMaxScrollWidthCache.get(blockKey) || 0;
+			return Math.max(0, maxW - lineW);
+		};
 
-		// Restore saved scroll percentage
-		const savedPct = this.getSavedScrollPct(key);
-		if (savedPct > 0) {
-			window.requestAnimationFrame(() => {
-				const lines: HTMLElement[] = (lastLine as any)._pakcliBlockLines || [lastLine];
-				let maxW = 0;
-				for (const l of lines) if (l.scrollWidth > maxW) maxW = l.scrollWidth;
-				const maxScroll = maxW - lastLine.getBoundingClientRect().width;
-				if (maxScroll > 0) {
-					const target = Math.round(savedPct * maxScroll);
-					bar.scrollLeft = target;
-					syncLines(target);
-				}
-			});
-		}
-
-		bar.addEventListener('scroll', () => {
-			if (isSyncing) return;
-			syncLines(bar.scrollLeft);
-			const lines: HTMLElement[] = (lastLine as any)._pakcliBlockLines || [lastLine];
-			let maxW = 0;
-			for (const l of lines) if (l.scrollWidth > maxW) maxW = l.scrollWidth;
-			const maxScroll = maxW - lastLine.getBoundingClientRect().width;
-			if (maxScroll > 0) {
-				this.saveScrollState(key, bar.scrollLeft / maxScroll);
-			}
-		}, { passive: true });
+		const key = blockKey;
 
 		const bindLineScroll = (line: HTMLElement) => {
+			const isFence = line.classList.contains('HyperMD-codeblock-begin') || line.classList.contains('HyperMD-codeblock-end');
+			if (isFence) return; // Fences must never broadcast scroll
+
 			const oldHandler = (line as any)._pakcliScrollHandler;
 			if (oldHandler) line.removeEventListener('scroll', oldHandler);
+
 			const handler = () => {
 				if (isSyncing) return;
+				const isAllLines = this.flowclipMode === 'all-lines';
+				// In Mode 2, non-flowing lines must never broadcast scroll
+				if (!isAllLines && line.scrollWidth <= line.clientWidth + 2) return;
+
 				setSyncing();
-				bar.scrollLeft = line.scrollLeft;
-				const lines: HTMLElement[] = (lastLine as any)._pakcliBlockLines || [];
+				const target = line.scrollLeft;
+				this.blockCurrentScrollLeft.set(blockKey, target);
+				bar!.scrollLeft = target;
+
+				const lines: HTMLElement[] = (anchorLine as any)._pakcliBlockLines || [];
 				for (const l of lines) {
-					if (l !== line && l.scrollLeft !== line.scrollLeft) {
-						l.scrollLeft = line.scrollLeft;
+					if (l !== line) {
+						const lIsFence = l.classList.contains('HyperMD-codeblock-begin') || l.classList.contains('HyperMD-codeblock-end');
+						if (lIsFence) continue;
+
+						if (isAllLines) {
+							if (l.scrollLeft !== target) l.scrollLeft = target;
+						} else {
+							if (l.scrollWidth > l.clientWidth + 2) {
+								if (l.scrollLeft !== target) l.scrollLeft = target;
+							} else {
+								if (l.scrollLeft !== 0) l.scrollLeft = 0;
+							}
+						}
 					}
 				}
-				const maxScroll = line.scrollWidth - line.clientWidth;
+				const maxScroll = getMaxScroll();
 				if (maxScroll > 0) {
-					this.saveScrollState(key, line.scrollLeft / maxScroll);
+					this.saveScrollState(key, target / maxScroll);
 				}
 			};
 			(line as any)._pakcliScrollHandler = handler;
 			line.addEventListener('scroll', handler, { passive: true });
 		};
-		(lastLine as any)._pakcliBindLineScroll = bindLineScroll;
+		(anchorLine as any)._pakcliBindLineScroll = bindLineScroll;
 		blockLines.forEach(bindLineScroll);
+
+		if (isNewBar) {
+			bar!.addEventListener('scroll', () => {
+				if (isSyncing) return;
+				const target = bar!.scrollLeft;
+				this.blockCurrentScrollLeft.set(blockKey, target);
+				syncLines(target);
+				const maxScroll = getMaxScroll();
+				if (maxScroll > 0) {
+					this.saveScrollState(key, target / maxScroll);
+				}
+			}, { passive: true });
+		}
+
+		// Restore target scroll position from active memory or saved settings
+		let targetScroll = this.blockCurrentScrollLeft.get(blockKey);
+		if (targetScroll === undefined || targetScroll === null) {
+			const savedPct = this.getSavedScrollPct(key);
+			const maxScroll = getMaxScroll();
+			if (savedPct > 0 && maxScroll > 0) {
+				targetScroll = Math.round(savedPct * maxScroll);
+			} else {
+				targetScroll = blockLines.find((l) => l.scrollLeft > 0)?.scrollLeft || 0;
+			}
+			this.blockCurrentScrollLeft.set(blockKey, targetScroll);
+		}
+
+		if (targetScroll > 0) {
+			bar!.scrollLeft = targetScroll;
+			syncLines(targetScroll);
+		}
 
 		const onWindowScroll = (e: Event) => {
 			const t = e.target as HTMLElement;
-			const lines: HTMLElement[] = (lastLine as any)._pakcliBlockLines || [];
-			if (t === bar || lines.includes(t) || bar.contains(t)) return;
+			const lines: HTMLElement[] = (anchorLine as any)._pakcliBlockLines || [];
+			if (t === bar || lines.includes(t) || bar!.contains(t)) return;
 			positionBar();
 		};
 
@@ -1871,24 +2116,32 @@ export class CodeblockScaler {
 		window.addEventListener('resize', positionBar, { passive: true });
 
 		const io = new IntersectionObserver(() => positionBar(), { threshold: 0 });
-		io.observe(lastLine);
+		io.observe(anchorLine);
 
 		if (typeof ResizeObserver !== 'undefined') {
 			const ro = new ResizeObserver(positionBar);
-			ro.observe(lastLine);
-			const scroller = lastLine.closest('.cm-scroller, .cm-content');
+			ro.observe(anchorLine);
+			const scroller = anchorLine.closest('.cm-scroller, .cm-content');
 			if (scroller) ro.observe(scroller);
-			(lastLine as any)._pakcliResizeObserver = ro;
+			(anchorLine as any)._pakcliResizeObserver = ro;
 		}
 
-		bar.scrollLeft = blockLines.find((l) => l.scrollLeft > 0)?.scrollLeft || 0;
 		positionBar();
 		window.requestAnimationFrame(positionBar);
 		window.setTimeout(positionBar, 150);
 		window.setTimeout(positionBar, 700);
 	}
 
+	clearCache(): void {
+		this.blockMaxScrollWidthCache.clear();
+		this.blockCurrentScrollLeft.clear();
+		this.activeCmBars.forEach((bar) => bar.remove());
+		this.activeCmBars.clear();
+		document.querySelectorAll<HTMLElement>('.pakcli-codeblock-flowclip-bar, .pakcli-cb-sticky-bar').forEach((el) => el.remove());
+	}
+
 	destroy(): void {
+		this.clearCache();
 		if (this.observer) {
 			this.observer.disconnect();
 			this.observer = null;
@@ -1898,7 +2151,5 @@ export class CodeblockScaler {
 			this.debounceTimer = null;
 		}
 		this.cmStickyBars = [];
-		// Clean up all sticky bar elements
-		document.querySelectorAll('.pakcli-codeblock-flowclip-bar, .pakcli-cb-sticky-bar').forEach((el) => el.remove());
 	}
 }

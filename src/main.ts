@@ -1585,11 +1585,13 @@ export default class PakCLITablePlugin extends Plugin {
 
 	applyCodeblockStyle() {
 		const mode = this.settings.codeblockWrapMode || 'flowclip';
+		const sliderMode = this.settings.flowclipSliderMode || 'all-lines';
 		document.body.classList.remove(
 			'pakcli-flowclip', 'pakcli-wrap', 'pakcli-scalefit',
-			'codeblock-flowclip', 'codeblock-wrap', 'codeblock-scalefit'
+			'codeblock-flowclip', 'codeblock-wrap', 'codeblock-scalefit',
+			'flowclip-mode-all-lines', 'flowclip-mode-current', 'flowclip-mode-per-line'
 		);
-		document.body.classList.add(`pakcli-${mode}`, `codeblock-${mode}`);
+		document.body.classList.add(`pakcli-${mode}`, `codeblock-${mode}`, `flowclip-mode-${sliderMode}`);
 	}
 
 	getFileColumnConfig(filePath: string, columnCount: number): ColumnConfig {
@@ -4924,6 +4926,8 @@ export default class PakCLITablePlugin extends Plugin {
 								// Reset saved scroll state on mode switch as requested
 								this.settings.flowclipScrollStates = {};
 								await this.saveSettings();
+								this.applyCodeblockStyle();
+								this.codeblockScaler.clearCache();
 								this.codeblockScaler.rescaleAll();
 							});
 					});
