@@ -104,11 +104,21 @@ export function renderAsciiSvg(source: string, container: HTMLElement, codeElToH
 	wrapper.appendChild(svg);
 }
 
+interface StickyBarEntry {
+	bar: HTMLElement;
+	inner: HTMLElement;
+	lines: HTMLElement[];
+	io: IntersectionObserver;
+	onScroll: () => void;
+	onResize: () => void;
+}
+
 export class CodeblockScaler {
 	private isProcessing = false;
 	private debounceTimer: number | null = null;
 	private observer: MutationObserver | null = null;
 	private pendingClipboardTransform: { timestamp: number; lang: string; template: string; replaceExisting?: boolean } | null = null;
+	private cmStickyBars: StickyBarEntry[] = [];
 
 	constructor(private plugin: PakCLIPlugin) { }
 
@@ -612,7 +622,7 @@ export class CodeblockScaler {
 						codeEl.style.setProperty('max-width', '100%', 'important');
 					}
 				} else {
-					// Flowclip: Horizontal scrollbar scoped to this codeblock only
+					// Flowclip: horizontal overflow — hide native scrollbar on pre, inject sticky bar
 					pre.classList.add('pakcli-codeblock-flowclip');
 					pre.style.setProperty('white-space', 'pre', 'important');
 					pre.style.setProperty('word-break', 'normal', 'important');
@@ -624,13 +634,14 @@ export class CodeblockScaler {
 					pre.style.setProperty('min-width', '0', 'important');
 					pre.style.setProperty('box-sizing', 'border-box', 'important');
 					pre.style.setProperty('contain', 'none', 'important');
+					// Hide the native scrollbar on the pre — the sticky bar replaces it
+					pre.style.setProperty('scrollbar-width', 'none', 'important');
+					(pre.style as any)['-ms-overflow-style'] = 'none';
 
-					// Scope the scrollbar to the pre itself — clamp parent containers
 					const embedBlock = pre.closest('.cm-embed-block') as HTMLElement | null;
 					if (embedBlock) {
 						embedBlock.style.setProperty('max-width', '100%', 'important');
 						embedBlock.style.setProperty('width', 'auto', 'important');
-						// Use hidden on parent, auto on pre — so bar stays inside pre
 						embedBlock.style.setProperty('overflow', 'hidden', 'important');
 						embedBlock.style.setProperty('box-sizing', 'border-box', 'important');
 					}
@@ -638,7 +649,7 @@ export class CodeblockScaler {
 						pre.parentElement.style.setProperty('max-width', '100%', 'important');
 						pre.parentElement.style.setProperty('width', 'auto', 'important');
 						pre.parentElement.style.setProperty('min-width', '0', 'important');
-						pre.parentElement.style.setProperty('overflow', 'hidden', 'important');
+						pre.parentElement.style.setProperty('overflow', 'visible', 'important');
 						pre.parentElement.style.setProperty('box-sizing', 'border-box', 'important');
 					}
 
@@ -651,6 +662,9 @@ export class CodeblockScaler {
 						codeEl.style.setProperty('width', 'auto', 'important');
 						codeEl.style.setProperty('box-sizing', 'border-box', 'important');
 					}
+
+					// Inject sticky scrollbar (once per pre)
+					this.injectStickyBarForPre(pre);
 				}
 			}
 
@@ -662,6 +676,99 @@ export class CodeblockScaler {
 		const cmLines = container.querySelectorAll('.cm-line.HyperMD-codeblock');
 		if (cmLines.length > 0) {
 			this.processCmLines(cmLines);
+		}
+	}
+
+	/**
+	 * Injects a sticky-bottom scrollbar for a Reading View <pre> flowclip block.
+	 * Uses position:sticky so it always sits at the bottom of the visible codeblock area.
+	 */
+	private injectStickyBarForPre(pre: HTMLElement): void {
+		// Already done for this pre
+		if ((pre as any)._pakcliStickyDone) return;
+		(pre as any)._pakcliStickyDone = true;
+
+		// We need the pre's scrollable parent to position sticky correctly.
+		// The simplest approach: create a wrapper div that is position:relative
+		// and has overflow:hidden. Inside: pre (overflow-x:scroll, scrollbar hidden)
+		// + sticky bar div at bottom.
+		const parent = pre.parentElement;
+		if (!parent) return;
+
+		// If already wrapped, find existing bar
+		if (parent.classList.contains('pakcli-cb-wrap')) {
+			const existingBar = parent.querySelector(':scope > .pakcli-cb-sticky-bar') as HTMLElement | null;
+			if (existingBar) {
+				this.syncStickyBarForPre(pre, existingBar.querySelector('.pakcli-cb-sticky-inner') as HTMLElement);
+				return;
+			}
+		}
+
+		// Build sticky bar
+		const stickyBar = document.createElement('div');
+		stickyBar.className = 'pakcli-cb-sticky-bar';
+
+		const inner = document.createElement('div');
+		inner.className = 'pakcli-cb-sticky-inner';
+		stickyBar.appendChild(inner);
+
+		// Insert sticky bar right after pre inside its parent
+		if (pre.nextSibling) {
+			parent.insertBefore(stickyBar, pre.nextSibling);
+		} else {
+			parent.appendChild(stickyBar);
+		}
+
+		this.syncStickyBarForPre(pre, inner);
+	}
+
+	/** Sets up scroll sync between a <pre> and its sticky bar inner element. */
+	private syncStickyBarForPre(pre: HTMLElement, inner: HTMLElement): void {
+		const bar = inner.parentElement as HTMLElement;
+
+		const update = () => {
+			const sw = pre.scrollWidth;
+			const cw = pre.clientWidth;
+			const hasOverflow = sw > cw + 2;
+			bar.style.display = hasOverflow ? 'block' : 'none';
+			if (hasOverflow) {
+				inner.style.width = `${sw}px`;
+				bar.scrollLeft = pre.scrollLeft;
+			}
+		};
+
+		let syncing = false;
+		const onPreScroll = () => {
+			if (syncing) return;
+			syncing = true;
+			bar.scrollLeft = pre.scrollLeft;
+			syncing = false;
+		};
+		const onBarScroll = () => {
+			if (syncing) return;
+			syncing = true;
+			pre.scrollLeft = bar.scrollLeft;
+			syncing = false;
+		};
+
+		// Remove old listeners if re-running
+		if ((pre as any)._pakcliPreScrollHandler) {
+			pre.removeEventListener('scroll', (pre as any)._pakcliPreScrollHandler);
+		}
+		if ((bar as any)._pakcliBarScrollHandler) {
+			bar.removeEventListener('scroll', (bar as any)._pakcliBarScrollHandler);
+		}
+		(pre as any)._pakcliPreScrollHandler = onPreScroll;
+		(bar as any)._pakcliBarScrollHandler = onBarScroll;
+		pre.addEventListener('scroll', onPreScroll, { passive: true });
+		bar.addEventListener('scroll', onBarScroll, { passive: true });
+
+		// Initial update + watch for content width changes
+		update();
+		if (typeof ResizeObserver !== 'undefined') {
+			const ro = new ResizeObserver(update);
+			ro.observe(pre);
+			(pre as any)._pakcliResizeObserver = ro;
 		}
 	}
 
@@ -1319,63 +1426,103 @@ export class CodeblockScaler {
 
 				const hasOverflow = clientW > 0 && maxScrollWidth > clientW + 2;
 
-				if (hasOverflow && lastLine) {
-					// Remove scroll class from all lines except lastLine
-					contentLines.forEach((l) => {
-						l.classList.remove('pakcli-codeblock-end-scroll');
-						l.style.removeProperty('--codeblock-scroll-width');
-					});
+				// Remove any old CM sticky bar for this exact group
+				const firstLine = currentBlockLines[0];
+				const oldEntryIdx = this.cmStickyBars.findIndex((e) => e.lines[0] === firstLine);
+				if (oldEntryIdx !== -1) {
+					const old = this.cmStickyBars[oldEntryIdx];
+					old.io.disconnect();
+					window.removeEventListener('scroll', old.onScroll, true);
+					window.removeEventListener('resize', old.onResize);
+					old.bar.remove();
+					this.cmStickyBars.splice(oldEntryIdx, 1);
+				}
 
-					// Enable visible scrollbar handle on lastLine via ::after width
-					lastLine.classList.add('pakcli-codeblock-end-scroll');
-					lastLine.style.setProperty('--codeblock-scroll-width', `${maxScrollWidth}px`);
+				// Build the fixed sticky bar
+				const bar = document.createElement('div');
+				bar.className = 'pakcli-cb-sticky-bar pakcli-cb-sticky-bar--fixed';
+				const barInner = document.createElement('div');
+				barInner.className = 'pakcli-cb-sticky-inner';
+				barInner.style.width = `${maxScrollWidth}px`;
+				bar.appendChild(barInner);
+				document.body.appendChild(bar);
 
-					let isSyncing = false;
-					const syncAll = (targetScrollLeft: number, sourceEl?: HTMLElement) => {
+				// Suppress per-line scrollbars; each line still scrolls via JS
+				currentBlockLines.forEach((l) => {
+					l.classList.remove('pakcli-codeblock-end-scroll');
+					l.style.removeProperty('--codeblock-scroll-width');
+				});
+
+				// Position bar below the codeblock group, pinned to viewport bottom
+				const positionBar = () => {
+					if (!firstLine.isConnected) { bar.style.display = 'none'; return; }
+					const lineRect = firstLine.getBoundingClientRect();
+					const lastLineEl = currentBlockLines[currentBlockLines.length - 1];
+					const lastRect = lastLineEl.getBoundingClientRect();
+				const viewH = window.innerHeight;
+					// The block is visible in viewport
+					const blockTop = lineRect.top;
+					const blockBottom = lastRect.bottom;
+					const isVisible = blockTop < viewH && blockBottom > 0;
+					// Show bar only when block is tall enough and bottom is below viewport or block fills screen
+					const needsSticky = isVisible && maxScrollWidth > (lineRect.width + 2);
+					if (!needsSticky) { bar.style.display = 'none'; return; }
+					bar.style.display = 'block';
+					bar.style.left = `${lineRect.left}px`;
+					bar.style.width = `${lineRect.width}px`;
+					// Clamp bottom of bar: sits at viewport bottom, but not below block bottom
+					const barBottom = Math.min(viewH, Math.max(blockBottom, 0));
+					bar.style.top = `${barBottom - bar.offsetHeight}px`;
+					barInner.style.width = `${maxScrollWidth}px`;
+				};
+
+				// Sync scroll: bar → all lines, any line → bar
+				let isSyncing = false;
+				const syncLines = (scrollLeft: number) => {
+					if (isSyncing) return;
+					isSyncing = true;
+					for (const l of currentBlockLines) {
+						if (l.scrollLeft !== scrollLeft) l.scrollLeft = scrollLeft;
+					}
+					isSyncing = false;
+				};
+				const onBarScroll = () => { if (!isSyncing) syncLines(bar.scrollLeft); };
+				bar.addEventListener('scroll', onBarScroll, { passive: true });
+
+				currentBlockLines.forEach((line) => {
+					const oldHandler = (line as any)._pakcliScrollHandler;
+					if (oldHandler) line.removeEventListener('scroll', oldHandler);
+					const handler = () => {
 						if (isSyncing) return;
 						isSyncing = true;
-						try {
-							if (lastLine !== sourceEl && lastLine.scrollLeft !== targetScrollLeft) {
-								lastLine.scrollLeft = targetScrollLeft;
-							}
-							for (const l of contentLines) {
-								if (l !== sourceEl && l.scrollLeft !== targetScrollLeft) {
-									l.scrollLeft = targetScrollLeft;
-								}
-							}
-						} finally {
-							isSyncing = false;
+						bar.scrollLeft = line.scrollLeft;
+						for (const l of currentBlockLines) {
+							if (l !== line && l.scrollLeft !== line.scrollLeft) l.scrollLeft = line.scrollLeft;
 						}
+						isSyncing = false;
 					};
+					(line as any)._pakcliScrollHandler = handler;
+					line.addEventListener('scroll', handler, { passive: true });
+				});
 
-					lastLine.onscroll = () => {
-						syncAll(lastLine.scrollLeft, lastLine);
-					};
+				const onScroll = () => positionBar();
+				const onResize = () => positionBar();
+				window.addEventListener('scroll', onScroll, { passive: true, capture: true });
+				window.addEventListener('resize', onResize, { passive: true });
 
-					contentLines.forEach((line) => {
-						const oldHandler = (line as any)._pakcliScrollHandler;
-						if (oldHandler) {
-							line.removeEventListener('scroll', oldHandler);
-						}
-						const handler = () => {
-							syncAll(line.scrollLeft, line);
-						};
-						(line as any)._pakcliScrollHandler = handler;
-						line.addEventListener('scroll', handler, { passive: true });
-					});
-				} else {
-					if (lastLine) {
-						lastLine.classList.remove('pakcli-codeblock-end-scroll');
-						lastLine.style.removeProperty('--codeblock-scroll-width');
-						lastLine.scrollLeft = 0;
-					}
-					contentLines.forEach((l) => {
-						l.classList.remove('pakcli-codeblock-end-scroll');
-						l.scrollLeft = 0;
-					});
-					}
+				const io = new IntersectionObserver(() => positionBar(), { threshold: 0 });
+				currentBlockLines.forEach((l) => io.observe(l));
 
-			}
+				positionBar();
+
+				this.cmStickyBars.push({
+					bar, inner: barInner, lines: currentBlockLines.slice(),
+					io, onScroll, onResize
+				});
+
+
+
+			} // end else (flowclip)
 
 			currentBlockLines = [];
 			currentLanguage = '';
@@ -1412,6 +1559,15 @@ export class CodeblockScaler {
 			window.clearTimeout(this.debounceTimer);
 			this.debounceTimer = null;
 		}
-		document.querySelectorAll('.pakcli-codeblock-flowclip-bar').forEach((el) => el.remove());
+		// Clean up all CM sticky bars
+		for (const entry of this.cmStickyBars) {
+			entry.io.disconnect();
+			window.removeEventListener('scroll', entry.onScroll, true);
+			window.removeEventListener('resize', entry.onResize);
+			entry.bar.remove();
+		}
+		this.cmStickyBars = [];
+		// Clean up old bar elements if any remain
+		document.querySelectorAll('.pakcli-codeblock-flowclip-bar, .pakcli-cb-sticky-bar').forEach((el) => el.remove());
 	}
 }

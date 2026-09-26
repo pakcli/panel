@@ -485,7 +485,7 @@ pre.pakcli-codeblock-flowclip,
     box-sizing: border-box !important;
 }
 
-/* Per-block Flowclip: Live Preview CodeMirror lines (suppress individual scrollbars, single bar at bottom) */
+/* Per-block Flowclip: Live Preview CodeMirror lines (suppress individual scrollbars, fixed sticky bar at viewport bottom) */
 body .markdown-source-view.mod-cm6 .cm-line.HyperMD-codeblock.pakcli-codeblock-line-flowclip,
 .cm-line.HyperMD-codeblock.pakcli-codeblock-line-flowclip {
     white-space: pre !important;
@@ -505,6 +505,89 @@ body .markdown-source-view.mod-cm6 .cm-line.HyperMD-codeblock.pakcli-codeblock-l
         display: none !important;
         width: 0 !important;
         height: 0 !important;
+    }
+}
+
+/* Hide native scrollbar on Reading View flowclip <pre> — replaced by .pakcli-cb-sticky-bar */
+body pre.pakcli-codeblock-flowclip,
+.markdown-rendered pre.pakcli-codeblock-flowclip,
+.markdown-source-view pre.pakcli-codeblock-flowclip,
+.cm-embed-block pre.pakcli-codeblock-flowclip {
+    scrollbar-width: none !important;
+    -ms-overflow-style: none !important;
+    &::-webkit-scrollbar {
+        display: none !important;
+        height: 0 !important;
+        width: 0 !important;
+    }
+}
+
+/* ── Sticky scrollbar bar ─────────────────────────────────────────────────── */
+/* Reading View: injected after <pre> in its parent, position:sticky */
+.pakcli-cb-sticky-bar {
+    display: none; /* shown by JS when overflow detected */
+    overflow-x: auto;
+    overflow-y: hidden;
+    height: 12px;
+    position: sticky;
+    bottom: 0;
+    z-index: 10;
+    background: transparent;
+    /* Match the pre's left/right padding so the bar aligns perfectly */
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+
+    /* Style the scrollbar thumb itself */
+    scrollbar-width: thin;
+    scrollbar-color: rgba(128,128,128,0.55) transparent;
+    &::-webkit-scrollbar {
+        height: 8px;
+    }
+    &::-webkit-scrollbar-track {
+        background: rgba(128,128,128,0.12);
+        border-radius: 4px;
+    }
+    &::-webkit-scrollbar-thumb {
+        background: rgba(128,128,128,0.5);
+        border-radius: 4px;
+        &:hover { background: rgba(128,128,128,0.75); }
+    }
+}
+
+/* Inner element that sets the scrollable width */
+.pakcli-cb-sticky-inner {
+    height: 1px; /* just enough to make the bar scrollable */
+    display: block;
+    pointer-events: none;
+}
+
+/* Live Preview: fixed-position bar — positioned by JS at viewport bottom */
+.pakcli-cb-sticky-bar--fixed {
+    position: fixed !important;
+    display: none; /* shown by JS */
+    overflow-x: auto;
+    overflow-y: hidden;
+    height: 12px;
+    z-index: 999;
+    bottom: auto; /* top is set by JS */
+    background: var(--code-background, rgba(0,0,0,0.08));
+    border-top: 1px solid rgba(128,128,128,0.2);
+    box-sizing: border-box;
+    pointer-events: auto;
+
+    scrollbar-width: thin;
+    scrollbar-color: rgba(128,128,128,0.55) transparent;
+    &::-webkit-scrollbar {
+        height: 8px;
+    }
+    &::-webkit-scrollbar-track {
+        background: rgba(128,128,128,0.12);
+    }
+    &::-webkit-scrollbar-thumb {
+        background: rgba(128,128,128,0.5);
+        border-radius: 4px;
+        &:hover { background: rgba(128,128,128,0.75); }
     }
 }
 
