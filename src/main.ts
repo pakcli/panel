@@ -4915,9 +4915,9 @@ export default class PakCLITablePlugin extends Plugin {
 					.setName('Flowclip Slider Mode')
 					.setDesc('How the horizontal scrollbar and codeblock lines behave in Flowclip mode.')
 					.addDropdown((d) => {
-						d.addOption('all-lines', '1. All Lines Synced (1 slider controls whole block) [Default]')
-							.addOption('current', '2. Flowing Lines Only (1 slider controls flowing lines)')
-							.addOption('per-line', '3. Per-Line Slider (1 flowing line has 1 slider bar)')
+						d.addOption('all-lines', '1. 1 Codeblock 1 Bar - Control All Lines (Whole block moves together) [Default]')
+							.addOption('current', '2. 1 Codeblock 1 Bar - Control Flowing Lines Only')
+							.addOption('per-line', '3. 1 Bar Control Each Line Flowing (Per-line slider)')
 							.setValue(this.settings.flowclipSliderMode || 'all-lines')
 							.onChange(async (v: string) => {
 								this.settings.flowclipSliderMode = v as 'all-lines' | 'current' | 'per-line';

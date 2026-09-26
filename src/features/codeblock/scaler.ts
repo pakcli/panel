@@ -1617,8 +1617,11 @@ export class CodeblockScaler {
 				});
 			} else {
 				// Mode 1 ('all-lines') or Mode 2 ('current'): 1 bottom slider bar
-				// First reset --codeblock-scroll-width to accurately read natural text widths
-				currentBlockLines.forEach((l) => l.style.removeProperty('--codeblock-scroll-width'));
+				// First reset padding-right and --codeblock-scroll-width to accurately read natural text widths
+				currentBlockLines.forEach((l) => {
+					l.style.removeProperty('padding-right');
+					l.style.removeProperty('--codeblock-scroll-width');
+				});
 
 				let maxScrollWidth = 0;
 				currentBlockLines.forEach((l) => {
@@ -1639,17 +1642,20 @@ export class CodeblockScaler {
 					line.style.setProperty('max-width', '100%', 'important');
 					line.style.setProperty('width', 'auto', 'important');
 					line.style.setProperty('min-width', '0', 'important');
-					line.style.setProperty('box-sizing', 'border-box', 'important');
 
 					if (isAllLines) {
 						// Mode 1: 1 slider controls all lines together as a whole block
-						const naturalWidth = line.scrollWidth;
-						const extraWidth = Math.max(0, maxScrollWidth - naturalWidth);
+						// Set box-sizing content-box and padding-right to maxScrollWidth so
+						// EVERY line's scrollWidth >= maxScrollWidth and all lines scroll in lockstep
 						line.classList.add('pakcli-codeblock-line-all-synced');
-						line.style.setProperty('--codeblock-scroll-width', `${extraWidth}px`);
+						line.style.setProperty('box-sizing', 'content-box', 'important');
+						line.style.setProperty('padding-right', `${maxScrollWidth}px`, 'important');
+						line.style.setProperty('--codeblock-scroll-width', `${maxScrollWidth}px`);
 					} else {
 						// Mode 2: current (flowing lines only)
 						line.classList.remove('pakcli-codeblock-line-all-synced');
+						line.style.setProperty('box-sizing', 'border-box', 'important');
+						line.style.removeProperty('padding-right');
 						line.style.removeProperty('--codeblock-scroll-width');
 					}
 				});
