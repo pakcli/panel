@@ -1237,17 +1237,15 @@ export class CodeblockScaler {
 
 			const behavior = this.getBehaviorForLanguage(currentLanguage);
 
-			// Clean up any stray bars from lines that are not the last line
-			currentBlockLines.forEach((line, idx) => {
-				if (idx !== currentBlockLines.length - 1) {
-					const stray = line.querySelector('.pakcli-codeblock-flowclip-bar');
-					if (stray) stray.remove();
-				}
+			// Clean up any old injected bars from previous versions
+			currentBlockLines.forEach((line) => {
+				const oldBar = line.querySelector('.pakcli-codeblock-flowclip-bar');
+				if (oldBar) oldBar.remove();
 			});
 
 			if (behavior === 'wrap') {
 				currentBlockLines.forEach((line) => {
-					line.classList.remove('pakcli-codeblock-line-flowclip', 'pakcli-codeblock-line-scalefit');
+					line.classList.remove('pakcli-codeblock-line-flowclip', 'pakcli-codeblock-line-scalefit', 'pakcli-codeblock-end-scroll');
 					line.classList.add('pakcli-codeblock-wrap');
 					line.style.setProperty('contain', 'none', 'important');
 					line.style.setProperty('white-space', 'pre-wrap', 'important');
@@ -1259,6 +1257,7 @@ export class CodeblockScaler {
 					line.style.setProperty('width', 'auto', 'important');
 					line.style.setProperty('min-width', '0', 'important');
 					line.style.setProperty('box-sizing', 'border-box', 'important');
+					line.style.removeProperty('--codeblock-scroll-width');
 					line.scrollLeft = 0;
 
 					const oldHandler = (line as any)._pakcliScrollHandler;
@@ -1266,13 +1265,10 @@ export class CodeblockScaler {
 						line.removeEventListener('scroll', oldHandler);
 						(line as any)._pakcliScrollHandler = null;
 					}
-
-					const bar = line.querySelector('.pakcli-codeblock-flowclip-bar');
-					if (bar) bar.remove();
 				});
 			} else if (behavior === 'scalefit') {
 				currentBlockLines.forEach((line) => {
-					line.classList.remove('pakcli-codeblock-wrap', 'pakcli-codeblock-line-flowclip');
+					line.classList.remove('pakcli-codeblock-wrap', 'pakcli-codeblock-line-flowclip', 'pakcli-codeblock-end-scroll');
 					line.classList.add('pakcli-codeblock-line-scalefit');
 					line.style.setProperty('contain', 'none', 'important');
 					line.style.setProperty('white-space', 'pre', 'important');
@@ -1282,12 +1278,10 @@ export class CodeblockScaler {
 					line.style.setProperty('width', 'auto', 'important');
 					line.style.setProperty('min-width', '0', 'important');
 					line.style.setProperty('box-sizing', 'border-box', 'important');
-
-					const bar = line.querySelector('.pakcli-codeblock-flowclip-bar');
-					if (bar) bar.remove();
+					line.style.removeProperty('--codeblock-scroll-width');
 				});
 			} else {
-				// FLOWCLIP: 1 CODEBLOCK = 1 SINGLE HORIZONTAL SCROLLBAR
+				// FLOWCLIP: 1 CODEBLOCK = 1 SINGLE HORIZONTAL SCROLLBAR AT BOTTOM LINE
 				currentBlockLines.forEach((line) => {
 					line.classList.remove('pakcli-codeblock-wrap', 'pakcli-codeblock-line-scalefit');
 					line.classList.add('pakcli-codeblock-line-flowclip');
@@ -1303,63 +1297,49 @@ export class CodeblockScaler {
 					line.style.setProperty('box-sizing', 'border-box', 'important');
 				});
 
-				// Calculate max scroll width and minimum client width across lines in this block
+				// Separate content lines and the last line (the footer ``` line)
 				const lastLine = currentBlockLines[currentBlockLines.length - 1];
-				let existingBar = lastLine?.querySelector('.pakcli-codeblock-flowclip-bar') as HTMLElement | null;
+				const contentLines = currentBlockLines.slice(0, currentBlockLines.length - 1);
 
+				// Calculate max scroll width across lines in this block
 				let maxScrollWidth = 0;
 				let minClientWidth = Infinity;
 				for (const line of currentBlockLines) {
-					let sw = line.scrollWidth;
-					if (line === lastLine && existingBar) {
-						sw = 0;
-					}
-					if (sw > maxScrollWidth) {
-						maxScrollWidth = sw;
+					if (line.scrollWidth > maxScrollWidth) {
+						maxScrollWidth = line.scrollWidth;
 					}
 					if (line.clientWidth > 0 && line.clientWidth < minClientWidth) {
 						minClientWidth = line.clientWidth;
 					}
 				}
 
-				const clientW = (minClientWidth !== Infinity && minClientWidth > 0) ? minClientWidth : (lastLine?.parentElement?.clientWidth || lastLine?.clientWidth || 0);
+				const clientW = (minClientWidth !== Infinity && minClientWidth > 0)
+					? minClientWidth
+					: (lastLine?.parentElement?.clientWidth || lastLine?.clientWidth || 0);
+
 				const hasOverflow = clientW > 0 && maxScrollWidth > clientW + 2;
 
-				let bar = existingBar;
-
 				if (hasOverflow && lastLine) {
-					lastLine.style.setProperty('overflow-y', 'visible', 'important');
-					lastLine.style.setProperty('height', 'auto', 'important');
-					lastLine.style.setProperty('min-height', 'auto', 'important');
-					lastLine.style.setProperty('display', 'block', 'important');
+					// Remove scroll class from all lines except lastLine
+					contentLines.forEach((l) => {
+						l.classList.remove('pakcli-codeblock-end-scroll');
+						l.style.removeProperty('--codeblock-scroll-width');
+					});
 
-					if (!bar) {
-						bar = document.createElement('div');
-						bar.className = 'pakcli-codeblock-flowclip-bar';
-						bar.setAttribute('contenteditable', 'false');
-						const inner = document.createElement('div');
-						inner.className = 'pakcli-codeblock-flowclip-bar-inner';
-						bar.appendChild(inner);
-						lastLine.appendChild(bar);
-					}
-					bar.style.display = 'block';
-					const inner = bar.querySelector('.pakcli-codeblock-flowclip-bar-inner') as HTMLElement;
-					if (inner) {
-						inner.style.width = `${Math.max(maxScrollWidth, clientW + 30)}px`;
-					}
+					// Enable visible scrollbar handle on lastLine via ::after width
+					lastLine.classList.add('pakcli-codeblock-end-scroll');
+					lastLine.style.setProperty('--codeblock-scroll-width', `${maxScrollWidth}px`);
 
 					let isSyncing = false;
-					const blockLinesRef = [...currentBlockLines];
-
 					const syncAll = (targetScrollLeft: number, sourceEl?: HTMLElement) => {
 						if (isSyncing) return;
 						isSyncing = true;
 						try {
-							if (bar && bar !== sourceEl && bar.scrollLeft !== targetScrollLeft) {
-								bar.scrollLeft = targetScrollLeft;
+							if (lastLine !== sourceEl && lastLine.scrollLeft !== targetScrollLeft) {
+								lastLine.scrollLeft = targetScrollLeft;
 							}
-							for (const l of blockLinesRef) {
-								if (l !== sourceEl && l !== lastLine && l.scrollLeft !== targetScrollLeft) {
+							for (const l of contentLines) {
+								if (l !== sourceEl && l.scrollLeft !== targetScrollLeft) {
 									l.scrollLeft = targetScrollLeft;
 								}
 							}
@@ -1368,12 +1348,11 @@ export class CodeblockScaler {
 						}
 					};
 
-					bar.onscroll = () => {
-						syncAll(bar!.scrollLeft, bar!);
+					lastLine.onscroll = () => {
+						syncAll(lastLine.scrollLeft, lastLine);
 					};
 
-					blockLinesRef.forEach((line) => {
-						if (line === lastLine) return;
+					contentLines.forEach((line) => {
 						const oldHandler = (line as any)._pakcliScrollHandler;
 						if (oldHandler) {
 							line.removeEventListener('scroll', oldHandler);
@@ -1385,18 +1364,17 @@ export class CodeblockScaler {
 						line.addEventListener('scroll', handler, { passive: true });
 					});
 				} else {
-					if (bar) {
-						bar.style.display = 'none';
-					}
 					if (lastLine) {
-						lastLine.style.removeProperty('overflow-y');
-						lastLine.style.removeProperty('height');
-						lastLine.style.removeProperty('min-height');
+						lastLine.classList.remove('pakcli-codeblock-end-scroll');
+						lastLine.style.removeProperty('--codeblock-scroll-width');
+						lastLine.scrollLeft = 0;
 					}
-					currentBlockLines.forEach((l) => {
+					contentLines.forEach((l) => {
+						l.classList.remove('pakcli-codeblock-end-scroll');
 						l.scrollLeft = 0;
 					});
-				}
+					}
+
 			}
 
 			currentBlockLines = [];
