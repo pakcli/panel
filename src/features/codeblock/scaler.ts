@@ -707,46 +707,62 @@ export class CodeblockScaler {
 		const BAR_H = CodeblockScaler.BAR_H;
 
 		const positionBar = () => {
-			if (!pre.isConnected) { bar.style.display = 'none'; return; }
+			if (!pre.isConnected) {
+				bar.style.setProperty('display', 'none', 'important');
+				return;
+			}
 			const rect = pre.getBoundingClientRect();
 			const sw = pre.scrollWidth;
 			const cw = rect.width;
 			const hasOverflow = sw > cw + 2;
 			const viewH = window.innerHeight;
-			const isVisible = rect.bottom > BAR_H && rect.top < viewH;
-			if (!hasOverflow || !isVisible) { bar.style.display = 'none'; return; }
+			const isVisible = rect.bottom >= BAR_H && rect.bottom <= viewH + BAR_H && rect.top < viewH;
+			if (!hasOverflow || !isVisible) {
+				bar.style.setProperty('display', 'none', 'important');
+				return;
+			}
 
-			// top = bottom-of-block clamped to viewport-bottom, then back up by BAR_H
-			const barTop = Math.min(rect.bottom, viewH) - BAR_H;
-			// Don't let bar go above the top of the block
-			const finalTop = Math.max(barTop, rect.top);
+			// Position at bottom of the codeblock (not bottom of screen)
+			const barTop = rect.bottom - BAR_H;
 
-			bar.style.display = 'block';
-			bar.style.left = `${rect.left}px`;
-			bar.style.width = `${cw}px`;
-			bar.style.top = `${finalTop}px`;
-			inner.style.width = `${sw}px`;
-			// Keep scroll position in sync while repositioning
-			bar.scrollLeft = pre.scrollLeft;
+			bar.style.setProperty('display', 'block', 'important');
+			bar.style.setProperty('left', `${rect.left}px`, 'important');
+			bar.style.setProperty('width', `${cw}px`, 'important');
+			bar.style.setProperty('top', `${barTop}px`, 'important');
+			inner.style.setProperty('width', `${sw}px`, 'important');
 		};
 		(pre as any)._pakcliStickyPositionBar = positionBar;
 
-		let syncing = false;
+		let isSyncing = false;
+		let syncTimeout: number | null = null;
+		const setSyncing = () => {
+			isSyncing = true;
+			if (syncTimeout !== null) window.clearTimeout(syncTimeout);
+			syncTimeout = window.setTimeout(() => {
+				isSyncing = false;
+				syncTimeout = null;
+			}, 50);
+		};
+
 		pre.addEventListener('scroll', () => {
-			if (syncing) return;
-			syncing = true;
+			if (isSyncing) return;
+			setSyncing();
 			bar.scrollLeft = pre.scrollLeft;
-			syncing = false;
-			positionBar(); // reposition bar while scrolling vertically too
-		}, { passive: true });
-		bar.addEventListener('scroll', () => {
-			if (syncing) return;
-			syncing = true;
-			pre.scrollLeft = bar.scrollLeft;
-			syncing = false;
 		}, { passive: true });
 
-		window.addEventListener('scroll', positionBar, { passive: true, capture: true });
+		bar.addEventListener('scroll', () => {
+			if (isSyncing) return;
+			setSyncing();
+			pre.scrollLeft = bar.scrollLeft;
+		}, { passive: true });
+
+		const onWindowScroll = (e: Event) => {
+			const t = e.target as HTMLElement;
+			if (t === bar || t === pre || bar.contains(t) || pre.contains(t)) return;
+			positionBar();
+		};
+
+		window.addEventListener('scroll', onWindowScroll, { passive: true, capture: true });
 		window.addEventListener('resize', positionBar, { passive: true });
 
 		const io = new IntersectionObserver(() => positionBar(), { threshold: 0 });
@@ -755,10 +771,17 @@ export class CodeblockScaler {
 		if (typeof ResizeObserver !== 'undefined') {
 			const ro = new ResizeObserver(positionBar);
 			ro.observe(pre);
+			// Also observe the <code> child — its width changing means scrollWidth changed
+			const codeEl = pre.querySelector('code');
+			if (codeEl) ro.observe(codeEl);
 			(pre as any)._pakcliResizeObserver = ro;
 		}
 
+		bar.scrollLeft = pre.scrollLeft;
 		positionBar();
+		window.requestAnimationFrame(positionBar);
+		window.setTimeout(positionBar, 150);
+		window.setTimeout(positionBar, 700);
 	}
 
 	/** Strips leading/trailing blank lines and unindents lines by common leading whitespace. */
@@ -1325,6 +1348,18 @@ export class CodeblockScaler {
 	}
 
 	private processCmLines(cmLines: NodeListOf<Element>): void {
+		// Clean up any detached bars whose lines are no longer connected
+		this.cmStickyBars = this.cmStickyBars.filter((entry) => {
+			if (!entry.lines[0]?.isConnected) {
+				entry.io?.disconnect();
+				window.removeEventListener('scroll', entry.onScroll, true);
+				window.removeEventListener('resize', entry.onResize);
+				entry.bar.remove();
+				return false;
+			}
+			return true;
+		});
+
 		let currentBlockLines: HTMLElement[] = [];
 		let currentLanguage = '';
 
@@ -1415,26 +1450,26 @@ export class CodeblockScaler {
 
 				const hasOverflow = clientW > 0 && maxScrollWidth > clientW + 2;
 
-				// Remove any old CM sticky bar for this exact group
 				const firstLine = currentBlockLines[0];
-				const oldEntryIdx = this.cmStickyBars.findIndex((e) => e.lines[0] === firstLine);
-				if (oldEntryIdx !== -1) {
-					const old = this.cmStickyBars[oldEntryIdx];
-					old.io.disconnect();
-					window.removeEventListener('scroll', old.onScroll, true);
-					window.removeEventListener('resize', old.onResize);
-					old.bar.remove();
-					this.cmStickyBars.splice(oldEntryIdx, 1);
-				}
+				let entry = this.cmStickyBars.find((e) => e.lines[0] === firstLine || (firstLine as any)._pakcliStickyBar === e.bar);
 
-				// Build the fixed sticky bar
-				const bar = document.createElement('div');
-				bar.className = 'pakcli-cb-sticky-bar pakcli-cb-sticky-bar--fixed';
-				const barInner = document.createElement('div');
-				barInner.className = 'pakcli-cb-sticky-inner';
-				barInner.style.width = `${maxScrollWidth}px`;
-				bar.appendChild(barInner);
-				document.body.appendChild(bar);
+				let bar: HTMLElement;
+				let barInner: HTMLElement;
+
+				if (entry) {
+					bar = entry.bar;
+					barInner = entry.inner;
+					entry.lines = currentBlockLines.slice();
+				} else {
+					bar = document.createElement('div');
+					bar.className = 'pakcli-cb-sticky-bar pakcli-cb-sticky-bar--fixed';
+					barInner = document.createElement('div');
+					barInner.className = 'pakcli-cb-sticky-inner';
+					barInner.style.width = `${maxScrollWidth}px`;
+					bar.appendChild(barInner);
+					document.body.appendChild(bar);
+					(firstLine as any)._pakcliStickyBar = bar;
+				}
 
 				// Suppress per-line scrollbars; each line still scrolls via JS
 				currentBlockLines.forEach((l) => {
@@ -1442,16 +1477,19 @@ export class CodeblockScaler {
 					l.style.removeProperty('--codeblock-scroll-width');
 				});
 
-				// Position bar: bottom of codeblock, clamped to viewport bottom
+				// Position bar: bottom of codeblock (not bottom of screen)
 				const BAR_H = CodeblockScaler.BAR_H;
 				const positionBar = () => {
-					if (!firstLine.isConnected) { bar.style.display = 'none'; return; }
+					if (!firstLine.isConnected || !lastLine.isConnected) {
+						bar.style.setProperty('display', 'none', 'important');
+						return;
+					}
 					const lineRect = firstLine.getBoundingClientRect();
+					const lastLineRect = lastLine.getBoundingClientRect();
 					const viewH = window.innerHeight;
 					const blockTop = lineRect.top;
-					const lastLineEl = currentBlockLines[currentBlockLines.length - 1];
-					const blockBottom = lastLineEl.getBoundingClientRect().bottom;
-					const isVisible = blockTop < viewH && blockBottom > BAR_H;
+					const blockBottom = lastLineRect.bottom;
+					const isVisible = blockBottom >= BAR_H && blockBottom <= viewH + BAR_H && blockTop < viewH;
 
 					// Dynamically compute max scrollWidth across all lines
 					let dynMaxScrollWidth = 0;
@@ -1459,31 +1497,49 @@ export class CodeblockScaler {
 					for (const l of currentBlockLines) {
 						if (l.scrollWidth > dynMaxScrollWidth) dynMaxScrollWidth = l.scrollWidth;
 					}
-					const hasOverflow = lineW > 0 && dynMaxScrollWidth > lineW + 2;
+					const hasDynOverflow = lineW > 0 && dynMaxScrollWidth > lineW + 2;
 
-					if (!isVisible || !hasOverflow) { bar.style.display = 'none'; return; }
+					if (!isVisible || !hasDynOverflow) {
+						bar.style.setProperty('display', 'none', 'important');
+						return;
+					}
 
-					// Clamp bar to block bottom, no higher than block top
-					const barTop = Math.max(Math.min(blockBottom, viewH) - BAR_H, blockTop);
+					const barTop = blockBottom - BAR_H;
 
-					bar.style.display = 'block';
-					bar.style.left = `${lineRect.left}px`;
-					bar.style.width = `${lineW}px`;
-					bar.style.top = `${barTop}px`;
-					barInner.style.width = `${dynMaxScrollWidth}px`;
+					bar.style.setProperty('display', 'block', 'important');
+					bar.style.setProperty('left', `${lineRect.left}px`, 'important');
+					bar.style.setProperty('width', `${lineW}px`, 'important');
+					bar.style.setProperty('top', `${barTop}px`, 'important');
+					barInner.style.setProperty('width', `${dynMaxScrollWidth}px`, 'important');
 				};
 
 				// Sync scroll: bar → all lines, any line → bar
 				let isSyncing = false;
-				const syncLines = (scrollLeft: number) => {
-					if (isSyncing) return;
+				let syncTimeout: number | null = null;
+				const setSyncing = () => {
 					isSyncing = true;
+					if (syncTimeout !== null) window.clearTimeout(syncTimeout);
+					syncTimeout = window.setTimeout(() => {
+						isSyncing = false;
+						syncTimeout = null;
+					}, 50);
+				};
+
+				const syncLines = (scrollLeft: number) => {
+					setSyncing();
 					for (const l of currentBlockLines) {
 						if (l.scrollLeft !== scrollLeft) l.scrollLeft = scrollLeft;
 					}
-					isSyncing = false;
 				};
-				const onBarScroll = () => { if (!isSyncing) syncLines(bar.scrollLeft); };
+
+				const onBarScroll = () => {
+					if (isSyncing) return;
+					syncLines(bar.scrollLeft);
+				};
+
+				const oldBarScroll = (bar as any)._pakcliBarScroll;
+				if (oldBarScroll) bar.removeEventListener('scroll', oldBarScroll);
+				(bar as any)._pakcliBarScroll = onBarScroll;
 				bar.addEventListener('scroll', onBarScroll, { passive: true });
 
 				currentBlockLines.forEach((line) => {
@@ -1491,33 +1547,41 @@ export class CodeblockScaler {
 					if (oldHandler) line.removeEventListener('scroll', oldHandler);
 					const handler = () => {
 						if (isSyncing) return;
-						isSyncing = true;
+						setSyncing();
 						bar.scrollLeft = line.scrollLeft;
 						for (const l of currentBlockLines) {
-							if (l !== line && l.scrollLeft !== line.scrollLeft) l.scrollLeft = line.scrollLeft;
+							if (l !== line && l.scrollLeft !== line.scrollLeft) {
+								l.scrollLeft = line.scrollLeft;
+							}
 						}
-						isSyncing = false;
 					};
 					(line as any)._pakcliScrollHandler = handler;
 					line.addEventListener('scroll', handler, { passive: true });
 				});
 
-				const onScroll = () => positionBar();
-				const onResize = () => positionBar();
-				window.addEventListener('scroll', onScroll, { passive: true, capture: true });
-				window.addEventListener('resize', onResize, { passive: true });
+				if (!entry) {
+					const onScroll = (e: Event) => {
+						const t = e.target as HTMLElement;
+						if (t === bar || currentBlockLines.includes(t) || bar.contains(t)) return;
+						positionBar();
+					};
+					const onResize = () => positionBar();
+					window.addEventListener('scroll', onScroll, { passive: true, capture: true });
+					window.addEventListener('resize', onResize, { passive: true });
 
-				const io = new IntersectionObserver(() => positionBar(), { threshold: 0 });
-				currentBlockLines.forEach((l) => io.observe(l));
+					const io = new IntersectionObserver(() => positionBar(), { threshold: 0 });
+					currentBlockLines.forEach((l) => io.observe(l));
+
+					this.cmStickyBars.push({
+						bar, inner: barInner, lines: currentBlockLines.slice(),
+						io, onScroll, onResize
+					});
+				}
 
 				positionBar();
-
-				this.cmStickyBars.push({
-					bar, inner: barInner, lines: currentBlockLines.slice(),
-					io, onScroll, onResize
-				});
-
-
+				window.requestAnimationFrame(positionBar);
+				window.setTimeout(positionBar, 150);
+				window.setTimeout(positionBar, 700);
 
 			} // end else (flowclip)
 

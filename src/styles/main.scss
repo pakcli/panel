@@ -531,12 +531,11 @@ body pre.pakcli-codeblock-flowclip,
 .pakcli-cb-sticky-bar {
     display: none; /* toggled by JS */
     position: fixed !important;
-    bottom: auto !important;   /* JS sets top: dynamically */
-    top: auto !important;      /* overridden by JS inline style */
-    left: auto !important;     /* overridden by JS inline style */
     overflow-x: auto !important;
     overflow-y: hidden !important;
     height: 14px !important;
+    min-height: 14px !important;
+    max-height: 14px !important;
     z-index: 9999 !important;
     box-sizing: border-box !important;
     pointer-events: auto !important;
