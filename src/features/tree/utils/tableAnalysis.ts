@@ -36,6 +36,8 @@ export class TableDetector {
 		const traverse = (node: TreeNode) => {
 			if (this.isContentColumn(node)) {
 				columns.add(node.name);
+				// Stop traversing deeper: children of a content column are cell values, not nested columns!
+				return;
 			}
 			if (node.children) {
 				node.children.forEach(child => traverse(child));
@@ -129,6 +131,8 @@ export function extractContent(node: TreeNode): Map<string, string[]> {
 			}
 			
 			contentMap.set(n.name, values);
+			// Stop traversing: children of a content column are values, not nested columns!
+			return;
 		}
 		if (n.children) {
 			n.children.forEach(child => traverse(child));
