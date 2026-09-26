@@ -5,19 +5,20 @@
  */
 
 export const TREE_EXAMPLE_CODEBLOCK = `\`\`\`tree
--interactive: true
--startshowlevel: 2
--levelnumbered: 0
--offsetlevelnumbered: 0
--title: Project Structure
--currentview: 1
--header: lowercase
-root
+-interactive:false
+-startshowlevel:0
+-levelnumbered:0
+-offsetlevelnumbered:0
+-currentview:2
+-header:capitalcase
+-title:Project Structure
+
+Root
 	documentation
 		Overview.md
 		[[guides/quickstart|Quickstart Guide]]
 	src
-		features
+		Features
 			Tree.ts
 		Main.ts
 	assets
@@ -32,38 +33,38 @@ Use the following syntax and guidelines when generating or editing \`\`\`tree co
 ${TREE_EXAMPLE_CODEBLOCK}
 
 ## 2. Character Casing Convention (CRITICAL)
-- **lowercase = header**: Folder names, categories, and branch headers are written in **lowercase** (e.g. \`root\`, \`documentation\`, \`src\`, \`features\`, \`assets\`).
-- **Capital = isi**: Content items, files, leaf notes, and documents are **Capitalized** (e.g. \`Overview.md\`, \`Main.ts\`, \`Logo.png\`, \`[[Quickstart Guide]]\`).
+- **lowercase = header / columns**: Folder names, categories, and branch headers are written in **lowercase** (e.g. \`documentation\`, \`src\`, \`assets\`). In Table FullView (\`-currentview:2\`), all-lowercase nodes automatically become **Table Column Headers**.
+- **Capital = isi / hierarchy**: Content items, files, leaf notes, and hierarchical parents are **Capitalized** (e.g. \`Root\`, \`Features\`, \`Main.ts\`, \`Overview.md\`, \`Logo.png\`, \`[[Quickstart Guide]]\`).
 
 ## 3. Codeblock Header Directives & Defaults
-Place flags at the top of the codeblock. Each directive starts with \`-\` followed by \`key: value\`:
-- \`-interactive: true | false\` (default: \`false\`)
+Place flags at the top of the codeblock. Each directive starts with \`-\` followed by \`key:value\`:
+- \`-interactive:false\` (default: \`false\`)
   Enables clickable folder collapse/expand toggles.
-- \`-startshowlevel: <number>\` (default: \`0\`)
+- \`-startshowlevel:0\` (default: \`0\`)
   Initial visible depth level:
   • \`0\` = All folders collapsed (with more/less toggle) [DEFAULT]
   • \`1\` = Show root nodes only
   • \`2+\` = Automatically expand folders up to depth N
-- \`-levelnumbered: <number>\` (default: \`0\`)
+- \`-levelnumbered:0\` (default: \`0\`)
   Adds hierarchical outline numbers (e.g. 1, 1.1, 1.1.1):
   • \`0\` = Numbering disabled [DEFAULT]
   • \`1\` = Number root items only
   • \`2+\` = Number nodes down to depth N
-- \`-offsetlevelnumbered: <number>\` (default: \`0\`)
+- \`-offsetlevelnumbered:0\` (default: \`0\`)
   Outline number offset:
   • \`0\` = Root starts at 1, children start at 1.1 [DEFAULT]
   • \`1\` = Root is unnumbered, first-level children start at 1
-- \`-title: <text>\` (default: empty / none)
+- \`-title:Project Structure\` (default: empty / none)
   Custom header title displayed at the top of the tree diagram.
-- \`-currentview: 1 | 2 | 3\` (default: \`1\`)
+- \`-currentview:2\` (default: \`1\`)
   Default layout view:
   • \`1\` = Tree Diagram View (ASCII/Unicode hierarchy) [DEFAULT]
-  • \`2\` = Table FullView (All items in flattened spreadsheet table)
-  • \`3\` = Table FolderView (Folder-grouped view)
-- \`-header: lowercase | capitalcase\` (default: \`lowercase\`)
-  Controls header casing:
+  • \`2\` = Table FullView (Spreadsheet table with merged rows and columns)
+  • \`3\` = Table FolderView (Folder-grouped view with drilldown)
+- \`-header:capitalcase\` (default: \`lowercase\`)
+  Controls header casing in Tree Diagram and Table Headers:
   • \`lowercase\` = Folder and category headers formatted in lowercase [DEFAULT]
-  • \`capitalcase\` = Headers formatted with capitalized words
+  • \`capitalcase\` = Headers formatted with capitalized words (e.g. \`documentation\` -> \`Documentation\`, \`src\` -> \`Src\`, \`assets\` -> \`Assets\`)
 
 ## 4. Hierarchy & Indentation Rules
 - **CRITICAL**: Indentation MUST use literal TAB characters (\`\\t\`), never spaces!
@@ -80,37 +81,32 @@ Place flags at the top of the codeblock. Each directive starts with \`-\` follow
 
 ## 6. Quick AI Prompt Snippet
 Copy and paste this instruction when asking an AI assistant to generate a tree:
-"Generate a folder tree diagram inside a \`\`\`tree codeblock. Remember character case convention: lowercase for folder headers (root, src, docs) and Capitalized for isi/content (Main.ts, Readme.md). Include flags (-interactive: true, -startshowlevel: 2, -header: lowercase). Use literal tabs for indentation."
+"Generate a folder tree diagram inside a \`\`\`tree codeblock. Remember character case convention: lowercase for folder headers/columns (documentation, src, assets) and Capitalized for isi/hierarchy (Root, Features, Main.ts, Readme.md). Include flags (-interactive:false, -startshowlevel:0, -currentview:2, -header:capitalcase, -title:Project Structure). Use literal tabs for indentation."
 `;
 
 export const TREE_FORMAT_RULES_BRIEF = `\`\`\`tree
--interactive: true
--startshowlevel: 2
--levelnumbered: 0
--offsetlevelnumbered: 0
--title: Project Structure
--currentview: 1
--header: lowercase
-root
+-interactive:false
+-startshowlevel:0
+-levelnumbered:0
+-offsetlevelnumbered:0
+-currentview:2
+-header:capitalcase
+-title:Project Structure
+
+Root
 	documentation
 		Overview.md
 		[[guides/quickstart|Quickstart Guide]]
 	src
-		features
+		Features
 			Tree.ts
 		Main.ts
 	assets
 		Logo.png
 \`\`\`
 Rules:
-1. Casing: lowercase = header (folders/categories), Capital = isi (content/files).
+1. Casing: lowercase = header/columns (documentation, src, assets), Capital = isi/hierarchy (Root, Features, Main.ts, Logo.png).
 2. Indentation: MUST use literal TAB (\\t) characters, not spaces.
-3. Flags & Defaults:
-   - -interactive: true (default: false)
-   - -startshowlevel: 2 (default: 0)
-   - -levelnumbered: 0 (default: 0)
-   - -offsetlevelnumbered: 0 (default: 0)
-   - -title: Project Structure (default: none)
-   - -currentview: 1 (default: 1)
-   - -header: lowercase | capitalcase (default: lowercase)
-4. Obsidian wikilinks [[Target|Alias]] are fully supported.`;
+3. Views: -currentview:1 (Tree), 2 (Table FullView), 3 (Table FolderView).
+4. Directives: -interactive:false, -startshowlevel:0, -levelnumbered:0, -offsetlevelnumbered:0, -currentview:2, -header:capitalcase, -title:Project Structure.
+5. Obsidian wikilinks [[Target|Alias]] are fully supported.`;
