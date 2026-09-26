@@ -606,47 +606,64 @@ body .markdown-source-view.mod-cm6 .cm-line.HyperMD-codeblock.pakcli-codeblock-l
 }
 
 /* ─── Codeblock Flowclip Single Horizontal Scrollbar ─── */
-.pakcli-codeblock-flowclip-bar {
-    display: block;
-    width: 100%;
-    max-width: 100%;
-    height: 12px;
-    overflow-x: auto !important;
-    overflow-y: hidden !important;
-    box-sizing: border-box;
-    margin: 4px 0 2px 0;
-    padding: 0;
-    background: transparent;
-    cursor: default;
-    contain: none !important;
-    position: relative;
-    z-index: 5;
+.cm-line.HyperMD-codeblock:has(.pakcli-codeblock-flowclip-bar),
+.cm-line.HyperMD-codeblock-end.pakcli-codeblock-line-flowclip {
+    overflow-y: visible !important;
+    height: auto !important;
+    min-height: auto !important;
+}
 
+body .markdown-source-view.mod-cm6 .cm-line .pakcli-codeblock-flowclip-bar,
+.cm-line .pakcli-codeblock-flowclip-bar,
+.pakcli-codeblock-flowclip-bar {
+    display: block !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    height: 16px !important;
+    min-height: 16px !important;
+    overflow-x: scroll !important;
+    overflow-y: hidden !important;
+    box-sizing: border-box !important;
+    margin: 6px 0 3px 0 !important;
+    padding: 0 !important;
+    background: var(--background-modifier-border, rgba(128, 128, 128, 0.2)) !important;
+    border-radius: 8px !important;
+    cursor: pointer !important;
+    position: relative !important;
+    z-index: 10 !important;
+    white-space: normal !important;
+    contain: none !important;
+
+    /* Override any inherited scrollbar suppression */
     scrollbar-width: thin !important;
-    scrollbar-color: var(--scrollbar-thumb-bg, rgba(128, 128, 128, 0.4)) transparent !important;
+    scrollbar-color: var(--scrollbar-thumb-bg, rgba(128, 128, 128, 0.6)) transparent !important;
+    -ms-overflow-style: auto !important;
 
     &::-webkit-scrollbar {
-        height: 6px !important;
         display: block !important;
+        height: 10px !important;
+        width: auto !important;
     }
     &::-webkit-scrollbar-track {
-        background: var(--background-modifier-border, rgba(128, 128, 128, 0.15)) !important;
-        border-radius: 4px;
+        background: transparent !important;
+        border-radius: 8px !important;
     }
     &::-webkit-scrollbar-thumb {
-        background: var(--scrollbar-thumb-bg, rgba(128, 128, 128, 0.4)) !important;
-        border-radius: 4px;
-        transition: background 0.15s ease;
+        display: block !important;
+        background: var(--scrollbar-thumb-bg, rgba(128, 128, 128, 0.6)) !important;
+        border-radius: 8px !important;
+        border: 1px solid rgba(255, 255, 255, 0.2) !important;
+        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
     }
     &::-webkit-scrollbar-thumb:hover {
-        background: var(--scrollbar-active-thumb-bg, var(--interactive-accent, rgba(128, 128, 128, 0.75))) !important;
+        background: var(--scrollbar-active-thumb-bg, var(--interactive-accent, rgba(128, 128, 128, 0.9))) !important;
     }
 
     .pakcli-codeblock-flowclip-bar-inner {
-        height: 1px;
-        min-height: 1px;
-        display: block;
-        pointer-events: none;
+        height: 1px !important;
+        min-height: 1px !important;
+        display: block !important;
+        pointer-events: none !important;
     }
 }
 

@@ -1304,24 +1304,35 @@ export class CodeblockScaler {
 				});
 
 				// Calculate max scroll width and minimum client width across lines in this block
+				const lastLine = currentBlockLines[currentBlockLines.length - 1];
+				let existingBar = lastLine?.querySelector('.pakcli-codeblock-flowclip-bar') as HTMLElement | null;
+
 				let maxScrollWidth = 0;
 				let minClientWidth = Infinity;
 				for (const line of currentBlockLines) {
-					if (line.scrollWidth > maxScrollWidth) {
-						maxScrollWidth = line.scrollWidth;
+					let sw = line.scrollWidth;
+					if (line === lastLine && existingBar) {
+						sw = 0;
+					}
+					if (sw > maxScrollWidth) {
+						maxScrollWidth = sw;
 					}
 					if (line.clientWidth > 0 && line.clientWidth < minClientWidth) {
 						minClientWidth = line.clientWidth;
 					}
 				}
 
-				const lastLine = currentBlockLines[currentBlockLines.length - 1];
-				const clientW = minClientWidth !== Infinity ? minClientWidth : (lastLine?.clientWidth || 0);
-				const hasOverflow = clientW > 0 && maxScrollWidth > clientW + 4;
+				const clientW = (minClientWidth !== Infinity && minClientWidth > 0) ? minClientWidth : (lastLine?.parentElement?.clientWidth || lastLine?.clientWidth || 0);
+				const hasOverflow = clientW > 0 && maxScrollWidth > clientW + 2;
 
-				let bar = lastLine?.querySelector('.pakcli-codeblock-flowclip-bar') as HTMLElement | null;
+				let bar = existingBar;
 
 				if (hasOverflow && lastLine) {
+					lastLine.style.setProperty('overflow-y', 'visible', 'important');
+					lastLine.style.setProperty('height', 'auto', 'important');
+					lastLine.style.setProperty('min-height', 'auto', 'important');
+					lastLine.style.setProperty('display', 'block', 'important');
+
 					if (!bar) {
 						bar = document.createElement('div');
 						bar.className = 'pakcli-codeblock-flowclip-bar';
@@ -1334,7 +1345,7 @@ export class CodeblockScaler {
 					bar.style.display = 'block';
 					const inner = bar.querySelector('.pakcli-codeblock-flowclip-bar-inner') as HTMLElement;
 					if (inner) {
-						inner.style.width = `${maxScrollWidth}px`;
+						inner.style.width = `${Math.max(maxScrollWidth, clientW + 30)}px`;
 					}
 
 					let isSyncing = false;
@@ -1348,7 +1359,7 @@ export class CodeblockScaler {
 								bar.scrollLeft = targetScrollLeft;
 							}
 							for (const l of blockLinesRef) {
-								if (l !== sourceEl && l.scrollLeft !== targetScrollLeft) {
+								if (l !== sourceEl && l !== lastLine && l.scrollLeft !== targetScrollLeft) {
 									l.scrollLeft = targetScrollLeft;
 								}
 							}
@@ -1362,6 +1373,7 @@ export class CodeblockScaler {
 					};
 
 					blockLinesRef.forEach((line) => {
+						if (line === lastLine) return;
 						const oldHandler = (line as any)._pakcliScrollHandler;
 						if (oldHandler) {
 							line.removeEventListener('scroll', oldHandler);
@@ -1375,6 +1387,11 @@ export class CodeblockScaler {
 				} else {
 					if (bar) {
 						bar.style.display = 'none';
+					}
+					if (lastLine) {
+						lastLine.style.removeProperty('overflow-y');
+						lastLine.style.removeProperty('height');
+						lastLine.style.removeProperty('min-height');
 					}
 					currentBlockLines.forEach((l) => {
 						l.scrollLeft = 0;
