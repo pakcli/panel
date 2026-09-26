@@ -503,7 +503,9 @@ pre.pakcli-codeblock-flowclip,
 body:not(.flowclip-mode-per-line) .markdown-source-view.mod-cm6 .cm-scroller .cm-content.cm-lineWrapping .cm-line.HyperMD-codeblock.pakcli-codeblock-line-flowclip,
 body:not(.flowclip-mode-per-line) .markdown-source-view.mod-cm6 .cm-content.cm-lineWrapping .cm-line.HyperMD-codeblock.pakcli-codeblock-line-flowclip,
 body:not(.flowclip-mode-per-line) .markdown-source-view.mod-cm6 .cm-line.HyperMD-codeblock.pakcli-codeblock-line-flowclip,
-body:not(.flowclip-mode-per-line) .cm-line.HyperMD-codeblock.pakcli-codeblock-line-flowclip {
+body:not(.flowclip-mode-per-line) .cm-line.HyperMD-codeblock.pakcli-codeblock-line-flowclip,
+body:not(.flowclip-mode-per-line) .markdown-source-view.mod-cm6 .cm-line.pakcli-codeblock-line-flowclip,
+body:not(.flowclip-mode-per-line) .cm-line.pakcli-codeblock-line-flowclip {
     white-space: pre !important;
     word-break: normal !important;
     word-wrap: normal !important;
@@ -540,7 +542,9 @@ body pre.pakcli-codeblock-flowclip:not(.pakcli-codeblock-flowclip-native),
 
 /* Option 1: All Lines Synced — spacer ensures every line has identical scrollable width */
 .markdown-source-view.mod-cm6 .cm-line.HyperMD-codeblock.pakcli-codeblock-line-all-synced::after,
-.cm-line.HyperMD-codeblock.pakcli-codeblock-line-all-synced::after {
+.markdown-source-view.mod-cm6 .cm-line.pakcli-codeblock-line-all-synced::after,
+.cm-line.HyperMD-codeblock.pakcli-codeblock-line-all-synced::after,
+.cm-line.pakcli-codeblock-line-all-synced::after {
     content: "" !important;
     display: inline-block !important;
     width: var(--codeblock-spacer-width, 0px) !important;
