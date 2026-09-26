@@ -343,7 +343,17 @@ export function App({
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      const target = event.target as HTMLElement | null;
+      const rawTarget = event.target as Node | null;
+      const target = (rawTarget instanceof Element ? rawTarget : rawTarget?.parentElement) as HTMLElement | null;
+      if (
+        !target ||
+        typeof target.closest !== "function" ||
+        target.closest(".cm-editor, .cm-content, .suggestion-container, .suggestion, .menu, .modal-container, .prompt") ||
+        !target.closest(".tablite-container")
+      ) {
+        return;
+      }
+
       const isTextInput =
         target?.tagName === "INPUT" ||
         target?.tagName === "TEXTAREA" ||

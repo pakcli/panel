@@ -27,7 +27,7 @@ export class RibbonManager {
 
 		this.debouncedApplyLayout = debounce(() => {
 			this.applyLayout();
-		}, 150, true);
+		}, 250, false);
 	}
 
 	private get settings(): RibbonManagerSettings {
@@ -245,11 +245,44 @@ export class RibbonManager {
 			// Get ordered groups and items
 			const groups = this.getDiscoveredGroups();
 
-			// Remove old injected elements
-			container.querySelectorAll('.pakcli-ribbon-injected').forEach(el => el.remove());
+			// Build list of target visible action elements in desired order
+			const targetActionElements: HTMLElement[] = [];
+			groups.forEach(grp => {
+				grp.items.forEach(item => {
+					if (!hiddenSet.has(item.id)) {
+						const el = elementMap.get(item.id);
+						if (el) targetActionElements.push(el);
+					}
+				});
+			});
+
+			// Check current non-injected children in container
+			const currentActionElements = Array.from(container.children).filter(
+				(c) => !c.classList.contains('pakcli-ribbon-injected')
+			) as HTMLElement[];
+
+			let isAlreadyInOrder = currentActionElements.length === targetActionElements.length;
+			if (isAlreadyInOrder) {
+				for (let i = 0; i < targetActionElements.length; i++) {
+					if (currentActionElements[i] !== targetActionElements[i]) {
+						isAlreadyInOrder = false;
+						break;
+					}
+				}
+			}
 
 			// Filter only visible groups (groups with at least 1 visible item)
 			const visibleGroups = groups.filter(grp => grp.items.some(item => !hiddenSet.has(item.id)));
+			const expectedDividerCount = Math.max(0, visibleGroups.length - 1);
+			const existingDividers = container.querySelectorAll('.pakcli-ribbon-injected');
+
+			// If already in exact target order and dividers match, DO NOT touch DOM (prevents dropped clicks!)
+			if (isAlreadyInOrder && existingDividers.length === expectedDividerCount) {
+				return;
+			}
+
+			// Remove old injected elements
+			container.querySelectorAll('.pakcli-ribbon-injected').forEach(el => el.remove());
 
 			groups.forEach(grp => {
 				const isGrpVisible = grp.items.some(item => !hiddenSet.has(item.id));

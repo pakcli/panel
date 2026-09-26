@@ -106,10 +106,6 @@ export interface ExplorerSettings {
   captainFolderExplorerOverrideMode?: CaptainFolderOverrideMode;
   enableDesaturateExplorerRowBg?: boolean;
   explorerRowBgMode?: ExplorerRowBgMode;
-  leftSidebarMode?: 'pinned' | 'overlay';
-  rightSidebarMode?: 'pinned' | 'overlay';
-  sidebarsSwapped?: boolean;
-  sidebarOverlayAutoClose?: boolean;
 }
 
 export type ExplorerRowBgMode = 'none' | 'desaturated' | 'transparent' | 'subtle';
@@ -176,9 +172,5 @@ export const DEFAULT_EXPLORER_SETTINGS: ExplorerSettings = {
   captainFolderExplorerOverrideMode: 'text_icon',
   enableDesaturateExplorerRowBg: false,
   explorerRowBgMode: 'desaturated',
-  leftSidebarMode: 'pinned',
-  rightSidebarMode: 'pinned',
-  sidebarsSwapped: false,
-  sidebarOverlayAutoClose: true,
 };
 

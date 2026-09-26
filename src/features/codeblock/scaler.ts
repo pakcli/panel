@@ -900,8 +900,9 @@ export class CodeblockScaler {
 
 	/** Intercepts clicks on Obsidian's built-in .code-block-flair, .copy-code-button, and custom copy buttons */
 	private async handleCodeblockCopyClick(evt: MouseEvent): Promise<void> {
-		const target = evt.target as HTMLElement | null;
-		if (!target) return;
+		const target = (evt.target instanceof Element ? evt.target : (evt.target as Node)?.parentElement) as HTMLElement | null;
+		if (!target || typeof target.closest !== 'function') return;
+		if (target.closest('.suggestion-container, .suggestion, .menu, .modal-container, .prompt')) return;
 
 		// Match ANY copy button, flair element, or icon in Live Preview / Reading View
 		const copyBtn = target.closest(

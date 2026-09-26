@@ -2,7 +2,6 @@ import { Plugin, Notice, Setting, PluginSettingTab, ButtonComponent, DropdownCom
 import { PakCLITableSettings, DEFAULT_TABLE_SETTINGS, DEFAULT_BUBBLE_GRAPH_SETTINGS, RelationshipTierConfig, DEFAULT_RELATIONSHIP_TIERS, RelationshipFolderEntry, RelationshipViewStructure, RelationshipSortOrder, DictionaryFolderEntry, DictionarySubfolderMode, HtmlSnapshotMode } from './settings';
 import { handleArtifactRename, moveArtifactsBetweenFolders } from './features/sqlseal/utils/views';
 import { SplitViewManager, FolderSuggestModal } from './features/explorer/splitViewManager';
-import { SidebarManager } from './features/explorer/sidebarManager';
 import { ExplorerSectionId, EXPLORER_SECTIONS_INFO, DEFAULT_EXPLORER_SECTION_ORDER, ExplorerRowBgMode } from './features/explorer/types';
 import { ImageTriageModal } from './features/carousel/ImageTriageModal';
 import { IMAGE_CAROUSEL_VIEW_TYPE, ImageCarouselView } from './features/carousel/ImageCarouselView';
@@ -75,7 +74,6 @@ export default class PakCLITablePlugin extends Plugin {
 	settingsTabInstance: MasterDetailSettingsTab | null = null;
 	settingsPanelStates: Map<string, boolean> = new Map();
 	splitViewManager!: SplitViewManager;
-	sidebarManager!: SidebarManager;
 	relationshipExplorerManager!: RelationshipExplorerManager;
 	dictionaryExplorerManager!: DictionaryExplorerManager;
 	vaultRoot: string = '';
@@ -358,8 +356,9 @@ export default class PakCLITablePlugin extends Plugin {
 		this.registerDomEvent(document, 'click', (e: MouseEvent) => {
 			if (this.settings.sfxSnapEnabled === false) return;
 			if (this.settings.sfxSuppressWhileTyping !== false && this.audioEngine.isUserTyping()) return;
-			const target = e.target as HTMLElement | null;
-			if (!target) return;
+			const target = (e.target instanceof Element ? e.target : (e.target as Node)?.parentElement) as HTMLElement | null;
+			if (!target || typeof target.closest !== 'function') return;
+			if (target.closest('.suggestion-container, .suggestion, .menu, .modal-container, .prompt')) return;
 			const btn = target.closest('button, .clickable-icon, .pakcli-btn, input[type="button"], input[type="submit"]');
 			if (btn) {
 				this.audioEngine.playClickSnap();
@@ -552,56 +551,6 @@ export default class PakCLITablePlugin extends Plugin {
 					this.splitViewManager.applyLayout();
 				}
 				new Notice(`Explorer Split View: ${this.settings.explorerSplitEnabled ? 'Enabled' : 'Disabled'}`);
-			}
-		});
-
-		this.addCommand({
-			id: 'toggle-left-sidebar-mode',
-			name: 'Toggle Left Sidebar (Explorer) Mode: Pinned (Docked) / Floating Overlay',
-			callback: async () => {
-				if (this.sidebarManager) {
-					await this.sidebarManager.toggleLeftSidebarMode();
-				}
-			}
-		});
-
-		this.addCommand({
-			id: 'toggle-right-sidebar-mode',
-			name: 'Toggle Right Sidebar Mode: Pinned (Docked) / Floating Overlay',
-			callback: async () => {
-				if (this.sidebarManager) {
-					await this.sidebarManager.toggleRightSidebarMode();
-				}
-			}
-		});
-
-		this.addCommand({
-			id: 'swap-sidebars',
-			name: 'Swap Left and Right Sidebars',
-			callback: async () => {
-				if (this.sidebarManager) {
-					await this.sidebarManager.swapSidebars();
-				}
-			}
-		});
-
-		this.addCommand({
-			id: 'open-left-sidebar-overlay',
-			name: 'Open Temporary Left Sidebar (Explorer) Overlay (No content resize)',
-			callback: () => {
-				if (this.sidebarManager) {
-					this.sidebarManager.openTemporaryOverlay('left');
-				}
-			}
-		});
-
-		this.addCommand({
-			id: 'open-right-sidebar-overlay',
-			name: 'Open Temporary Right Sidebar Overlay (No content resize)',
-			callback: () => {
-				if (this.sidebarManager) {
-					this.sidebarManager.openTemporaryOverlay('right');
-				}
 			}
 		});
 
@@ -820,9 +769,10 @@ export default class PakCLITablePlugin extends Plugin {
 		this.splitViewManager = new SplitViewManager(this);
 		this.splitViewManager.init();
 
-		// Initialize Workspace Sidebar Manager (Swap, Pin, Overlay)
-		this.sidebarManager = new SidebarManager(this);
-		this.sidebarManager.init();
+		// Ensure any previous workspace DOM hack artifacts are cleaned up
+		document.body.classList.remove('pakcli-sidebars-swapped', 'pakcli-sidebar-resizing');
+		document.querySelectorAll('.workspace.pakcli-sidebars-swapped').forEach(el => el.classList.remove('pakcli-sidebars-swapped'));
+		document.querySelectorAll('.pakcli-window-controls-btn').forEach(el => el.remove());
 
 		// Initialize Relationship Virtual Explorer Manager
 		this.relationshipExplorerManager = new RelationshipExplorerManager(this);
@@ -1473,9 +1423,6 @@ export default class PakCLITablePlugin extends Plugin {
 		}
 		if (this.splitViewManager) {
 			this.splitViewManager.destroy();
-		}
-		if (this.sidebarManager) {
-			this.sidebarManager.destroy();
 		}
 		if (this.relationshipExplorerManager) {
 			this.relationshipExplorerManager.destroy();
