@@ -680,96 +680,68 @@ export class CodeblockScaler {
 	}
 
 	/**
-	 * Injects a sticky-bottom scrollbar for a Reading View <pre> flowclip block.
-	 * Uses position:sticky so it always sits at the bottom of the visible codeblock area.
+	 * Injects a fixed-position sticky scrollbar for a Reading View <pre> flowclip block.
+	 * The bar sits at position:fixed; bottom:0 — visible whenever the pre is in the viewport.
 	 */
 	private injectStickyBarForPre(pre: HTMLElement): void {
-		// Already done for this pre
-		if ((pre as any)._pakcliStickyDone) return;
-		(pre as any)._pakcliStickyDone = true;
-
-		// We need the pre's scrollable parent to position sticky correctly.
-		// The simplest approach: create a wrapper div that is position:relative
-		// and has overflow:hidden. Inside: pre (overflow-x:scroll, scrollbar hidden)
-		// + sticky bar div at bottom.
-		const parent = pre.parentElement;
-		if (!parent) return;
-
-		// If already wrapped, find existing bar
-		if (parent.classList.contains('pakcli-cb-wrap')) {
-			const existingBar = parent.querySelector(':scope > .pakcli-cb-sticky-bar') as HTMLElement | null;
-			if (existingBar) {
-				this.syncStickyBarForPre(pre, existingBar.querySelector('.pakcli-cb-sticky-inner') as HTMLElement);
-				return;
-			}
+		// If already inited, just refresh the bar dimensions
+		if ((pre as any)._pakcliStickyBar) {
+			const positionBar: () => void = (pre as any)._pakcliStickyPositionBar;
+			if (positionBar) positionBar();
+			return;
 		}
 
-		// Build sticky bar
-		const stickyBar = document.createElement('div');
-		stickyBar.className = 'pakcli-cb-sticky-bar';
-
+		// Build fixed bar
+		const bar = document.createElement('div');
+		bar.className = 'pakcli-cb-sticky-bar pakcli-cb-sticky-bar--fixed';
 		const inner = document.createElement('div');
 		inner.className = 'pakcli-cb-sticky-inner';
-		stickyBar.appendChild(inner);
+		bar.appendChild(inner);
+		document.body.appendChild(bar);
+		(pre as any)._pakcliStickyBar = bar;
 
-		// Insert sticky bar right after pre inside its parent
-		if (pre.nextSibling) {
-			parent.insertBefore(stickyBar, pre.nextSibling);
-		} else {
-			parent.appendChild(stickyBar);
-		}
-
-		this.syncStickyBarForPre(pre, inner);
-	}
-
-	/** Sets up scroll sync between a <pre> and its sticky bar inner element. */
-	private syncStickyBarForPre(pre: HTMLElement, inner: HTMLElement): void {
-		const bar = inner.parentElement as HTMLElement;
-
-		const update = () => {
+		const positionBar = () => {
+			if (!pre.isConnected) { bar.style.display = 'none'; return; }
+			const rect = pre.getBoundingClientRect();
 			const sw = pre.scrollWidth;
-			const cw = pre.clientWidth;
+			const cw = rect.width; // use rendered width
 			const hasOverflow = sw > cw + 2;
-			bar.style.display = hasOverflow ? 'block' : 'none';
-			if (hasOverflow) {
-				inner.style.width = `${sw}px`;
-				bar.scrollLeft = pre.scrollLeft;
-			}
+			const isVisible = rect.bottom > 0 && rect.top < window.innerHeight;
+			if (!hasOverflow || !isVisible) { bar.style.display = 'none'; return; }
+			bar.style.display = 'block';
+			bar.style.left = `${rect.left}px`;
+			bar.style.width = `${rect.width}px`;
+			inner.style.width = `${sw}px`;
 		};
+		(pre as any)._pakcliStickyPositionBar = positionBar;
 
 		let syncing = false;
-		const onPreScroll = () => {
+		pre.addEventListener('scroll', () => {
 			if (syncing) return;
 			syncing = true;
 			bar.scrollLeft = pre.scrollLeft;
 			syncing = false;
-		};
-		const onBarScroll = () => {
+		}, { passive: true });
+		bar.addEventListener('scroll', () => {
 			if (syncing) return;
 			syncing = true;
 			pre.scrollLeft = bar.scrollLeft;
 			syncing = false;
-		};
+		}, { passive: true });
 
-		// Remove old listeners if re-running
-		if ((pre as any)._pakcliPreScrollHandler) {
-			pre.removeEventListener('scroll', (pre as any)._pakcliPreScrollHandler);
-		}
-		if ((bar as any)._pakcliBarScrollHandler) {
-			bar.removeEventListener('scroll', (bar as any)._pakcliBarScrollHandler);
-		}
-		(pre as any)._pakcliPreScrollHandler = onPreScroll;
-		(bar as any)._pakcliBarScrollHandler = onBarScroll;
-		pre.addEventListener('scroll', onPreScroll, { passive: true });
-		bar.addEventListener('scroll', onBarScroll, { passive: true });
+		window.addEventListener('scroll', positionBar, { passive: true, capture: true });
+		window.addEventListener('resize', positionBar, { passive: true });
 
-		// Initial update + watch for content width changes
-		update();
+		const io = new IntersectionObserver(() => positionBar(), { threshold: 0 });
+		io.observe(pre);
+
 		if (typeof ResizeObserver !== 'undefined') {
-			const ro = new ResizeObserver(update);
+			const ro = new ResizeObserver(positionBar);
 			ro.observe(pre);
 			(pre as any)._pakcliResizeObserver = ro;
 		}
+
+		positionBar();
 	}
 
 	/** Strips leading/trailing blank lines and unindents lines by common leading whitespace. */
@@ -1453,27 +1425,29 @@ export class CodeblockScaler {
 					l.style.removeProperty('--codeblock-scroll-width');
 				});
 
-				// Position bar below the codeblock group, pinned to viewport bottom
+				// Position bar at viewport bottom, aligned to block's horizontal extents
 				const positionBar = () => {
 					if (!firstLine.isConnected) { bar.style.display = 'none'; return; }
 					const lineRect = firstLine.getBoundingClientRect();
-					const lastLineEl = currentBlockLines[currentBlockLines.length - 1];
-					const lastRect = lastLineEl.getBoundingClientRect();
-				const viewH = window.innerHeight;
-					// The block is visible in viewport
+					const viewH = window.innerHeight;
 					const blockTop = lineRect.top;
-					const blockBottom = lastRect.bottom;
+					const lastLineEl = currentBlockLines[currentBlockLines.length - 1];
+					const blockBottom = lastLineEl.getBoundingClientRect().bottom;
 					const isVisible = blockTop < viewH && blockBottom > 0;
-					// Show bar only when block is tall enough and bottom is below viewport or block fills screen
-					const needsSticky = isVisible && maxScrollWidth > (lineRect.width + 2);
-					if (!needsSticky) { bar.style.display = 'none'; return; }
+
+					// Dynamically compute max scrollWidth across all lines
+					let dynMaxScrollWidth = 0;
+					const lineW = lineRect.width;
+					for (const l of currentBlockLines) {
+						if (l.scrollWidth > dynMaxScrollWidth) dynMaxScrollWidth = l.scrollWidth;
+					}
+					const hasOverflow = lineW > 0 && dynMaxScrollWidth > lineW + 2;
+
+					if (!isVisible || !hasOverflow) { bar.style.display = 'none'; return; }
 					bar.style.display = 'block';
 					bar.style.left = `${lineRect.left}px`;
-					bar.style.width = `${lineRect.width}px`;
-					// Clamp bottom of bar: sits at viewport bottom, but not below block bottom
-					const barBottom = Math.min(viewH, Math.max(blockBottom, 0));
-					bar.style.top = `${barBottom - bar.offsetHeight}px`;
-					barInner.style.width = `${maxScrollWidth}px`;
+					bar.style.width = `${lineW}px`;
+					barInner.style.width = `${dynMaxScrollWidth}px`;
 				};
 
 				// Sync scroll: bar → all lines, any line → bar

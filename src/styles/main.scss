@@ -522,73 +522,54 @@ body pre.pakcli-codeblock-flowclip,
     }
 }
 
-/* ── Sticky scrollbar bar ─────────────────────────────────────────────────── */
-/* Reading View: injected after <pre> in its parent, position:sticky */
+/* ── Sticky scrollbar bar ─────────────────────────────────────────────────────
+   Both Reading View and Live Preview use position:fixed; bottom:0 bars
+   that are appended to document.body and positioned by JS.
+   ──────────────────────────────────────────────────────────────────────────── */
+
+/* Base class — shared by both views */
 .pakcli-cb-sticky-bar {
-    display: none; /* shown by JS when overflow detected */
-    overflow-x: auto;
-    overflow-y: hidden;
-    height: 12px;
-    position: sticky;
-    bottom: 0;
-    z-index: 10;
-    background: transparent;
-    /* Match the pre's left/right padding so the bar aligns perfectly */
-    margin: 0;
-    padding: 0;
-    box-sizing: border-box;
-
-    /* Style the scrollbar thumb itself */
-    scrollbar-width: thin;
-    scrollbar-color: rgba(128,128,128,0.55) transparent;
-    &::-webkit-scrollbar {
-        height: 8px;
-    }
-    &::-webkit-scrollbar-track {
-        background: rgba(128,128,128,0.12);
-        border-radius: 4px;
-    }
-    &::-webkit-scrollbar-thumb {
-        background: rgba(128,128,128,0.5);
-        border-radius: 4px;
-        &:hover { background: rgba(128,128,128,0.75); }
-    }
-}
-
-/* Inner element that sets the scrollable width */
-.pakcli-cb-sticky-inner {
-    height: 1px; /* just enough to make the bar scrollable */
-    display: block;
-    pointer-events: none;
-}
-
-/* Live Preview: fixed-position bar — positioned by JS at viewport bottom */
-.pakcli-cb-sticky-bar--fixed {
+    display: none; /* toggled by JS */
     position: fixed !important;
-    display: none; /* shown by JS */
-    overflow-x: auto;
-    overflow-y: hidden;
-    height: 12px;
-    z-index: 999;
-    bottom: auto; /* top is set by JS */
-    background: var(--code-background, rgba(0,0,0,0.08));
-    border-top: 1px solid rgba(128,128,128,0.2);
-    box-sizing: border-box;
-    pointer-events: auto;
+    bottom: 0 !important;
+    top: auto !important;
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
+    height: 14px !important;
+    z-index: 9999 !important;
+    box-sizing: border-box !important;
+    pointer-events: auto !important;
+    background: var(--code-background, rgba(30,30,30,0.85)) !important;
+    border-top: 1px solid rgba(128,128,128,0.25) !important;
+    /* No margin/padding — left/width set entirely by JS */
 
-    scrollbar-width: thin;
-    scrollbar-color: rgba(128,128,128,0.55) transparent;
+    scrollbar-width: thin !important;
+    scrollbar-color: rgba(128,128,128,0.6) transparent !important;
     &::-webkit-scrollbar {
-        height: 8px;
+        height: 10px !important;
     }
     &::-webkit-scrollbar-track {
-        background: rgba(128,128,128,0.12);
+        background: rgba(128,128,128,0.1) !important;
     }
     &::-webkit-scrollbar-thumb {
-        background: rgba(128,128,128,0.5);
-        border-radius: 4px;
-        &:hover { background: rgba(128,128,128,0.75); }
+        background: rgba(128,128,128,0.55) !important;
+        border-radius: 5px !important;
+        &:hover { background: rgba(128,128,128,0.85) !important; }
+        &:active { background: rgba(128,128,128,1) !important; }
     }
+}
+
+/* --fixed modifier is now a no-op alias (same behaviour) */
+.pakcli-cb-sticky-bar--fixed {
+    /* inherits everything from .pakcli-cb-sticky-bar */
+}
+
+/* Inner element that sets the scrollable width via JS inline style */
+.pakcli-cb-sticky-inner {
+    height: 1px !important; /* just enough to activate horizontal scroll */
+    display: block !important;
+    pointer-events: none !important;
+    min-width: 1px !important;
 }
 
 body pre.pakcli-codeblock-flowclip code,
