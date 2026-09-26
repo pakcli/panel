@@ -531,8 +531,9 @@ body pre.pakcli-codeblock-flowclip,
 .pakcli-cb-sticky-bar {
     display: none; /* toggled by JS */
     position: fixed !important;
-    bottom: 0 !important;
-    top: auto !important;
+    bottom: auto !important;   /* JS sets top: dynamically */
+    top: auto !important;      /* overridden by JS inline style */
+    left: auto !important;     /* overridden by JS inline style */
     overflow-x: auto !important;
     overflow-y: hidden !important;
     height: 14px !important;
@@ -541,7 +542,6 @@ body pre.pakcli-codeblock-flowclip,
     pointer-events: auto !important;
     background: var(--code-background, rgba(30,30,30,0.85)) !important;
     border-top: 1px solid rgba(128,128,128,0.25) !important;
-    /* No margin/padding — left/width set entirely by JS */
 
     scrollbar-width: thin !important;
     scrollbar-color: rgba(128,128,128,0.6) transparent !important;

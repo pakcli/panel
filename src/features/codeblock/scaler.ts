@@ -679,39 +679,55 @@ export class CodeblockScaler {
 		}
 	}
 
+	// Height of the sticky scrollbar in px — must match the CSS height
+	private static readonly BAR_H = 14;
+
 	/**
-	 * Injects a fixed-position sticky scrollbar for a Reading View <pre> flowclip block.
-	 * The bar sits at position:fixed; bottom:0 — visible whenever the pre is in the viewport.
+	 * Injects a fixed-position scrollbar for a Reading View <pre> flowclip block.
+	 * The bar sits at the BOTTOM OF THE CODEBLOCK, clamping to viewport-bottom
+	 * when the block extends below the viewport.
 	 */
 	private injectStickyBarForPre(pre: HTMLElement): void {
-		// If already inited, just refresh the bar dimensions
+		// If already inited, just refresh the bar position
 		if ((pre as any)._pakcliStickyBar) {
-			const positionBar: () => void = (pre as any)._pakcliStickyPositionBar;
-			if (positionBar) positionBar();
+			const fn: (() => void) | undefined = (pre as any)._pakcliStickyPositionBar;
+			if (fn) fn();
 			return;
 		}
 
 		// Build fixed bar
 		const bar = document.createElement('div');
-		bar.className = 'pakcli-cb-sticky-bar pakcli-cb-sticky-bar--fixed';
+		bar.className = 'pakcli-cb-sticky-bar';
 		const inner = document.createElement('div');
 		inner.className = 'pakcli-cb-sticky-inner';
 		bar.appendChild(inner);
 		document.body.appendChild(bar);
 		(pre as any)._pakcliStickyBar = bar;
 
+		const BAR_H = CodeblockScaler.BAR_H;
+
 		const positionBar = () => {
 			if (!pre.isConnected) { bar.style.display = 'none'; return; }
 			const rect = pre.getBoundingClientRect();
 			const sw = pre.scrollWidth;
-			const cw = rect.width; // use rendered width
+			const cw = rect.width;
 			const hasOverflow = sw > cw + 2;
-			const isVisible = rect.bottom > 0 && rect.top < window.innerHeight;
+			const viewH = window.innerHeight;
+			const isVisible = rect.bottom > BAR_H && rect.top < viewH;
 			if (!hasOverflow || !isVisible) { bar.style.display = 'none'; return; }
+
+			// top = bottom-of-block clamped to viewport-bottom, then back up by BAR_H
+			const barTop = Math.min(rect.bottom, viewH) - BAR_H;
+			// Don't let bar go above the top of the block
+			const finalTop = Math.max(barTop, rect.top);
+
 			bar.style.display = 'block';
 			bar.style.left = `${rect.left}px`;
-			bar.style.width = `${rect.width}px`;
+			bar.style.width = `${cw}px`;
+			bar.style.top = `${finalTop}px`;
 			inner.style.width = `${sw}px`;
+			// Keep scroll position in sync while repositioning
+			bar.scrollLeft = pre.scrollLeft;
 		};
 		(pre as any)._pakcliStickyPositionBar = positionBar;
 
@@ -721,6 +737,7 @@ export class CodeblockScaler {
 			syncing = true;
 			bar.scrollLeft = pre.scrollLeft;
 			syncing = false;
+			positionBar(); // reposition bar while scrolling vertically too
 		}, { passive: true });
 		bar.addEventListener('scroll', () => {
 			if (syncing) return;
@@ -1425,7 +1442,8 @@ export class CodeblockScaler {
 					l.style.removeProperty('--codeblock-scroll-width');
 				});
 
-				// Position bar at viewport bottom, aligned to block's horizontal extents
+				// Position bar: bottom of codeblock, clamped to viewport bottom
+				const BAR_H = CodeblockScaler.BAR_H;
 				const positionBar = () => {
 					if (!firstLine.isConnected) { bar.style.display = 'none'; return; }
 					const lineRect = firstLine.getBoundingClientRect();
@@ -1433,7 +1451,7 @@ export class CodeblockScaler {
 					const blockTop = lineRect.top;
 					const lastLineEl = currentBlockLines[currentBlockLines.length - 1];
 					const blockBottom = lastLineEl.getBoundingClientRect().bottom;
-					const isVisible = blockTop < viewH && blockBottom > 0;
+					const isVisible = blockTop < viewH && blockBottom > BAR_H;
 
 					// Dynamically compute max scrollWidth across all lines
 					let dynMaxScrollWidth = 0;
@@ -1444,9 +1462,14 @@ export class CodeblockScaler {
 					const hasOverflow = lineW > 0 && dynMaxScrollWidth > lineW + 2;
 
 					if (!isVisible || !hasOverflow) { bar.style.display = 'none'; return; }
+
+					// Clamp bar to block bottom, no higher than block top
+					const barTop = Math.max(Math.min(blockBottom, viewH) - BAR_H, blockTop);
+
 					bar.style.display = 'block';
 					bar.style.left = `${lineRect.left}px`;
 					bar.style.width = `${lineW}px`;
+					bar.style.top = `${barTop}px`;
 					barInner.style.width = `${dynMaxScrollWidth}px`;
 				};
 
