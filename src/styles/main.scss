@@ -712,6 +712,9 @@ body pre.pakcli-codeblock-flowclip-native,
     background: transparent !important;
     border-radius: 0 0 6px 6px !important;
     user-select: none !important;
+    white-space: normal !important;
+    word-break: normal !important;
+    line-height: 1 !important;
 
     scrollbar-width: thin !important;
     scrollbar-color: var(--scrollbar-thumb-bg, rgba(128, 128, 128, 0.5)) transparent !important;
@@ -741,6 +744,7 @@ body pre.pakcli-codeblock-flowclip-native,
     display: block !important;
     pointer-events: none !important;
     min-width: 1px !important;
+    white-space: normal !important;
 }
 
 body pre.pakcli-codeblock-flowclip code,
