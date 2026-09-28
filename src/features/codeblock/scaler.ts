@@ -35,7 +35,8 @@ export function createCodeblockLivePreviewPlugin(scaler: CodeblockScaler) {
 					update.viewportChanged ||
 					update.geometryChanged ||
 					update.heightChanged ||
-					update.focusChanged
+					update.focusChanged ||
+					update.selectionSet
 				) {
 					scaler.processContainer(update.view.dom, update.view);
 				}
@@ -128,6 +129,7 @@ export class CodeblockScaler {
 	private blockMaxScrollWidthCache = new Map<string, number>();
 	private blockCurrentScrollLeft = new Map<string, number>();
 	private activeCmBars = new Map<string, HTMLElement>();
+	private isSyncingAllLines = false;
 
 	constructor(private plugin: PakCLIPlugin) { }
 
@@ -308,7 +310,8 @@ export class CodeblockScaler {
 		if (!this.plugin.settings.flowclipScrollStates) {
 			this.plugin.settings.flowclipScrollStates = {};
 		}
-		this.plugin.settings.flowclipScrollStates[key] = Math.round(pct * 1000) / 1000;
+		const clampedPct = Math.max(0, Math.min(1, pct || 0));
+		this.plugin.settings.flowclipScrollStates[key] = Math.round(clampedPct * 1000) / 1000;
 		if (this.saveDebounceTimer !== null) {
 			window.clearTimeout(this.saveDebounceTimer);
 		}
@@ -1710,6 +1713,11 @@ export class CodeblockScaler {
 				if (!inAnyBlock && (el as any)._pakcliBlockKey) {
 					(el as any)._pakcliBlockKey = null;
 					(el as any)._pakcliNaturalScrollWidth = null;
+					const oldSyncedScroll = (el as any)._pakcliAllSyncedScroll;
+					if (oldSyncedScroll) {
+						el.removeEventListener('scroll', oldSyncedScroll);
+						(el as any)._pakcliAllSyncedScroll = null;
+					}
 					el.classList.remove(
 						'pakcli-codeblock-line-flowclip',
 						'pakcli-codeblock-line-all-synced',
@@ -1722,6 +1730,7 @@ export class CodeblockScaler {
 					el.style.removeProperty('max-width');
 					el.style.removeProperty('width');
 					el.style.removeProperty('box-sizing');
+					el.scrollLeft = 0;
 				}
 			}
 
@@ -1967,12 +1976,9 @@ export class CodeblockScaler {
 			// Mode 1 ('all-lines') or Mode 2 ('current'): 1 bottom slider bar
 			const docMaxEstimatedWidth = Math.round(docMaxLen * 8.6) + 60;
 
-			// Capture any existing scroll offset before styling
-			const existingScroll = this.blockCurrentScrollLeft.get(blockKey) ??
-				currentBlockLines.find((l) => l.scrollLeft > 0)?.scrollLeft ?? 0;
-			if (existingScroll > 0) {
-				this.blockCurrentScrollLeft.set(blockKey, existingScroll);
-			}
+			// Preserve block scroll offset or default to 0
+			const existingScroll = this.blockCurrentScrollLeft.get(blockKey) ?? 0;
+			this.blockCurrentScrollLeft.set(blockKey, existingScroll);
 
 			// First apply white-space: pre !important to ALL lines so true scrollWidth can be measured
 			currentBlockLines.forEach((l) => {
@@ -1982,7 +1988,7 @@ export class CodeblockScaler {
 				l.style.setProperty('white-space', 'pre', 'important');
 				l.style.setProperty('word-break', 'normal', 'important');
 				l.style.setProperty('word-wrap', 'normal', 'important');
-				l.style.setProperty('overflow-wrap', 'normal', 'important');
+				l.style.overflowWrap = 'normal';
 				l.style.setProperty('overflow-x', 'hidden', 'important');
 				l.style.setProperty('overflow-y', 'hidden', 'important');
 				l.style.setProperty('max-width', '100%', 'important');
@@ -2056,11 +2062,57 @@ export class CodeblockScaler {
 				const isFence = line.classList.contains('HyperMD-codeblock-begin') || line.classList.contains('HyperMD-codeblock-end');
 				if (isFence) {
 					if (line.scrollLeft !== 0) line.scrollLeft = 0;
+					const oldSyncedScroll = (line as any)._pakcliAllSyncedScroll;
+					if (oldSyncedScroll) {
+						line.removeEventListener('scroll', oldSyncedScroll);
+						(line as any)._pakcliAllSyncedScroll = null;
+					}
 					return;
 				}
 				if (isAllLines) {
 					if (line.scrollLeft !== targetScroll) line.scrollLeft = targetScroll;
+
+					// Real-time lockstep: if cursor navigation or typing scrolls this line, sync all lines instantly
+					const oldSyncedScroll = (line as any)._pakcliAllSyncedScroll;
+					if (oldSyncedScroll) {
+						line.removeEventListener('scroll', oldSyncedScroll);
+					}
+					const lineScrollHandler = (evt: Event) => {
+						if (this.isSyncingAllLines) return;
+						const targetLine = evt.currentTarget as HTMLElement;
+						const rawScroll = targetLine.scrollLeft;
+						const newScroll = rawScroll <= 3 ? 0 : rawScroll;
+						if (Math.abs(newScroll - (this.blockCurrentScrollLeft.get(blockKey) ?? 0)) < 1) return;
+
+						this.blockCurrentScrollLeft.set(blockKey, newScroll);
+						this.isSyncingAllLines = true;
+
+						for (const sibling of currentBlockLines) {
+							if (sibling !== targetLine) {
+								const sibFence = sibling.classList.contains('HyperMD-codeblock-begin') || sibling.classList.contains('HyperMD-codeblock-end');
+								if (sibFence) {
+									if (sibling.scrollLeft !== 0) sibling.scrollLeft = 0;
+								} else {
+									if (sibling.scrollLeft !== newScroll) sibling.scrollLeft = newScroll;
+								}
+							}
+						}
+
+						const bar = anchorLine.querySelector(':scope > .pakcli-codeblock-slider-bar') as HTMLElement | null;
+						if (bar && Math.abs(bar.scrollLeft - newScroll) > 1) {
+							bar.scrollLeft = newScroll;
+						}
+
+						this.isSyncingAllLines = false;
+					};
+					(line as any)._pakcliAllSyncedScroll = lineScrollHandler;
+					line.addEventListener('scroll', lineScrollHandler, { passive: true });
 				} else {
+					const oldSyncedScroll = (line as any)._pakcliAllSyncedScroll;
+					if (oldSyncedScroll) {
+						line.removeEventListener('scroll', oldSyncedScroll);
+						(line as any)._pakcliAllSyncedScroll = null;
+					}
 					if (line.scrollWidth > line.clientWidth + 2) {
 						if (line.scrollLeft !== targetScroll) line.scrollLeft = targetScroll;
 					} else {
@@ -2148,6 +2200,7 @@ export class CodeblockScaler {
 
 		const syncLines = (scrollLeft: number) => {
 			const target = scrollLeft <= 3 ? 0 : scrollLeft;
+			this.isSyncingAllLines = true;
 			for (const l of blockLines) {
 				const isFence = l.classList.contains('HyperMD-codeblock-begin') || l.classList.contains('HyperMD-codeblock-end');
 				if (isFence) {
@@ -2165,6 +2218,7 @@ export class CodeblockScaler {
 					}
 				}
 			}
+			this.isSyncingAllLines = false;
 		};
 
 		let isUpdatingSliderProgrammatically = false;
