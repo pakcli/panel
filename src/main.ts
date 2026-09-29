@@ -1,5 +1,5 @@
 import { Plugin, Notice, Setting, PluginSettingTab, ButtonComponent, DropdownComponent, ToggleComponent, TFile, TFolder, TAbstractFile, Menu, TextComponent, setIcon, normalizePath } from 'obsidian';
-import { PakCLITableSettings, DEFAULT_TABLE_SETTINGS, DEFAULT_BUBBLE_GRAPH_SETTINGS, RelationshipTierConfig, DEFAULT_RELATIONSHIP_TIERS, RelationshipFolderEntry, RelationshipViewStructure, RelationshipSortOrder, DictionaryFolderEntry, DictionarySubfolderMode, HtmlSnapshotMode } from './settings';
+import { PakCLITableSettings, DEFAULT_TABLE_SETTINGS, DEFAULT_BUBBLE_GRAPH_SETTINGS, RelationshipTierConfig, DEFAULT_RELATIONSHIP_TIERS, RelationshipFolderEntry, RelationshipViewStructure, RelationshipSortOrder, DictionaryFolderEntry, DictionarySubfolderMode, HtmlSnapshotMode, BubbleTimelapseDurationMode } from './settings';
 import { handleArtifactRename, moveArtifactsBetweenFolders } from './features/sqlseal/utils/views';
 import { SplitViewManager, FolderSuggestModal } from './features/explorer/splitViewManager';
 import { ExplorerSectionId, EXPLORER_SECTIONS_INFO, DEFAULT_EXPLORER_SECTION_ORDER, ExplorerRowBgMode } from './features/explorer/types';
@@ -1949,6 +1949,73 @@ export default class PakCLITablePlugin extends Plugin {
 									if (leaf.view instanceof BubbleGraphView) {
 										leaf.view.updateTimelineUI();
 										leaf.view.drawHeatmap();
+									}
+								});
+							});
+					});
+
+				new Setting(containerEl)
+					.setName('Timeline Total Duration Mode')
+					.setDesc('Configure the total timelapse playback duration across all nodes.')
+					.addDropdown((d) => {
+						d.addOption('default', 'Current (Default)')
+							.addOption('1s', '1s')
+							.addOption('2s', '2s')
+							.addOption('4s', '4s')
+							.addOption('5s', '5s')
+							.addOption('8s', '8s')
+							.addOption('10s', '10s')
+							.addOption('20s', '20s')
+							.addOption('30s', '30s')
+							.addOption('50s', '50s')
+							.addOption('100s', '100s')
+							.addOption('custom', 'Custom Duration')
+							.setValue(this.settings.bubbleTimelapseDurationMode || 'default')
+							.onChange(async (v) => {
+								this.settings.bubbleTimelapseDurationMode = v as BubbleTimelapseDurationMode;
+								await this.saveSettings();
+								const leaves = this.app.workspace.getLeavesOfType(BUBBLE_GRAPH_VIEW_TYPE);
+								leaves.forEach((leaf) => {
+									if (leaf.view instanceof BubbleGraphView) {
+										leaf.view.updateDurationControlsUI();
+									}
+								});
+							});
+					});
+
+				new Setting(containerEl)
+					.setName('Custom Timelapse Duration (Seconds)')
+					.setDesc('Duration in seconds when Custom mode is selected.')
+					.addText((t) => {
+						t.setValue((this.settings.bubbleTimelapseCustomSeconds ?? 15).toString())
+							.setPlaceholder('15')
+							.onChange(async (v) => {
+								const parsed = parseFloat(v);
+								if (!isNaN(parsed) && parsed > 0) {
+									this.settings.bubbleTimelapseCustomSeconds = parsed;
+									await this.saveSettings();
+									const leaves = this.app.workspace.getLeavesOfType(BUBBLE_GRAPH_VIEW_TYPE);
+									leaves.forEach((leaf) => {
+										if (leaf.view instanceof BubbleGraphView) {
+											leaf.view.updateDurationControlsUI();
+										}
+									});
+								}
+							});
+					});
+
+				new Setting(containerEl)
+					.setName('Show Spawning Note Text Callout')
+					.setDesc('Display a temporary callout banner displaying note title/metadata each time a node is born during timelapse playback.')
+					.addToggle((t) => {
+						t.setValue(this.settings.bubbleSpawnTextEnabled !== false)
+							.onChange(async (v) => {
+								this.settings.bubbleSpawnTextEnabled = v;
+								await this.saveSettings();
+								const leaves = this.app.workspace.getLeavesOfType(BUBBLE_GRAPH_VIEW_TYPE);
+								leaves.forEach((leaf) => {
+									if (leaf.view instanceof BubbleGraphView) {
+										leaf.view.updateDurationControlsUI();
 									}
 								});
 							});

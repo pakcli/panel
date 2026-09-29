@@ -530,7 +530,43 @@ export class CodeblockScaler {
 				cmLines: cmLineList
 			};
 
-			await this.plugin.app.vault.adapter.write('debug_codeblock.json', JSON.stringify(data, null, 2));
+			const jsonStr = JSON.stringify(data, null, 2);
+
+			// 1. Write to vault root
+			await this.plugin.app.vault.adapter.write('debug_codeblock.json', jsonStr);
+
+			// 2. Write to vault artifacts folder if present
+			try {
+				if (await this.plugin.app.vault.adapter.exists('artifacts')) {
+					await this.plugin.app.vault.adapter.write('artifacts/debug_codeblock.json', jsonStr);
+				}
+			} catch (_) {}
+
+			// 3. Write directly to Antigravity IDE artifacts directory
+			try {
+				const fs = (window as any).require?.('fs') || (typeof require !== 'undefined' ? require('fs') : null);
+				const path = (window as any).require?.('path') || (typeof require !== 'undefined' ? require('path') : null);
+				if (fs && path) {
+					const brainDir = 'C:\\Users\\fsl\\.gemini\\antigravity-ide\\brain';
+					if (fs.existsSync(brainDir)) {
+						const folders = fs.readdirSync(brainDir, { withFileTypes: true })
+							.filter((d: any) => d.isDirectory() && !d.name.startsWith('.') && d.name !== 'tempmediaStorage')
+							.sort((a: any, b: any) => {
+								try {
+									return fs.statSync(path.join(brainDir, b.name)).mtimeMs - fs.statSync(path.join(brainDir, a.name)).mtimeMs;
+								} catch {
+									return 0;
+								}
+							});
+						if (folders.length > 0) {
+							const targetDir = path.join(brainDir, folders[0].name);
+							fs.writeFileSync(path.join(targetDir, 'debug_codeblock.json'), jsonStr, 'utf8');
+						}
+					}
+				}
+			} catch (writeErr) {
+				console.warn('[PakCLI Scaler] Failed to write debug_codeblock.json to artifacts:', writeErr);
+			}
 		} catch (err) {
 			console.warn('[PakCLI Scaler] dumpDebugInfo error:', err);
 		}
@@ -1522,6 +1558,12 @@ export class CodeblockScaler {
 
 		const COPY_ICON = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>`;
 		const SCRIPT_ICON = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>`;
+
+		// Hide native Obsidian copy button if present so they don't clip or overlap
+		const nativeBtn = pre.querySelector('.copy-code-button') as HTMLElement | null;
+		if (nativeBtn) {
+			nativeBtn.style.display = 'none';
+		}
 
 		// If already injected, just refresh icon/title to match current settings
 		const existing = pre.querySelector('.pakcli-cb-copy-btn') as HTMLButtonElement | null;

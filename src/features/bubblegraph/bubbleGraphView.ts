@@ -1,12 +1,14 @@
 import { ItemView, WorkspaceLeaf, setIcon, TFile, Menu, normalizePath, Notice } from 'obsidian';
 import type PakCLITablePlugin from '../../main';
-import { DEFAULT_BUBBLE_GRAPH_SETTINGS, DEFAULT_RELATIONSHIP_TIERS, BubbleViewScopePreset } from '../../settings';
-import { BubbleNode, BubbleCluster } from './types';
+import { DEFAULT_BUBBLE_GRAPH_SETTINGS, DEFAULT_RELATIONSHIP_TIERS, BubbleViewScopePreset, BubbleTimelapseDurationMode, BubbleSpawnCalloutDurationMode, BubbleTextDisplayMode, BezierHandle } from '../../settings';
+import { BubbleNode, BubbleCluster, ActiveCallout } from './types';
 import { buildVaultGraph, BuiltGraph, getFolderColor, matchFolderRule, getDefaultNodeColor, getNodeEffectiveTime, getNodeLatestTime, resolveNodeImageUrl, compareFolderPaths } from './graphBuilder';
 import { BubbleSimulation } from './simulation';
 import { CanvasRenderer, ViewportTransform, RenderState } from './canvasRenderer';
 import { SfxManager } from './sfxManager';
 import { PresetViewScopeModal, SavePresetPromptModal } from './presetModal';
+import { BezierCurveEditor } from './components/BezierCurveEditor';
+import { formatSecondsToHms, formatSecondsToHmsHyphen, evaluateCubicBezier } from './bezierUtils';
 
 export const BUBBLE_GRAPH_VIEW_TYPE = 'pakcli-bubble-graph';
 
@@ -49,6 +51,30 @@ export class BubbleGraphView extends ItemView {
 
     // Timelapse State
     private timelapseMode: 'vanilla' | 'time' | 'filename' | 'title' = 'vanilla';
+    private timelapseDurationMode: BubbleTimelapseDurationMode = 'default';
+    private timelapseCustomSeconds: number = 15;
+    private spawnTextEnabled: boolean = true;
+    private curveHandle1: BezierHandle = { x: 0.35, y: 0.0 };
+    private curveHandle2: BezierHandle = { x: 0.65, y: 1.0 };
+    private curveP0: BezierHandle = { x: 0.0, y: 0.0 };
+    private curveP3: BezierHandle = { x: 1.0, y: 1.0 };
+    private isCurveEditorOpen: boolean = false;
+
+    // Spawning Note Text Callout State (Supports multiple concurrent callouts)
+    private activeCallouts: Map<string, ActiveCallout> = new Map();
+    private previousVisibleNodeIds: Set<string> = new Set();
+    private spawningContainerEl: HTMLElement | null = null;
+    private spawnCalloutDurationMode: BubbleSpawnCalloutDurationMode = '1x';
+    private spawnCalloutCustom: string = 'x2';
+    private spawnCalloutDurationSelectEl: HTMLSelectElement | null = null;
+    private spawnCalloutCustomWrapEl: HTMLElement | null = null;
+    private spawnCalloutCustomInputEl: HTMLInputElement | null = null;
+    private spawnCalloutCustomBadgeEl: HTMLElement | null = null;
+    private textDisplayMode: BubbleTextDisplayMode = 'all';
+    private forceTextGlobalHider: boolean = false;
+    private forceTextGlobalHiderBtnEl: HTMLElement | null = null;
+    private popupTextDisplayModeSelectEl: HTMLSelectElement | null = null;
+
     private sortedNodes: BubbleNode[] = [];
     private isTimelapseRunning: boolean = false;
     private timelapseProgress: number = 1.0; // 0.0 (oldest) to 1.0 (present)
@@ -77,7 +103,7 @@ export class BubbleGraphView extends ItemView {
     private isHeaderSettingsOpen: boolean = true;
     private isFloatingToolsOpen: boolean = true;
     private isFooterOpen: boolean = true;
-    private autoFitMode: 'off' | 'fit' | 'center' = 'off';
+    private autoFitMode: 'off' | 'fit' | 'center' = 'fit';
     private isFullscreen: boolean = false;
     private topSettingsToggleBtnEl!: HTMLElement;
     private floatingToolsToggleBtnEl!: HTMLElement;
@@ -134,7 +160,18 @@ export class BubbleGraphView extends ItemView {
     private timelineCanvasEl!: HTMLCanvasElement;
     private timelineThumbTipEl!: HTMLElement;
     private timelineDateBadgeEl!: HTMLElement;
+    private timelineSettingsBtnEl: HTMLElement | null = null;
+    private timelineSettingsPopupEl: HTMLElement | null = null;
+    private isTimelineSettingsPopupOpen: boolean = false;
     private timelapseModeSelectEl: HTMLSelectElement | null = null;
+    private timelapseDurationSelectEl: HTMLSelectElement | null = null;
+    private timelapseCustomSecondsWrapEl: HTMLElement | null = null;
+    private timelapseCustomSecondsInputEl: HTMLInputElement | null = null;
+    private timelapseDurationParsedBadgeEl: HTMLElement | null = null;
+    private spawnTextToggleBtnEl: HTMLElement | null = null;
+    private curveEditorToggleBtnEl: HTMLElement | null = null;
+    private curveEditorPanelEl: HTMLElement | null = null;
+    private curveEditorInstance: BezierCurveEditor | null = null;
 
     // Captain Folder Colors toggle
     private useCaptainColors: boolean = false;
@@ -218,6 +255,23 @@ export class BubbleGraphView extends ItemView {
         this.nodeImageBorder = this.plugin.settings.bubbleNodeImageBorder || 'thick';
         this.relationshipAllScopeState = Boolean(this.plugin.settings.bubbleRelationshipAllScopeState);
         this.useCaptainColors = Boolean(this.plugin.settings.bubbleUseCaptainColors);
+        this.timelapseDurationMode = (this.plugin.settings.bubbleTimelapseDurationMode || 'default') as BubbleTimelapseDurationMode;
+        this.timelapseCustomSeconds = this.plugin.settings.bubbleTimelapseCustomSeconds ?? 15;
+        this.spawnTextEnabled = this.plugin.settings.bubbleSpawnTextEnabled !== false;
+        this.spawnCalloutDurationMode = (this.plugin.settings.bubbleSpawnCalloutDurationMode || '1x') as BubbleSpawnCalloutDurationMode;
+        this.spawnCalloutCustom = this.plugin.settings.bubbleSpawnCalloutCustom || 'x2';
+        if (this.plugin.settings.bubbleTextDisplayMode) {
+            this.textDisplayMode = this.plugin.settings.bubbleTextDisplayMode;
+        } else if (this.plugin.settings.bubbleForceTextGlobalHider) {
+            this.textDisplayMode = 'callout-only';
+        } else {
+            this.textDisplayMode = 'all';
+        }
+        this.forceTextGlobalHider = (this.textDisplayMode === 'callout-only');
+        this.curveHandle1 = this.plugin.settings.bubbleCurveHandle1 ? { ...this.plugin.settings.bubbleCurveHandle1 } : { x: 0.35, y: 0.0 };
+        this.curveHandle2 = this.plugin.settings.bubbleCurveHandle2 ? { ...this.plugin.settings.bubbleCurveHandle2 } : { x: 0.65, y: 1.0 };
+        this.curveP0 = this.plugin.settings.bubbleCurveP0 ? { ...this.plugin.settings.bubbleCurveP0 } : { x: 0.0, y: 0.0 };
+        this.curveP3 = this.plugin.settings.bubbleCurveP3 ? { ...this.plugin.settings.bubbleCurveP3 } : { x: 1.0, y: 1.0 };
 
         // Initialize Procedural SFX Engine
         this.sfxManager = new SfxManager(
@@ -234,6 +288,9 @@ export class BubbleGraphView extends ItemView {
         const canvasWrap = workspaceEl.createDiv({ cls: 'pakcli-bubble-canvas-wrap' });
         this.canvasEl = canvasWrap.createEl('canvas', { cls: 'pakcli-bubble-canvas' });
         this.renderer = new CanvasRenderer(this.canvasEl);
+
+        // Render Spawning Text Overlay (Cinematic node birth HUD badge)
+        this.renderSpawningTextOverlay(canvasWrap);
 
         // Render Floating Canvas Tools (Search, Fit, Refresh, Reset View)
         this.renderCanvasFloatingTools(canvasWrap);
@@ -266,6 +323,20 @@ export class BubbleGraphView extends ItemView {
                 this.renderer?.resize();
                 this.drawHeatmap();
             }, 60);
+        });
+
+        // Close timeline settings popup when clicking outside
+        this.registerDomEvent(document, 'pointerdown', (e: PointerEvent) => {
+            if (this.isTimelineSettingsPopupOpen && this.timelineSettingsPopupEl) {
+                const target = e.target as Node;
+                if (!this.timelineSettingsPopupEl.contains(target) && !this.timelineSettingsBtnEl?.contains(target)) {
+                    this.isTimelineSettingsPopupOpen = false;
+                    this.timelineSettingsPopupEl.removeClass('visible');
+                    if (this.timelineSettingsBtnEl) {
+                        this.setBtnActive(this.timelineSettingsBtnEl, false);
+                    }
+                }
+            }
         });
 
         // Listen for ESC to exit fullscreen cleanly back to "this", and Space to toggle timelapse
@@ -341,6 +412,7 @@ export class BubbleGraphView extends ItemView {
         if (this.sfxManager) {
             this.sfxManager.dispose();
         }
+        this.clearActiveCallouts();
     }
 
     public scopeToFolder(folderPath: string | null): void {
@@ -448,6 +520,11 @@ export class BubbleGraphView extends ItemView {
         if (this.imageCoverBtnEl) {
             this.setBtnActive(this.imageCoverBtnEl, this.enableNodeImageCover);
         }
+        this.textDisplayMode = 'all';
+        this.plugin.settings.bubbleTextDisplayMode = 'all';
+        this.forceTextGlobalHider = false;
+        this.plugin.settings.bubbleForceTextGlobalHider = false;
+        this.updateTextDisplayModeUI();
         this.relationshipAllScopeState = DEFAULT_BUBBLE_GRAPH_SETTINGS.bubbleRelationshipAllScopeState ?? false;
         this.plugin.settings.bubbleRelationshipAllScopeState = this.relationshipAllScopeState;
         if (this.relAllScopeBtnEl) {
@@ -810,9 +887,482 @@ export class BubbleGraphView extends ItemView {
         if (this.timelapseModeSelectEl) {
             this.timelapseModeSelectEl.disabled = this.isSimulationLocked;
         }
+        if (this.timelapseDurationSelectEl) {
+            this.timelapseDurationSelectEl.disabled = this.isSimulationLocked;
+        }
+        if (this.timelapseCustomSecondsInputEl) {
+            this.timelapseCustomSecondsInputEl.disabled = this.isSimulationLocked;
+        }
+        if (this.spawnTextToggleBtnEl) {
+            if (this.isSimulationLocked) this.spawnTextToggleBtnEl.setAttribute('disabled', 'true');
+            else this.spawnTextToggleBtnEl.removeAttribute('disabled');
+        }
+        if (this.timelineSettingsBtnEl) {
+            if (this.isSimulationLocked) this.timelineSettingsBtnEl.setAttribute('disabled', 'true');
+            else this.timelineSettingsBtnEl.removeAttribute('disabled');
+        }
         if (this.timelineSliderEl) {
             this.timelineSliderEl.disabled = this.isSimulationLocked;
         }
+    }
+
+    public updateDurationControlsUI(): void {
+        if (this.timelapseModeSelectEl) {
+            this.timelapseModeSelectEl.value = this.timelapseMode;
+        }
+
+        if (this.timelapseDurationSelectEl) {
+            this.timelapseDurationSelectEl.value = this.timelapseDurationMode;
+        }
+
+        const isCustom = this.timelapseDurationMode === 'custom';
+        if (this.timelapseCustomSecondsWrapEl) {
+            this.timelapseCustomSecondsWrapEl.toggleClass('visible', isCustom);
+        }
+
+        if (this.timelapseCustomSecondsInputEl) {
+            this.timelapseCustomSecondsInputEl.value = this.timelapseCustomSeconds.toString();
+        }
+
+        if (this.timelapseDurationParsedBadgeEl) {
+            const secs = isCustom 
+                ? this.timelapseCustomSeconds 
+                : (this.timelapseDurationMode === 'default' 
+                    ? Math.round(this.getTotalDurationMs() / 1000) 
+                    : (parseInt(this.timelapseDurationMode.replace('s', ''), 10) || 10));
+            const hms = formatSecondsToHms(secs);
+            const hyphen = formatSecondsToHmsHyphen(secs);
+            this.timelapseDurationParsedBadgeEl.setText(`${hms} (${hyphen})`);
+            this.timelapseDurationParsedBadgeEl.setAttribute('title', `Total duration: ${secs}s -> ${hms}`);
+        }
+
+        if (this.spawnTextToggleBtnEl) {
+            this.setBtnActive(this.spawnTextToggleBtnEl, this.spawnTextEnabled);
+            this.spawnTextToggleBtnEl.setText(this.spawnTextEnabled ? '💬 Enabled on Node' : '💬 Disabled');
+            this.spawnTextToggleBtnEl.setAttribute('title', this.spawnTextEnabled ? 'Hide Spawning Note Text Overlay' : 'Show Spawning Note Text Overlay');
+        }
+
+        if (this.spawnCalloutDurationSelectEl) {
+            this.spawnCalloutDurationSelectEl.value = this.spawnCalloutDurationMode;
+        }
+
+        const isCalloutCustom = this.spawnCalloutDurationMode === 'custom';
+        if (this.spawnCalloutCustomWrapEl) {
+            this.spawnCalloutCustomWrapEl.toggleClass('visible', isCalloutCustom);
+        }
+
+        if (this.spawnCalloutCustomInputEl) {
+            this.spawnCalloutCustomInputEl.value = this.spawnCalloutCustom;
+        }
+
+        if (this.spawnCalloutCustomBadgeEl) {
+            this.spawnCalloutCustomBadgeEl.setText(this.formatCustomCalloutDuration(this.spawnCalloutCustom));
+        }
+
+        if (this.curveEditorToggleBtnEl) {
+            this.setBtnActive(this.curveEditorToggleBtnEl, this.isCurveEditorOpen);
+        }
+
+        if (this.timelineSettingsBtnEl) {
+            this.setBtnActive(this.timelineSettingsBtnEl, this.isTimelineSettingsPopupOpen);
+        }
+
+        this.updateForceTextHiderUI();
+    }
+
+    public async cycleTextDisplayMode(): Promise<void> {
+        if (this.textDisplayMode === 'all') {
+            await this.setTextDisplayMode('text-only');
+        } else if (this.textDisplayMode === 'text-only') {
+            await this.setTextDisplayMode('callout-only');
+        } else {
+            await this.setTextDisplayMode('all');
+        }
+    }
+
+    public async setTextDisplayMode(mode: BubbleTextDisplayMode): Promise<void> {
+        this.textDisplayMode = mode;
+        this.forceTextGlobalHider = (mode === 'callout-only');
+        this.plugin.settings.bubbleTextDisplayMode = mode;
+        this.plugin.settings.bubbleForceTextGlobalHider = this.forceTextGlobalHider;
+        await this.plugin.saveSettings();
+
+        if (mode === 'text-only') {
+            this.clearActiveCallouts();
+        }
+
+        this.updateTextDisplayModeUI();
+
+        let noticeMsg = 'Global Text: All Show';
+        if (mode === 'text-only') noticeMsg = 'Global Text: Only Show Text (No Callout)';
+        else if (mode === 'callout-only') noticeMsg = 'Global Text: Only Show Callout';
+        new Notice(noticeMsg);
+    }
+
+    public async toggleForceTextGlobalHider(): Promise<void> {
+        await this.cycleTextDisplayMode();
+    }
+
+    public updateTextDisplayModeUI(): void {
+        if (this.forceTextGlobalHiderBtnEl) {
+            const isAll = this.textDisplayMode === 'all';
+            const isTextOnly = this.textDisplayMode === 'text-only';
+            const isCalloutOnly = this.textDisplayMode === 'callout-only';
+
+            this.setBtnActive(this.forceTextGlobalHiderBtnEl, !isAll);
+            this.forceTextGlobalHiderBtnEl.setAttribute('aria-pressed', !isAll ? 'true' : 'false');
+
+            let iconName = 'type';
+            let titleText = 'Global Text: All Show (Click to cycle)';
+            if (isTextOnly) {
+                iconName = 'file-text';
+                titleText = 'Global Text: Only Text (No Callout) (Click to cycle)';
+            } else if (isCalloutOnly) {
+                iconName = 'message-square';
+                titleText = 'Global Text: Only Callout (No Labels) (Click to cycle)';
+            }
+            setIcon(this.forceTextGlobalHiderBtnEl, iconName);
+            this.forceTextGlobalHiderBtnEl.setAttribute('title', titleText);
+        }
+
+        if (this.popupTextDisplayModeSelectEl) {
+            this.popupTextDisplayModeSelectEl.value = this.textDisplayMode;
+        }
+    }
+
+    public updateForceTextHiderUI(): void {
+        this.updateTextDisplayModeUI();
+    }
+
+    public getTotalDurationMs(): number {
+        const mode = this.timelapseDurationMode;
+        if (mode === 'default') {
+            if (this.timelapseMode !== 'time') {
+                const delayPerNodeMs = (this.plugin.settings.bubbleTimelapseVanillaSpeed ?? 0.025) * 1000;
+                return Math.max(500, (this.sortedNodes?.length || 100) * delayPerNodeMs);
+            } else {
+                return 12000;
+            }
+        } else if (mode === 'custom') {
+            const secs = Math.max(0.5, this.timelapseCustomSeconds || 15);
+            return secs * 1000;
+        } else {
+            const secs = parseInt(mode.replace('s', ''), 10) || 10;
+            return secs * 1000;
+        }
+    }
+
+    private hexToRgba(hex: string, alpha: number): string {
+        if (!hex) return `rgba(234, 179, 8, ${alpha})`;
+        let clean = hex.replace('#', '');
+        if (clean.length === 3) {
+            clean = clean.split('').map(c => c + c).join('');
+        }
+        if (clean.length !== 6) return `rgba(234, 179, 8, ${alpha})`;
+        const num = parseInt(clean, 16);
+        return `rgba(${(num >> 16) & 255}, ${(num >> 8) & 255}, ${num & 255}, ${alpha})`;
+    }
+
+    private getSpawnCalloutDurationMs(avgIntervalMs: number): number {
+        const mode = this.spawnCalloutDurationMode;
+        if (mode === '1x') return avgIntervalMs * 1;
+        if (mode === '2x') return avgIntervalMs * 2;
+        if (mode === '1s') return 1000;
+        if (mode === '2s') return 2000;
+        if (mode === '3s') return 3000;
+        if (mode === '4s') return 4000;
+        if (mode === '5s') return 5000;
+        if (mode === 'custom') {
+            const raw = (this.spawnCalloutCustom || '1x').trim().toLowerCase();
+            if (raw.includes('x')) {
+                const multiplier = parseFloat(raw.replace(/x/g, '')) || 1;
+                return Math.max(50, avgIntervalMs * multiplier);
+            } else {
+                const secs = parseFloat(raw.replace(/s/g, '')) || 1;
+                return Math.max(50, secs * 1000);
+            }
+        }
+        return avgIntervalMs;
+    }
+
+    private formatCustomCalloutDuration(raw: string): string {
+        const str = (raw || '1x').trim().toLowerCase();
+        if (str.includes('x')) {
+            const m = parseFloat(str.replace(/x/g, '')) || 1;
+            return `x${m} gap`;
+        } else {
+            const s = parseFloat(str.replace(/s/g, '')) || 1;
+            return `${s}s`;
+        }
+    }
+
+    private renderSpawningTextOverlay(container: HTMLElement): void {
+        this.spawningContainerEl = container.createDiv({
+            cls: 'pakcli-spawn-text-container'
+        });
+    }
+
+    private clearActiveCallouts(): void {
+        for (const callout of this.activeCallouts.values()) {
+            callout.overlayEl.remove();
+        }
+        this.activeCallouts.clear();
+        if (this.curveEditorInstance) {
+            this.curveEditorInstance.setPlayhead(null);
+        }
+    }
+
+    private createCalloutElement(
+        node: BubbleNode,
+        currentCount: number,
+        totalLifetimeMs: number,
+        isInstant: boolean = false
+    ): ActiveCallout {
+        const overlayEl = (this.spawningContainerEl || document.body).createDiv({
+            cls: 'pakcli-spawn-text-overlay'
+        });
+
+        const badgeEl = overlayEl.createDiv({
+            cls: 'pakcli-spawn-text-badge'
+        });
+
+        const iconEl = badgeEl.createSpan({
+            cls: 'pakcli-spawn-text-icon'
+        });
+
+        const titleText = (node.title && node.title.trim()) ? node.title.trim() : node.name;
+        const titleEl = badgeEl.createSpan({
+            cls: 'pakcli-spawn-text-title',
+            text: titleText
+        });
+
+        const countEl = badgeEl.createSpan({
+            cls: 'pakcli-spawn-text-count',
+            text: `(${currentCount})`
+        });
+
+        const isFolder = node.extension === 'folder';
+        const nodeColor = node.color || '#eab308';
+
+        if (isFolder) {
+            iconEl.setText('📁');
+            iconEl.style.color = '';
+        } else {
+            iconEl.setText('•');
+            iconEl.style.color = nodeColor;
+        }
+
+        const borderColor = this.hexToRgba(nodeColor, 0.85);
+        badgeEl.style.borderColor = borderColor;
+        badgeEl.style.setProperty('--spawn-border-color', borderColor);
+
+        return {
+            nodeId: node.id,
+            node,
+            overlayEl,
+            badgeEl,
+            iconEl,
+            titleEl,
+            countEl,
+            spawnElapsedMs: isInstant ? totalLifetimeMs : 0,
+            totalLifetimeMs
+        };
+    }
+
+    private positionCallout(callout: ActiveCallout, t: number): void {
+        const ease = evaluateCubicBezier(t, this.curveHandle1, this.curveHandle2, this.curveP0, this.curveP3);
+
+        const worldX = callout.node.x;
+        const worldY = callout.node.y;
+        const nodeRadius = callout.node.radius || 18;
+
+        const screenX = this.canvasEl.width / 2 + this.transform.panX + worldX * this.transform.zoom;
+        const screenY = this.canvasEl.height / 2 + this.transform.panY + worldY * this.transform.zoom;
+        const screenRadius = Math.max(2, nodeRadius * this.transform.zoom);
+
+        // Exact point of contact: top perimeter of the node circle
+        const targetX = screenX;
+        const targetY = screenY - screenRadius;
+
+        // Viewport culling: skip transforms and hide offscreen callouts for lightweight 60 FPS performance
+        const canvasW = this.canvasEl.width > 0 ? this.canvasEl.width : 800;
+        const canvasH = this.canvasEl.height > 0 ? this.canvasEl.height : 600;
+        if (targetX < -120 || targetX > canvasW + 120 || targetY < -120 || targetY > canvasH + 120) {
+            if (callout.overlayEl.style.display !== 'none') {
+                callout.overlayEl.style.display = 'none';
+            }
+            return;
+        }
+        if (callout.overlayEl.style.display === 'none') {
+            callout.overlayEl.style.display = '';
+        }
+
+        if (!this.isTimelapseRunning) {
+            const scale = 0.90 + 0.10 * ease;
+            callout.overlayEl.style.transform = `translate3d(${targetX.toFixed(1)}px, ${targetY.toFixed(1)}px, 0) translate(-50%, -100%) scale(${scale.toFixed(3)})`;
+            callout.overlayEl.style.opacity = '1.0';
+            return;
+        }
+
+        const scale = 0.85 + 0.15 * ease;
+
+        const fadeIn = Math.min(1.0, t / 0.12);
+        const fadeOut = t > 0.82 ? Math.max(0, (1.0 - t) / 0.18) : 1.0;
+        const opacity = Math.max(0, Math.min(1.0, fadeIn * fadeOut));
+
+        callout.overlayEl.style.transform = `translate3d(${targetX.toFixed(1)}px, ${targetY.toFixed(1)}px, 0) translate(-50%, -100%) scale(${scale.toFixed(3)})`;
+        callout.overlayEl.style.opacity = opacity.toFixed(3);
+    }
+
+    private triggerSpawningText(
+        node: BubbleNode,
+        currentCount: number,
+        totalCount: number,
+        avgIntervalMs: number,
+        isInstant: boolean = false
+    ): void {
+        if (!this.spawningContainerEl || !this.spawnTextEnabled || this.textDisplayMode === 'text-only') return;
+
+        // If this node already has a callout, remove the old one first
+        if (this.activeCallouts.has(node.id)) {
+            const existing = this.activeCallouts.get(node.id);
+            existing?.overlayEl.remove();
+            this.activeCallouts.delete(node.id);
+        }
+
+        // Cap concurrent callouts to 25 to guarantee lightweight 60 FPS performance and avoid DOM thrashing
+        const MAX_CONCURRENT_CALLOUTS = 25;
+        while (this.activeCallouts.size >= MAX_CONCURRENT_CALLOUTS) {
+            const oldestKey = this.activeCallouts.keys().next().value;
+            if (oldestKey) {
+                this.activeCallouts.get(oldestKey)?.overlayEl.remove();
+                this.activeCallouts.delete(oldestKey);
+            } else {
+                break;
+            }
+        }
+
+        const durationMs = Math.max(60, this.getSpawnCalloutDurationMs(avgIntervalMs));
+        const callout = this.createCalloutElement(node, currentCount, durationMs, isInstant);
+        this.activeCallouts.set(node.id, callout);
+
+        this.positionCallout(callout, isInstant ? 1.0 : 0);
+    }
+
+    private updateSpawningTextOverlay(dt: number): void {
+        if (!this.spawningContainerEl) return;
+
+        if (!this.spawnTextEnabled || this.textDisplayMode === 'text-only' || this.activeCallouts.size === 0) {
+            if (this.activeCallouts.size > 0 && (!this.spawnTextEnabled || this.textDisplayMode === 'text-only')) {
+                this.clearActiveCallouts();
+            }
+            if (this.curveEditorInstance) {
+                this.curveEditorInstance.setPlayhead(null);
+            }
+            return;
+        }
+
+        let latestT: number | null = null;
+        const expiredIds: string[] = [];
+
+        for (const [nodeId, callout] of this.activeCallouts.entries()) {
+            if (this.isTimelapseRunning) {
+                callout.spawnElapsedMs += dt;
+            }
+
+            const totalLifetime = Math.max(50, callout.totalLifetimeMs);
+            const elapsed = callout.spawnElapsedMs;
+            const t = Math.max(0, Math.min(1.0, elapsed / totalLifetime));
+
+            if (this.isTimelapseRunning && elapsed >= totalLifetime) {
+                expiredIds.push(nodeId);
+                continue;
+            }
+
+            latestT = t;
+            this.positionCallout(callout, t);
+        }
+
+        for (const id of expiredIds) {
+            const callout = this.activeCallouts.get(id);
+            if (callout) {
+                callout.overlayEl.remove();
+                this.activeCallouts.delete(id);
+            }
+        }
+
+        if (this.curveEditorInstance) {
+            this.curveEditorInstance.setPlayhead(latestT);
+        }
+    }
+
+    private toggleTimelineSettingsPopup(): void {
+        this.isTimelineSettingsPopupOpen = !this.isTimelineSettingsPopupOpen;
+        if (this.timelineSettingsBtnEl) {
+            this.setBtnActive(this.timelineSettingsBtnEl, this.isTimelineSettingsPopupOpen);
+        }
+        if (this.timelineSettingsPopupEl) {
+            this.timelineSettingsPopupEl.toggleClass('visible', this.isTimelineSettingsPopupOpen);
+        }
+    }
+
+    private toggleCurveEditorPanel(): void {
+        this.isCurveEditorOpen = !this.isCurveEditorOpen;
+        if (this.curveEditorToggleBtnEl) {
+            this.setBtnActive(this.curveEditorToggleBtnEl, this.isCurveEditorOpen);
+        }
+        if (this.curveEditorPanelEl) {
+            this.curveEditorPanelEl.toggleClass('visible', this.isCurveEditorOpen);
+            if (this.isCurveEditorOpen) {
+                if (!this.curveEditorInstance) {
+                    this.curveEditorInstance = new BezierCurveEditor(this.curveEditorPanelEl, {
+                        p1: this.curveHandle1,
+                        p2: this.curveHandle2,
+                        p0: this.curveP0,
+                        p3: this.curveP3,
+                        onChange: (p1, p2, p0, p3) => {
+                            this.curveHandle1 = { ...p1 };
+                            this.curveHandle2 = { ...p2 };
+                            this.curveP0 = { ...p0 };
+                            this.curveP3 = { ...p3 };
+                        },
+                        onSave: async (p1, p2, p0, p3) => {
+                            this.curveHandle1 = { ...p1 };
+                            this.curveHandle2 = { ...p2 };
+                            this.curveP0 = { ...p0 };
+                            this.curveP3 = { ...p3 };
+                            this.plugin.settings.bubbleCurveHandle1 = { ...p1 };
+                            this.plugin.settings.bubbleCurveHandle2 = { ...p2 };
+                            this.plugin.settings.bubbleCurveP0 = { ...p0 };
+                            this.plugin.settings.bubbleCurveP3 = { ...p3 };
+                            await this.plugin.saveSettings();
+                        },
+                        onClose: () => {
+                            this.toggleCurveEditorPanel();
+                        }
+                    });
+                } else {
+                    this.curveEditorInstance.setHandles(this.curveHandle1, this.curveHandle2, this.curveP0, this.curveP3);
+                }
+            }
+        }
+    }
+
+    private findLatestNodeInSet(nodeIds: Set<string>): BubbleNode | null {
+        let latest: BubbleNode | null = null;
+        let latestTime = -Infinity;
+        if (!this.graphData) return null;
+        for (const id of nodeIds) {
+            const node = this.graphData.nodeMap.get(id);
+            if (node) {
+                const t = getNodeEffectiveTime(node);
+                if (t > latestTime) {
+                    latestTime = t;
+                    latest = node;
+                }
+            }
+        }
+        return latest;
     }
 
     private renderHeader(container: HTMLElement): void {
@@ -1168,7 +1718,18 @@ export class BubbleGraphView extends ItemView {
                 : 'Bubble Graph: Virtual Scope only (Concentric rings active when entering relationship folder)');
         };
 
-        // Preset View × Scope Selector Cluster (Beside the 4 toggles)
+        // 5. Global Text Visibility (All show / Only text / Only callout)
+        this.forceTextGlobalHiderBtnEl = togglesCluster.createEl('button', {
+            cls: `clickable-icon pakcli-icon-btn pakcli-force-text-hider-btn ${this.textDisplayMode !== 'all' ? 'is-active mod-cta' : ''}`,
+            title: 'Global Text: All Show (Click to cycle: All -> Only Text -> Only Callout)'
+        });
+        this.forceTextGlobalHiderBtnEl.setAttribute('aria-pressed', this.textDisplayMode !== 'all' ? 'true' : 'false');
+        setIcon(this.forceTextGlobalHiderBtnEl, 'type');
+        this.forceTextGlobalHiderBtnEl.onclick = async () => {
+            await this.cycleTextDisplayMode();
+        };
+
+        // Preset View × Scope Selector Cluster (Beside the 5 toggles)
         const presetCluster = textGroup.createDiv({ cls: 'pakcli-preset-cluster' });
 
         this.presetTriggerBtnEl = presetCluster.createEl('button', {
@@ -1705,6 +2266,8 @@ export class BubbleGraphView extends ItemView {
             this.setAutoFitMode('center');
         };
 
+        this.updateAutoFitUI();
+
         // 4. Refresh Graph Button
         const refreshBtn = floatingTools.createEl('button', {
             cls: 'clickable-icon pakcli-icon-btn pakcli-refresh-btn',
@@ -1720,9 +2283,11 @@ export class BubbleGraphView extends ItemView {
         } else {
             if (this.timelapseProgress >= 0.99) {
                 this.timelapseProgress = 0.0;
-                this.lastVisibleCount = -1;
+                this.lastVisibleCount = 0;
                 this.timelapseSpawnedClusters.clear();
                 this.timelapseConnectedEdges.clear();
+                this.clearActiveCallouts();
+                this.previousVisibleNodeIds.clear();
             }
             this.startTimelapse();
         }
@@ -1740,6 +2305,9 @@ export class BubbleGraphView extends ItemView {
         if (this.timelapseProgress <= 0.05) {
             this.timelapseSpawnedClusters.clear();
             this.timelapseConnectedEdges.clear();
+            this.clearActiveCallouts();
+            this.previousVisibleNodeIds.clear();
+            this.lastVisibleCount = 0;
         }
         this.updateTimelineUI();
     }
@@ -2151,11 +2719,12 @@ export class BubbleGraphView extends ItemView {
         });
         this.timelineEl = timelineEl;
 
-        // Present / Date badge placed beside the left of the play toggle
+        // Present / Date badge placed beside the left of the play toggle (hidden)
         this.timelineDateBadgeEl = timelineEl.createDiv({
             cls: 'pakcli-timeline-date-badge',
             title: 'Click to Jump to Present'
         });
+        this.timelineDateBadgeEl.style.display = 'none';
         this.timelineDateBadgeEl.onclick = () => {
             if (this.isTimelapseRunning) {
                 this.pauseTimelapse();
@@ -2183,24 +2752,62 @@ export class BubbleGraphView extends ItemView {
         setIcon(restartBtn, 'rotate-ccw');
         restartBtn.onclick = () => {
             this.timelapseProgress = 0.0;
-            this.lastVisibleCount = -1;
+            this.lastVisibleCount = 0;
+            this.clearActiveCallouts();
+            this.previousVisibleNodeIds.clear();
             this.startTimelapse();
         };
 
         timelineEl.createSpan({ text: '⏱ TIMELAPSE:', cls: 'pakcli-timeline-label' });
 
-        // Timelapse Mode Dropdown: [ Vanilla | Time | Filename A-Z | File Title A-Z ]
-        this.timelapseModeSelectEl = timelineEl.createEl('select', {
+        // Gear Button to toggle popup settings
+        this.timelineSettingsBtnEl = timelineEl.createEl('button', {
+            cls: `clickable-icon pakcli-timeline-nav pakcli-timeline-settings-btn ${this.isTimelineSettingsPopupOpen ? 'is-active mod-cta' : ''}`,
+            title: 'Timelapse Settings & Curves'
+        });
+        setIcon(this.timelineSettingsBtnEl, 'settings');
+        this.timelineSettingsBtnEl.onclick = (e: MouseEvent) => {
+            e.preventDefault();
+            e.stopPropagation();
+            this.toggleTimelineSettingsPopup();
+        };
+
+        // Timelapse Settings Popover Popup
+        this.timelineSettingsPopupEl = container.createDiv({
+            cls: `pakcli-timeline-settings-popup ${this.isTimelineSettingsPopupOpen ? 'visible' : ''}`
+        });
+        this.timelineSettingsPopupEl.onclick = (e: MouseEvent) => {
+            e.stopPropagation();
+        };
+
+        const popupHeader = this.timelineSettingsPopupEl.createDiv({ cls: 'pakcli-timeline-popup-header' });
+        const popupTitle = popupHeader.createDiv({ cls: 'pakcli-timeline-popup-title' });
+        setIcon(popupTitle.createSpan({ cls: 'pakcli-popup-icon' }), 'settings');
+        popupTitle.createSpan({ text: 'Timelapse Settings' });
+
+        const popupCloseBtn = popupHeader.createEl('button', {
+            cls: 'clickable-icon pakcli-popup-close-btn',
+            title: 'Close Settings'
+        });
+        setIcon(popupCloseBtn, 'x');
+        popupCloseBtn.onclick = () => {
+            this.toggleTimelineSettingsPopup();
+        };
+
+        const popupBody = this.timelineSettingsPopupEl.createDiv({ cls: 'pakcli-timeline-popup-body' });
+
+        // Row 1: Order Mode
+        const modeRow = popupBody.createDiv({ cls: 'pakcli-popup-row' });
+        modeRow.createSpan({ text: 'Order Mode:', cls: 'pakcli-popup-label' });
+        this.timelapseModeSelectEl = modeRow.createEl('select', {
             cls: 'dropdown pakcli-timelapse-mode-select'
         });
-
         const timelapseModes = [
-            { value: 'vanilla', text: 'Vanilla' },
-            { value: 'time', text: 'Time' },
+            { value: 'vanilla', text: 'Vanilla (Birth Date)' },
+            { value: 'time', text: 'Time (Continuous)' },
             { value: 'filename', text: 'Filename A-Z' },
             { value: 'title', text: 'File Title A-Z' }
         ];
-
         for (const tm of timelapseModes) {
             const opt = this.timelapseModeSelectEl.createEl('option', {
                 value: tm.value,
@@ -2210,11 +2817,196 @@ export class BubbleGraphView extends ItemView {
                 opt.selected = true;
             }
         }
-
         this.timelapseModeSelectEl.onchange = async () => {
             const newMode = (this.timelapseModeSelectEl?.value || 'vanilla') as 'vanilla' | 'time' | 'filename' | 'title';
             await this.setTimelapseMode(newMode);
+            this.updateDurationControlsUI();
         };
+
+        // Row 2: Duration Mode
+        const durationRow = popupBody.createDiv({ cls: 'pakcli-popup-row' });
+        durationRow.createSpan({ text: 'Total Duration:', cls: 'pakcli-popup-label' });
+        this.timelapseDurationSelectEl = durationRow.createEl('select', {
+            cls: 'dropdown pakcli-timelapse-duration-select',
+            title: 'Set Total Timelapse Duration'
+        });
+        const durationOptions: Array<{ value: BubbleTimelapseDurationMode; text: string }> = [
+            { value: 'default', text: 'Current (Default)' },
+            { value: '1s', text: '1s' },
+            { value: '2s', text: '2s' },
+            { value: '4s', text: '4s' },
+            { value: '5s', text: '5s' },
+            { value: '8s', text: '8s' },
+            { value: '10s', text: '10s' },
+            { value: '20s', text: '20s' },
+            { value: '30s', text: '30s' },
+            { value: '50s', text: '50s' },
+            { value: '100s', text: '100s' },
+            { value: 'custom', text: 'Custom' }
+        ];
+        for (const opt of durationOptions) {
+            const el = this.timelapseDurationSelectEl.createEl('option', {
+                value: opt.value,
+                text: opt.text
+            });
+            if (this.timelapseDurationMode === opt.value) {
+                el.selected = true;
+            }
+        }
+        this.timelapseDurationSelectEl.onchange = async () => {
+            const val = (this.timelapseDurationSelectEl?.value || 'default') as BubbleTimelapseDurationMode;
+            this.timelapseDurationMode = val;
+            this.plugin.settings.bubbleTimelapseDurationMode = val;
+            await this.plugin.saveSettings();
+            this.updateDurationControlsUI();
+        };
+
+        // Row 3: Custom Seconds & Live HH:MM:SS Parser Badge
+        this.timelapseCustomSecondsWrapEl = popupBody.createDiv({
+            cls: `pakcli-timelapse-custom-seconds-wrap pakcli-popup-row ${this.timelapseDurationMode === 'custom' ? 'visible' : ''}`
+        });
+        this.timelapseCustomSecondsWrapEl.createSpan({ text: 'Custom (sec):', cls: 'pakcli-popup-label' });
+        this.timelapseCustomSecondsInputEl = this.timelapseCustomSecondsWrapEl.createEl('input', {
+            type: 'number',
+            cls: 'pakcli-custom-seconds-input',
+            title: 'Enter duration in seconds'
+        });
+        this.timelapseCustomSecondsInputEl.min = '1';
+        this.timelapseCustomSecondsInputEl.max = '86400';
+        this.timelapseCustomSecondsInputEl.step = '1';
+        this.timelapseCustomSecondsInputEl.value = this.timelapseCustomSeconds.toString();
+
+        this.timelapseDurationParsedBadgeEl = this.timelapseCustomSecondsWrapEl.createSpan({
+            cls: 'pakcli-duration-parsed-badge'
+        });
+
+        this.timelapseCustomSecondsInputEl.oninput = async () => {
+            const val = parseFloat(this.timelapseCustomSecondsInputEl?.value || '15');
+            if (!isNaN(val) && val > 0) {
+                this.timelapseCustomSeconds = Math.max(0.5, val);
+                this.plugin.settings.bubbleTimelapseCustomSeconds = this.timelapseCustomSeconds;
+                await this.plugin.saveSettings();
+                this.updateDurationControlsUI();
+            }
+        };
+
+        // Row 4: Spawning Note Text Callout Toggle Button
+        const spawnTextRow = popupBody.createDiv({ cls: 'pakcli-popup-row' });
+        spawnTextRow.createSpan({ text: 'Spawn Callout:', cls: 'pakcli-popup-label' });
+        this.spawnTextToggleBtnEl = spawnTextRow.createEl('button', {
+            cls: `pakcli-popup-action-btn ${this.spawnTextEnabled ? 'is-active mod-cta' : ''}`,
+            title: this.spawnTextEnabled ? 'Disable Spawning Note Text Overlay' : 'Enable Spawning Note Text Overlay'
+        });
+        this.spawnTextToggleBtnEl.setText(this.spawnTextEnabled ? '💬 Enabled on Node' : '💬 Disabled');
+        this.spawnTextToggleBtnEl.onclick = async () => {
+            this.spawnTextEnabled = !this.spawnTextEnabled;
+            this.plugin.settings.bubbleSpawnTextEnabled = this.spawnTextEnabled;
+            await this.plugin.saveSettings();
+            this.updateDurationControlsUI();
+            if (!this.spawnTextEnabled) {
+                this.clearActiveCallouts();
+            }
+        };
+
+        // Row 4B: Callout Duration Mode Dropdown
+        const calloutDurationRow = popupBody.createDiv({ cls: 'pakcli-popup-row' });
+        calloutDurationRow.createSpan({ text: 'Callout Lifetime:', cls: 'pakcli-popup-label' });
+        this.spawnCalloutDurationSelectEl = calloutDurationRow.createEl('select', {
+            cls: 'dropdown pakcli-spawn-duration-select',
+            title: 'Callout display duration per node'
+        });
+        const calloutDurationOptions: Array<{ value: BubbleSpawnCalloutDurationMode; text: string }> = [
+            { value: '1x', text: '1x Node Gap (Default)' },
+            { value: '2x', text: '2x Node Gap' },
+            { value: '1s', text: '1s Fixed' },
+            { value: '2s', text: '2s Fixed' },
+            { value: '3s', text: '3s Fixed' },
+            { value: '4s', text: '4s Fixed' },
+            { value: '5s', text: '5s Fixed' },
+            { value: 'custom', text: 'Custom...' }
+        ];
+        for (const opt of calloutDurationOptions) {
+            const el = this.spawnCalloutDurationSelectEl.createEl('option', {
+                value: opt.value,
+                text: opt.text
+            });
+            if (this.spawnCalloutDurationMode === opt.value) {
+                el.selected = true;
+            }
+        }
+        this.spawnCalloutDurationSelectEl.onchange = async () => {
+            const val = (this.spawnCalloutDurationSelectEl?.value || '1x') as BubbleSpawnCalloutDurationMode;
+            this.spawnCalloutDurationMode = val;
+            this.plugin.settings.bubbleSpawnCalloutDurationMode = val;
+            await this.plugin.saveSettings();
+            this.updateDurationControlsUI();
+        };
+
+        // Row 4C: Custom Callout Duration Textbox & live Badge
+        this.spawnCalloutCustomWrapEl = popupBody.createDiv({
+            cls: `pakcli-spawn-callout-custom-wrap pakcli-popup-row ${this.spawnCalloutDurationMode === 'custom' ? 'visible' : ''}`
+        });
+        this.spawnCalloutCustomWrapEl.createSpan({ text: 'Custom Callout:', cls: 'pakcli-popup-label' });
+        this.spawnCalloutCustomInputEl = this.spawnCalloutCustomWrapEl.createEl('input', {
+            type: 'text',
+            cls: 'pakcli-custom-callout-input',
+            title: 'e.g. 50 (50 seconds) or x50 (50x node gap)'
+        });
+        this.spawnCalloutCustomInputEl.placeholder = '50 or x50';
+        this.spawnCalloutCustomInputEl.value = this.spawnCalloutCustom;
+
+        this.spawnCalloutCustomBadgeEl = this.spawnCalloutCustomWrapEl.createSpan({
+            cls: 'pakcli-duration-parsed-badge'
+        });
+
+        this.spawnCalloutCustomInputEl.oninput = async () => {
+            const val = this.spawnCalloutCustomInputEl?.value?.trim() || '1x';
+            this.spawnCalloutCustom = val;
+            this.plugin.settings.bubbleSpawnCalloutCustom = val;
+            await this.plugin.saveSettings();
+            this.updateDurationControlsUI();
+        };
+
+        // Row 4D: Global Text Visibility Mode
+        const textHiderRow = popupBody.createDiv({ cls: 'pakcli-popup-row' });
+        textHiderRow.createSpan({ text: 'Global Text:', cls: 'pakcli-popup-label' });
+        this.popupTextDisplayModeSelectEl = textHiderRow.createEl('select', {
+            cls: 'dropdown pakcli-popup-select',
+            title: 'Global text visibility: All show, only text, or only callout'
+        });
+        const modeOptions: { value: BubbleTextDisplayMode; label: string }[] = [
+            { value: 'all', label: 'All Show' },
+            { value: 'text-only', label: 'Only Show Text (No Callout)' },
+            { value: 'callout-only', label: 'Only Show Callout' }
+        ];
+        for (const opt of modeOptions) {
+            this.popupTextDisplayModeSelectEl.createEl('option', {
+                value: opt.value,
+                text: opt.label
+            });
+        }
+        this.popupTextDisplayModeSelectEl.value = this.textDisplayMode;
+        this.popupTextDisplayModeSelectEl.onchange = async () => {
+            const val = (this.popupTextDisplayModeSelectEl?.value || 'all') as BubbleTextDisplayMode;
+            await this.setTextDisplayMode(val);
+        };
+
+        // Row 5: Animation Curve (Blender F-Curve Editor)
+        const curveRow = popupBody.createDiv({ cls: 'pakcli-popup-row' });
+        curveRow.createSpan({ text: 'Curve Editor:', cls: 'pakcli-popup-label' });
+        this.curveEditorToggleBtnEl = curveRow.createEl('button', {
+            cls: `pakcli-popup-action-btn ${this.isCurveEditorOpen ? 'is-active mod-cta' : ''}`,
+            text: '📈 Open Blender F-Curve',
+            title: 'Animation Curve (Blender F-Curve Editor)'
+        });
+        this.curveEditorToggleBtnEl.onclick = () => {
+            this.toggleCurveEditorPanel();
+        };
+
+        // Curve Editor Popover Panel
+        this.curveEditorPanelEl = container.createDiv({
+            cls: 'pakcli-curve-editor-popover'
+        });
 
         const sliderWrap = timelineEl.createDiv({ cls: 'pakcli-timeline-track-wrap' });
 
@@ -2246,10 +3038,41 @@ export class BubbleGraphView extends ItemView {
                 this.pauseTimelapse();
             }
             this.timelapseProgress = parseFloat(this.timelineSliderEl.value) / 1000;
-            this.lastVisibleCount = -1;
             this.timelapseSpawnedClusters.clear();
             this.timelapseConnectedEdges.clear();
             this.updateTimelineUI();
+
+            // Instant callout on scrubbing - listens to active current node on timeline
+            if (this.spawnTextEnabled && this.textDisplayMode !== 'text-only' && this.graphData) {
+                const totalNodes = Math.max(1, this.graphData.nodes.length);
+                const totalDurationMs = this.getTotalDurationMs();
+                const avgIntervalMs = totalDurationMs / totalNodes;
+
+                this.clearActiveCallouts();
+
+                if (this.timelapseMode !== 'time') {
+                    const count = Math.max(1, Math.min(this.sortedNodes.length, Math.round(this.timelapseProgress * this.sortedNodes.length)));
+                    const activeNode = count > 0 ? this.sortedNodes[count - 1] : this.sortedNodes[0];
+                    if (activeNode) {
+                        this.triggerSpawningText(activeNode, count, totalNodes, avgIntervalMs, true /* isInstant */);
+                    }
+                    this.lastVisibleCount = count;
+                } else {
+                    const renderCutoff = this.timelapseMinCtime + (this.timelapseMaxCtime - this.timelapseMinCtime) * this.timelapseProgress;
+                    const visibleNodes = this.graphData.nodes.filter(n => getNodeEffectiveTime(n) <= renderCutoff);
+                    const count = Math.max(1, visibleNodes.length);
+                    const activeNode = visibleNodes.length > 0
+                        ? visibleNodes.reduce((latest, curr) => getNodeEffectiveTime(curr) > getNodeEffectiveTime(latest) ? curr : latest, visibleNodes[0])
+                        : this.graphData.nodes[0];
+                    if (activeNode) {
+                        this.triggerSpawningText(activeNode, count, totalNodes, avgIntervalMs, true /* isInstant */);
+                    }
+                    this.lastVisibleCount = count;
+                }
+            } else {
+                this.clearActiveCallouts();
+                this.lastVisibleCount = -1;
+            }
         };
 
         if (typeof window !== 'undefined' && 'ResizeObserver' in window) {
@@ -2261,6 +3084,7 @@ export class BubbleGraphView extends ItemView {
 
         this.updateTimelineUI();
         this.updateTimelapseLockedUI();
+        this.updateDurationControlsUI();
     }
 
     private setupCanvasEvents(): void {
@@ -2494,15 +3318,8 @@ export class BubbleGraphView extends ItemView {
             lastTime = time;
 
             if (this.isTimelapseRunning) {
-                if (this.timelapseMode !== 'time') {
-                    // Sequential modes: Vanilla, Filename A-Z, File Title A-Z (0.025s per node)
-                    const delayPerNodeMs = (this.plugin.settings.bubbleTimelapseVanillaSpeed ?? 0.025) * 1000;
-                    const totalDurationMs = Math.max(500, this.sortedNodes.length * delayPerNodeMs);
-                    this.timelapseProgress += dt / totalDurationMs;
-                } else {
-                    // Time mode: ~12s continuous time range interpolation
-                    this.timelapseProgress += dt / 12000;
-                }
+                const totalDurationMs = this.getTotalDurationMs();
+                this.timelapseProgress += dt / totalDurationMs;
 
                 if (this.timelapseProgress >= 1.0) {
                     this.timelapseProgress = 1.0;
@@ -2526,17 +3343,58 @@ export class BubbleGraphView extends ItemView {
 
             const currentVisibleCount = renderVisibleNodeIds ? renderVisibleNodeIds.size : (this.graphData ? this.graphData.nodes.length : 0);
             if (currentVisibleCount !== this.lastVisibleCount) {
-                if (this.lastVisibleCount !== -1 && currentVisibleCount > this.lastVisibleCount) {
-                    if (this.sfxManager && this.sfxManager.isEnabled()) {
+                if (this.lastVisibleCount !== -1 && currentVisibleCount > 0) {
+                    if (this.isTimelapseRunning && currentVisibleCount > this.lastVisibleCount && this.sfxManager && this.sfxManager.isEnabled()) {
                         this.sfxManager.playNodeSpawn(currentVisibleCount);
+                    }
+                    if (this.spawnTextEnabled && this.textDisplayMode !== 'text-only' && this.graphData) {
+                        const totalNodes = Math.max(1, this.graphData.nodes.length);
+                        const totalDurationMs = this.getTotalDurationMs();
+                        const avgIntervalMs = totalDurationMs / totalNodes;
+
+                        if (this.timelapseMode !== 'time') {
+                            const startIdx = Math.max(0, this.lastVisibleCount);
+                            for (let idx = startIdx; idx < currentVisibleCount; idx++) {
+                                const newlySpawnedNode = this.sortedNodes[idx];
+                                if (newlySpawnedNode) {
+                                    this.triggerSpawningText(newlySpawnedNode, idx + 1, totalNodes, avgIntervalMs);
+                                }
+                            }
+                        } else {
+                            if (renderVisibleNodeIds) {
+                                for (const nodeId of renderVisibleNodeIds) {
+                                    if (!this.previousVisibleNodeIds.has(nodeId)) {
+                                        const newlySpawnedNode = this.graphData.nodeMap.get(nodeId);
+                                        if (newlySpawnedNode) {
+                                            this.triggerSpawningText(newlySpawnedNode, currentVisibleCount, totalNodes, avgIntervalMs);
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
                 this.lastVisibleCount = currentVisibleCount;
+                if (renderVisibleNodeIds) {
+                    this.previousVisibleNodeIds = new Set(renderVisibleNodeIds);
+                } else {
+                    this.previousVisibleNodeIds.clear();
+                }
                 if (this.simulation) {
                     this.simulation.reheat(0.35);
                 }
             } else if (this.isTimelapseRunning && this.simulation) {
                 this.simulation.reheat(0.35);
+            }
+
+            // Clean up callouts for nodes that are no longer visible (e.g. if reversed or filtered)
+            if (renderVisibleNodeIds && this.activeCallouts.size > 0) {
+                for (const [nodeId, callout] of this.activeCallouts.entries()) {
+                    if (!renderVisibleNodeIds.has(nodeId)) {
+                        callout.overlayEl.remove();
+                        this.activeCallouts.delete(nodeId);
+                    }
+                }
             }
 
             // Detect newly visible bubble clusters during timelapse and trigger resonant chime
@@ -2593,7 +3451,7 @@ export class BubbleGraphView extends ItemView {
                     showVennBridges: this.plugin.settings.bubbleShowVennBridges !== false,
                     interLinkGlow: this.plugin.settings.bubbleInterLinkGlow !== false,
                     showLines: this.showLines,
-                    showLabels: this.showLabels,
+                    showLabels: (this.textDisplayMode !== 'callout-only') && this.showLabels,
                     labelMode: this.labelMode,
                     customLabelFormats: this.customLabelFormatsSet,
                     labelRangeLevel: this.labelRangeLevel,
@@ -2614,6 +3472,8 @@ export class BubbleGraphView extends ItemView {
 
                 this.renderer.render(this.transform, renderState, time);
             }
+
+            this.updateSpawningTextOverlay(dt);
 
             this.animFrameId = window.requestAnimationFrame(renderLoop);
         };
@@ -2896,15 +3756,18 @@ export class BubbleGraphView extends ItemView {
 
     private updateAutoFitUI(): void {
         const isFit = this.autoFitMode === 'fit';
+        const isCenter = this.autoFitMode === 'center';
         if (this.fitModeBtnEl) {
             this.setBtnActive(this.fitModeBtnEl, isFit);
+            this.fitModeBtnEl.setAttribute('aria-pressed', isFit ? 'true' : 'false');
             this.fitModeBtnEl.setAttribute('title', isFit
                 ? 'Always Fit & Center: ACTIVE (Continuously fits zoom & center)'
                 : 'Always Fit & Center: Continuously fit zoom & center');
         }
         if (this.centerModeBtnEl) {
-            this.setBtnActive(this.centerModeBtnEl, !isFit);
-            this.centerModeBtnEl.setAttribute('title', !isFit
+            this.setBtnActive(this.centerModeBtnEl, isCenter);
+            this.centerModeBtnEl.setAttribute('aria-pressed', isCenter ? 'true' : 'false');
+            this.centerModeBtnEl.setAttribute('title', isCenter
                 ? "Always Center: ACTIVE (Continuously centers, won't zoom)"
                 : "Always Center: Continuously center without changing zoom");
         }

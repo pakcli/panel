@@ -90,7 +90,7 @@ export class SfxManager {
      * 1. Node Spawn SFX:
      * Musical water droplet / crisp soap bubble "bloop" (upward chirping sine).
      */
-    public playNodeSpawn(seed: string = '', delayMs: number = 0): void {
+    public playNodeSpawn(seed: string | number = '', delayMs: number = 0): void {
         if (!this.enabled || !this.initContext() || !this.ctx || !this.compressor) return;
 
         const nowMs = performance.now();
@@ -101,9 +101,11 @@ export class SfxManager {
         const comp = this.compressor;
         const startTime = ctx.currentTime + (delayMs / 1000);
 
+        const seedStr = typeof seed === 'number' ? seed.toString() : (seed || '');
+
         // Deterministic pitch offset from seed string (arpeggiated pentatonic feel)
         let hash = 0;
-        for (let i = 0; i < seed.length; i++) hash = (hash * 31 + seed.charCodeAt(i)) & 0xffff;
+        for (let i = 0; i < seedStr.length; i++) hash = (hash * 31 + seedStr.charCodeAt(i)) & 0xffff;
         const scaleIntervals = [0, 2, 4, 7, 9, 12, 14, 16];
         const step = scaleIntervals[Math.abs(hash) % scaleIntervals.length];
         const baseFreq = 440 * Math.pow(2, step / 12); // A4 tuned pentatonic droplet

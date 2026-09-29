@@ -3267,32 +3267,83 @@ th.tablite-frozen-cell {
   }
 }
 
-/* ─── Codeblock Copy Button & Settings ─── */
-pre.pakcli-codeblock-flowclip,
-pre.pakcli-codeblock-wrap,
-pre.pakcli-codeblock-scalefit {
-  position: relative;
+/* ─── Codeblock Copy Button & Flair: Prevent Corner Clipping ─── */
+pre,
+.markdown-rendered pre,
+.markdown-preview-view pre,
+.markdown-source-view pre,
+.cm-embed-block pre {
+  position: relative !important;
+}
+
+/* Ensure Live Preview first line does not clip flair/copy button */
+.markdown-source-view.mod-cm6 .cm-line.HyperMD-codeblock.HyperMD-codeblock-begin,
+.cm-line.HyperMD-codeblock.HyperMD-codeblock-begin {
+  overflow: visible !important;
+  overflow-x: visible !important;
+  overflow-y: visible !important;
+}
+
+/* Position and clear corners for all copy buttons and flairs so they don't clip into border-radius */
+body .copy-code-button,
+body .code-block-flair,
+body .pakcli-cb-copy-btn,
+.markdown-rendered pre .copy-code-button,
+.markdown-preview-view pre .copy-code-button,
+.markdown-source-view pre .copy-code-button,
+.cm-embed-block pre .copy-code-button,
+pre .copy-code-button {
+  position: absolute !important;
+  top: 8px !important;
+  right: 10px !important;
+  margin: 0 !important;
+  z-index: 15 !important;
+  box-sizing: border-box !important;
+  overflow: visible !important;
+  line-height: 1 !important;
+}
+
+/* If button is inside flair or header container, don't break layout */
+.code-block-flair .copy-code-button,
+.code-block-header .copy-code-button {
+  position: static !important;
+  top: auto !important;
+  right: auto !important;
+}
+
+/* Ensure SVG strokes inside copy buttons do not get clipped at viewBox boundary */
+body .copy-code-button svg,
+body .code-block-flair svg,
+body .pakcli-cb-copy-btn svg {
+  overflow: visible !important;
+  display: block !important;
+}
+
+/* Hide native copy button when PakCLI custom copy button is injected in the same pre */
+pre:has(.pakcli-cb-copy-btn) .copy-code-button {
+  display: none !important;
 }
 
 .pakcli-cb-copy-btn {
-  position: absolute;
-  top: 6px;
-  right: 6px;
-  z-index: 10;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 26px;
-  height: 26px;
-  padding: 0;
-  border: 1px solid var(--background-modifier-border);
-  border-radius: 5px;
-  background: var(--background-primary);
-  color: var(--text-muted);
-  cursor: pointer;
+  position: absolute !important;
+  top: 8px !important;
+  right: 10px !important;
+  z-index: 15 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  width: 26px !important;
+  height: 26px !important;
+  padding: 0 !important;
+  border: 1px solid var(--background-modifier-border) !important;
+  border-radius: 5px !important;
+  background: var(--background-primary) !important;
+  color: var(--text-muted) !important;
+  cursor: pointer !important;
   opacity: 0;
   transition: opacity 0.15s ease, color 0.15s ease, background 0.15s ease;
   box-shadow: 0 1px 4px rgba(0,0,0,0.15);
+  overflow: visible !important;
 }
 
 pre:hover .pakcli-cb-copy-btn {
@@ -3300,16 +3351,17 @@ pre:hover .pakcli-cb-copy-btn {
 }
 
 .pakcli-cb-copy-btn:hover {
-  background: var(--background-modifier-hover);
-  color: var(--text-normal);
-  border-color: var(--interactive-accent);
+  background: var(--background-modifier-hover) !important;
+  color: var(--text-normal) !important;
+  border-color: var(--interactive-accent) !important;
 }
 
 .pakcli-cb-copy-btn svg {
   width: 14px;
   height: 14px;
-  display: block;
+  display: block !important;
   pointer-events: none;
+  overflow: visible !important;
 }
 
 .pakcli-cb-copy-btn--done {

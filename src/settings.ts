@@ -16,6 +16,24 @@ export { DEFAULT_RIBBON_MANAGER_SETTINGS };
 export type BubbleGraphIntegrationMode = 'deactivate' | 'replace' | 'second';
 export type BubbleNodeGlyphOption = 'no-dot' | 'dot' | 'plus' | 'minus' | 'i' | 'square' | 'ring' | 'star';
 export type BubbleNodeImageBorder = 'noborder' | 'thin' | 'thick';
+export type BubbleTimelapseDurationMode = 
+    | 'default'
+    | '1s'
+    | '2s'
+    | '4s'
+    | '5s'
+    | '8s'
+    | '10s'
+    | '20s'
+    | '30s'
+    | '50s'
+    | '100s'
+    | 'custom';
+
+export interface BezierHandle {
+    x: number;
+    y: number;
+}
 
 export interface RelationshipTierConfig {
     id: string;
@@ -117,7 +135,21 @@ export interface BubbleGraphSettings {
     activeBubblePresetId?: string | null;
     bubbleInspectorMode?: 'pinned' | 'overlay';
     bubbleInspectorSide?: 'left' | 'right';
+    bubbleTimelapseDurationMode?: BubbleTimelapseDurationMode;
+    bubbleTimelapseCustomSeconds?: number;
+    bubbleSpawnTextEnabled?: boolean;
+    bubbleSpawnCalloutDurationMode?: BubbleSpawnCalloutDurationMode;
+    bubbleSpawnCalloutCustom?: string;
+    bubbleTextDisplayMode?: BubbleTextDisplayMode;
+    bubbleForceTextGlobalHider?: boolean;
+    bubbleCurveHandle1?: BezierHandle;
+    bubbleCurveHandle2?: BezierHandle;
+    bubbleCurveP0?: BezierHandle;
+    bubbleCurveP3?: BezierHandle;
 }
+
+export type BubbleSpawnCalloutDurationMode = '1x' | '2x' | '1s' | '2s' | '3s' | '4s' | '5s' | 'custom';
+export type BubbleTextDisplayMode = 'all' | 'text-only' | 'callout-only';
 
 export interface BubbleViewScopePreset {
     id: string;
@@ -268,6 +300,17 @@ export const DEFAULT_BUBBLE_GRAPH_SETTINGS: BubbleGraphSettings = {
     activeBubblePresetId: null,
     bubbleInspectorMode: 'pinned',
     bubbleInspectorSide: 'right',
+    bubbleTimelapseDurationMode: 'default',
+    bubbleTimelapseCustomSeconds: 15,
+    bubbleSpawnTextEnabled: true,
+    bubbleSpawnCalloutDurationMode: '1x',
+    bubbleSpawnCalloutCustom: 'x2',
+    bubbleTextDisplayMode: 'all',
+    bubbleForceTextGlobalHider: false,
+    bubbleCurveHandle1: { x: 0.35, y: 0.0 },
+    bubbleCurveHandle2: { x: 0.65, y: 1.0 },
+    bubbleCurveP0: { x: 0.0, y: 0.0 },
+    bubbleCurveP3: { x: 1.0, y: 1.0 },
 };
 
 export const DEFAULT_TABLE_SETTINGS: PakCLITableSettings = {

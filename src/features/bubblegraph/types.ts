@@ -78,3 +78,44 @@ export interface GraphStats {
     totalClusters: number;
     totalVennBridges: number;
 }
+
+export type BubbleTimelapseDurationMode = 
+    | 'default'
+    | '1s'
+    | '2s'
+    | '4s'
+    | '5s'
+    | '8s'
+    | '10s'
+    | '20s'
+    | '30s'
+    | '50s'
+    | '100s'
+    | 'custom';
+
+export interface BezierHandle {
+    x: number;
+    y: number;
+}
+
+export interface SpawnTextState {
+    node: BubbleNode;
+    startTime: number;
+    intervalMs: number;
+    title: string;
+    folder: string;
+    index: number;
+    total: number;
+}
+
+export interface ActiveCallout {
+    nodeId: string;
+    node: BubbleNode;
+    overlayEl: HTMLElement;
+    badgeEl: HTMLElement;
+    iconEl: HTMLElement;
+    titleEl: HTMLElement;
+    countEl: HTMLElement;
+    spawnElapsedMs: number;
+    totalLifetimeMs: number;
+}
