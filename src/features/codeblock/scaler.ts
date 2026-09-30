@@ -1962,6 +1962,8 @@ export class CodeblockScaler {
 				line.style.setProperty('word-wrap', 'break-word', 'important');
 				line.style.setProperty('overflow-x', 'hidden', 'important');
 				if (line.classList.contains('HyperMD-codeblock-begin')) {
+					line.style.setProperty('min-height', '38px', 'important');
+					line.style.setProperty('line-height', '38px', 'important');
 					line.style.setProperty('overflow-y', 'visible', 'important');
 					line.style.setProperty('position', 'relative', 'important');
 					line.style.setProperty('z-index', '1000', 'important');
@@ -1999,6 +2001,8 @@ export class CodeblockScaler {
 				line.style.setProperty('font-size', 'min(var(--code-size, 13px), 2.2vw)', 'important');
 				line.style.setProperty('overflow-x', 'auto', 'important');
 				if (line.classList.contains('HyperMD-codeblock-begin')) {
+					line.style.setProperty('min-height', '38px', 'important');
+					line.style.setProperty('line-height', '38px', 'important');
 					line.style.setProperty('overflow-y', 'visible', 'important');
 					line.style.setProperty('position', 'relative', 'important');
 					line.style.setProperty('z-index', '1000', 'important');
@@ -2043,6 +2047,8 @@ export class CodeblockScaler {
 				line.style.setProperty('word-wrap', 'normal', 'important');
 				line.style.setProperty('overflow-x', 'auto', 'important');
 				if (line.classList.contains('HyperMD-codeblock-begin')) {
+					line.style.setProperty('min-height', '38px', 'important');
+					line.style.setProperty('line-height', '38px', 'important');
 					line.style.setProperty('overflow-y', 'visible', 'important');
 					line.style.setProperty('position', 'relative', 'important');
 					line.style.setProperty('z-index', '1000', 'important');
@@ -2096,6 +2102,8 @@ export class CodeblockScaler {
 				l.style.overflowWrap = 'normal';
 				l.style.setProperty('overflow-x', 'hidden', 'important');
 				if (l.classList.contains('HyperMD-codeblock-begin')) {
+					l.style.setProperty('min-height', '38px', 'important');
+					l.style.setProperty('line-height', '38px', 'important');
 					l.style.setProperty('overflow-y', 'visible', 'important');
 					l.style.setProperty('position', 'relative', 'important');
 					l.style.setProperty('z-index', '1000', 'important');
@@ -2127,6 +2135,8 @@ export class CodeblockScaler {
 				if (isFence) {
 					l.style.setProperty('overflow-x', 'hidden', 'important');
 					if (l.classList.contains('HyperMD-codeblock-begin')) {
+						l.style.setProperty('min-height', '38px', 'important');
+						l.style.setProperty('line-height', '38px', 'important');
 						l.style.setProperty('overflow-y', 'visible', 'important');
 						l.style.setProperty('position', 'relative', 'important');
 						l.style.setProperty('z-index', '1000', 'important');
@@ -2152,6 +2162,8 @@ export class CodeblockScaler {
 				if (isFence) {
 					line.style.setProperty('overflow-x', 'hidden', 'important');
 					if (line.classList.contains('HyperMD-codeblock-begin')) {
+						line.style.setProperty('min-height', '38px', 'important');
+						line.style.setProperty('line-height', '38px', 'important');
 						line.style.setProperty('overflow-y', 'visible', 'important');
 						line.style.setProperty('position', 'relative', 'important');
 						line.style.setProperty('z-index', '1000', 'important');

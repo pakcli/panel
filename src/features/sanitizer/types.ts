@@ -35,7 +35,7 @@ export interface ReplacementMatchItem {
 export const DEFAULT_STRING_SANITIZER_SETTINGS: StringSanitizerSettings = {
     masterEnabled: true,
     enableClipboardSanitizer: true,
-    enableVirtualPreviewMasking: false,
+    enableVirtualPreviewMasking: true,
     rules: [
         {
             id: 'rule_default_user_fsl',
@@ -46,7 +46,7 @@ export const DEFAULT_STRING_SANITIZER_SETTINGS: StringSanitizerSettings = {
             caseSensitive: false,
             enabled: true,
             affectClipboard: true,
-            affectVirtualEditor: false
+            affectVirtualEditor: true
         }
     ]
 };

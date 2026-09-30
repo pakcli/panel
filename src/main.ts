@@ -74,7 +74,9 @@ import {
 	DEFAULT_STRING_SANITIZER_SETTINGS, 
 	StringSanitizerRule, 
 	PreFlightDiffModal, 
-	SanitizerEngine 
+	SanitizerEngine,
+	createVirtualMaskExtension,
+	registerReadingViewSanitizer
 } from './features/sanitizer';
 
 export default class PakCLITablePlugin extends Plugin {
@@ -586,6 +588,10 @@ export default class PakCLITablePlugin extends Plugin {
 				this.openSettingsTab('table-sanitizer');
 			}
 		});
+
+		// 12. Register Virtual String Masker Extensions (Live Preview & Reading View)
+		this.registerEditorExtension([createVirtualMaskExtension(this)]);
+		registerReadingViewSanitizer(this);
 
 		// Settings Tab Navigation Commands
 		this.addCommand({
@@ -1132,6 +1138,34 @@ export default class PakCLITablePlugin extends Plugin {
 					});
 			});
 
+			// Copy contents as markdown block (multi)
+			const copyableFiles = targetFiles.filter((f): f is TFile => f instanceof TFile);
+			if (copyableFiles.length > 0) {
+				menu.addItem((item) => {
+					item.setTitle(`Copy contents as markdown (${copyableFiles.length} files)`)
+						.setIcon('file-text')
+						.onClick(async () => {
+							const sections: string[] = [];
+							let failCount = 0;
+							for (const f of copyableFiles) {
+								try {
+									const content = await this.app.vault.read(f);
+									sections.push(`# ${f.name}\n\`\`\`\n${content}\n\`\`\``);
+								} catch (err) {
+									console.error('[PakCLI] Failed to read file for clipboard pack:', f.path, err);
+									failCount++;
+								}
+							}
+							const combined = sections.join('\n\n');
+							await copyToClipboard(combined);
+							const msg = failCount > 0
+								? `Copied ${sections.length} files (${failCount} failed)`
+								: `Copied ${sections.length} files to clipboard`;
+							new Notice(msg);
+						});
+				});
+			}
+
 			if (!patched.patchedDelete) {
 				menu.addItem((item) => {
 					item.setTitle(`Delete ${count} selected items`)
@@ -1384,6 +1418,19 @@ export default class PakCLITablePlugin extends Plugin {
 								this.splitViewManager?.moveToBacklog(file, true);
 							});
 					});
+					menu.addItem((item) => {
+						item.setTitle('Copy content as markdown')
+							.setIcon('file-text')
+							.onClick(async () => {
+								try {
+									const content = await this.app.vault.read(file);
+									await copyToClipboard(`# ${file.name}\n\`\`\`\n${content}\n\`\`\``);
+								} catch (err) {
+									console.error('[PakCLI] Failed to read file:', file.path, err);
+									new Notice('Failed to read file');
+								}
+							});
+					});
 
 					const ext = (file.extension || '').toLowerCase();
 					if (SUPPORTED_AUDIO_EXTENSIONS.has(ext)) {
@@ -1557,7 +1604,40 @@ export default class PakCLITablePlugin extends Plugin {
 			}
 		}
 
+		// Ensure string sanitizer settings are properly initialized with virtual masking active
+		if (!this.settings.stringSanitizerSettings) {
+			this.settings.stringSanitizerSettings = Object.assign({}, DEFAULT_STRING_SANITIZER_SETTINGS);
+		}
+		const s = this.settings.stringSanitizerSettings;
+		s.masterEnabled = true;
+		s.enableVirtualPreviewMasking = true;
+		s.enableClipboardSanitizer = true;
+
+		if (!s.rules || s.rules.length === 0) {
+			s.rules = [
+				{
+					id: 'rule_default_user_fsl',
+					label: 'Sanitize Local User fsl -> fulan',
+					searchPattern: 'C:\\Users\\fsl',
+					replacementText: 'C:\\Users\\fulan',
+					isRegex: false,
+					caseSensitive: false,
+					enabled: true,
+					affectClipboard: true,
+					affectVirtualEditor: true
+				}
+			];
+		} else {
+			s.rules.forEach(r => {
+				r.enabled = true;
+				r.affectVirtualEditor = true;
+				r.affectClipboard = true;
+			});
+		}
+
 		if (this.syncSpecialFoldersToCaptainRules()) {
+			await this.saveSettings();
+		} else {
 			await this.saveSettings();
 		}
 	}
@@ -5947,6 +6027,20 @@ export default class PakCLITablePlugin extends Plugin {
 					});
 			});
 
+		// Virtual Live Preview Masker Toggle
+		new Setting(containerEl)
+			.setName('Live Preview & Reading View Virtual Masking')
+			.setDesc('Dynamically mask sensitive strings on screen in the active editor without modifying raw files on disk.')
+			.addToggle((t) => {
+				t.setValue(current.enableVirtualPreviewMasking !== false)
+					.onChange(async (val) => {
+						current.enableVirtualPreviewMasking = val;
+						this.settings.stringSanitizerSettings = current;
+						await this.saveSettings();
+						this.app.workspace.updateOptions();
+					});
+			});
+
 		// Rules Header
 		const rulesHeader = new Setting(containerEl)
 			.setName('Sanitizer Rules')
@@ -5967,10 +6061,11 @@ export default class PakCLITablePlugin extends Plugin {
 						caseSensitive: false,
 						enabled: true,
 						affectClipboard: true,
-						affectVirtualEditor: false
+						affectVirtualEditor: true
 					});
 					this.settings.stringSanitizerSettings = current;
 					await this.saveSettings();
+					this.app.workspace.updateOptions();
 					this.renderSanitizerSettings(containerEl);
 				});
 		});
@@ -6072,6 +6167,18 @@ export default class PakCLITablePlugin extends Plugin {
 				};
 				clipLabel.createSpan({ text: ' Affect Clipboard' });
 
+				// Mask in Editor checkbox
+				const virtLabel = optRow.createEl('label', { cls: 'sanitizer-opt-label' });
+				const virtChk = virtLabel.createEl('input', { type: 'checkbox' });
+				virtChk.checked = rule.affectVirtualEditor !== false;
+				virtChk.onchange = async () => {
+					rule.affectVirtualEditor = virtChk.checked;
+					this.settings.stringSanitizerSettings = current;
+					await this.saveSettings();
+					this.app.workspace.updateOptions();
+				};
+				virtLabel.createSpan({ text: ' Mask in Editor' });
+
 				// Action buttons on the right: Enable toggle & Delete button
 				const actionsDiv = card.createDiv({ cls: 'rule-card-actions' });
 				
@@ -6085,6 +6192,7 @@ export default class PakCLITablePlugin extends Plugin {
 					toggleBtn.classList.toggle('mod-cta', rule.enabled);
 					this.settings.stringSanitizerSettings = current;
 					await this.saveSettings();
+					this.app.workspace.updateOptions();
 					updateSandbox();
 				};
 

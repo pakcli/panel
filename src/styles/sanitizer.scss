@@ -270,3 +270,16 @@
         color: #10b981;
     }
 }
+
+/* Virtual String Masking Overlay in Editor & Reading View */
+.pakcli-virtual-mask {
+    color: var(--text-accent, #6366f1);
+    background: rgba(var(--interactive-accent-rgb, 99, 102, 241), 0.12);
+    border-radius: var(--radius-xs, 3px);
+    padding: 1px 4px;
+    font-weight: 500;
+    border-bottom: 1px dashed rgba(var(--interactive-accent-rgb, 99, 102, 241), 0.4);
+    box-decoration-break: clone;
+    -webkit-box-decoration-break: clone;
+}
+

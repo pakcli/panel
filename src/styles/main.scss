@@ -3278,7 +3278,7 @@ pre,
   position: relative !important;
 }
 
-/* Ensure Live Preview first line does not clip flair/copy button and sits on top of all subsequent rows */
+/* Ensure Live Preview first line has ample height and supreme stacking context so flair/copy button never overlaps following lines */
 .markdown-source-view.mod-cm6 .cm-line.HyperMD-codeblock.HyperMD-codeblock-begin,
 .cm-line.HyperMD-codeblock.HyperMD-codeblock-begin {
   position: relative !important;
@@ -3286,6 +3286,9 @@ pre,
   overflow: visible !important;
   overflow-x: visible !important;
   overflow-y: visible !important;
+  min-height: 38px !important;
+  line-height: 38px !important;
+  box-sizing: border-box !important;
 }
 
 /* Force all subsequent codeblock lines to lower stacking layer so they never paint over the button */
@@ -3309,7 +3312,7 @@ pre,
   }
 }
 
-/* Position and elevate all copy buttons and flairs to the toppest z-index */
+/* Position and elevate all copy buttons and flairs to the toppest z-index centered inside 38px header */
 body .copy-code-button,
 body .code-block-flair,
 body .pakcli-cb-copy-btn,
@@ -3321,13 +3324,16 @@ pre .copy-code-button,
 .code-block-flair,
 .pakcli-cb-copy-btn {
   position: absolute !important;
-  top: 4px !important;
-  right: 8px !important;
+  top: 7px !important;
+  right: 10px !important;
+  height: 24px !important;
+  min-height: 24px !important;
+  max-height: 24px !important;
+  line-height: 24px !important;
   margin: 0 !important;
   z-index: 999999 !important;
   box-sizing: border-box !important;
   overflow: visible !important;
-  line-height: 1 !important;
   pointer-events: auto !important;
 }
 
