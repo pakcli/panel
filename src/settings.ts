@@ -15,6 +15,9 @@ export { DEFAULT_RIBBON_MANAGER_SETTINGS };
 import { TodoListSettings, DEFAULT_TODOLIST_SETTINGS, TodoPanelPosition, TodoSortOption, TodoScopeMode } from './features/todolist/types';
 export type { TodoListSettings, TodoPanelPosition, TodoSortOption, TodoScopeMode };
 export { DEFAULT_TODOLIST_SETTINGS };
+import { StringSanitizerSettings, DEFAULT_STRING_SANITIZER_SETTINGS, StringSanitizerRule } from './features/sanitizer/types';
+export type { StringSanitizerSettings, StringSanitizerRule };
+export { DEFAULT_STRING_SANITIZER_SETTINGS };
 
 export type BubbleGraphIntegrationMode = 'deactivate' | 'replace' | 'second';
 export type BubbleNodeGlyphOption = 'no-dot' | 'dot' | 'plus' | 'minus' | 'i' | 'square' | 'ring' | 'star';
@@ -216,6 +219,7 @@ export interface PakCLITableSettings extends
     carouselAutoPlay?: boolean;
     htmlSnapshotMode?: HtmlSnapshotMode;
     todoListSettings?: TodoListSettings;
+    stringSanitizerSettings?: StringSanitizerSettings;
     [key: string]: unknown;
 }
 
@@ -344,5 +348,6 @@ export const DEFAULT_TABLE_SETTINGS: PakCLITableSettings = {
     carouselAutoPlay: true,
     htmlSnapshotMode: 'html-only',
     todoListSettings: DEFAULT_TODOLIST_SETTINGS,
+    stringSanitizerSettings: DEFAULT_STRING_SANITIZER_SETTINGS,
 };
 

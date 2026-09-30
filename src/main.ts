@@ -68,6 +68,15 @@ import { RibbonManager, RibbonManagerSettingTab } from './features/ribbon';
 // Todo & Pomodoro Hub (v05_todolist) Imports
 import { TODOLIST_VIEW_TYPE, TodoListView, TodoListSettings, DEFAULT_TODOLIST_SETTINGS } from './features/todolist';
 
+// String Sanitizer & Masker (v06_string_sanitizer) Imports
+import { 
+	StringSanitizerSettings, 
+	DEFAULT_STRING_SANITIZER_SETTINGS, 
+	StringSanitizerRule, 
+	PreFlightDiffModal, 
+	SanitizerEngine 
+} from './features/sanitizer';
+
 export default class PakCLITablePlugin extends Plugin {
 	declare settings: PakCLITableSettings;
 	ribbonManager!: RibbonManager;
@@ -543,6 +552,38 @@ export default class PakCLITablePlugin extends Plugin {
 			name: 'Open Todo & Pomodoro Hub (v05_todolist)',
 			callback: () => {
 				this.openTodoListView();
+			}
+		});
+
+		// 11. String Sanitizer & Masker Commands (v06_string_sanitizer)
+		this.addCommand({
+			id: 'sanitize-active-note',
+			name: 'Sanitize Active Note (Pre-flight Review)',
+			checkCallback: (checking: boolean) => {
+				const active = this.app.workspace.getActiveFile();
+				if (!active || active.extension !== 'md') return false;
+				if (!checking) {
+					const rules = this.settings.stringSanitizerSettings?.rules || DEFAULT_STRING_SANITIZER_SETTINGS.rules;
+					new PreFlightDiffModal(this.app, 'active', rules).open();
+				}
+				return true;
+			}
+		});
+
+		this.addCommand({
+			id: 'sanitize-all-notes',
+			name: 'Sanitize All Notes in Vault (Pre-flight Review)',
+			callback: () => {
+				const rules = this.settings.stringSanitizerSettings?.rules || DEFAULT_STRING_SANITIZER_SETTINGS.rules;
+				new PreFlightDiffModal(this.app, 'vault', rules).open();
+			}
+		});
+
+		this.addCommand({
+			id: 'open-sanitizer-settings',
+			name: 'Open Settings: String Sanitizer & Masker',
+			callback: () => {
+				this.openSettingsTab('table-sanitizer');
 			}
 		});
 
@@ -5700,6 +5741,18 @@ export default class PakCLITablePlugin extends Plugin {
 			}
 		});
 
+		// 8.5 String Sanitizer & Masker Handler (table-sanitizer)
+		settingsTab.registerLocalSection({
+			id: 'table-sanitizer',
+			category: 'table',
+			title: 'String Sanitizer & Masker',
+			icon: 'shield',
+			isInstalled: true,
+			render: (containerEl) => {
+				this.renderSanitizerSettings(containerEl);
+			}
+		});
+
 		// 9. Todo & Pomodoro Hub Handler (v05_todolist)
 		settingsTab.registerLocalSection({
 			id: 'table-todolist',
@@ -5833,5 +5886,243 @@ export default class PakCLITablePlugin extends Plugin {
 		});
 
 		this.addSettingTab(settingsTab);
+	}
+
+	renderSanitizerSettings(containerEl: HTMLElement): void {
+		containerEl.empty();
+		const current = this.settings.stringSanitizerSettings || DEFAULT_STRING_SANITIZER_SETTINGS;
+
+		new Setting(containerEl)
+			.setName('String Sanitizer & Masker (v06)')
+			.setDesc('Mask sensitive strings during codeblock clipboard copy and safely find/replace text across active notes or your entire vault with pre-flight verification.')
+			.setHeading();
+
+		// Action Buttons: Active Note vs Entire Vault
+		new Setting(containerEl)
+			.setName('Pre-Flight Vault Actions')
+			.setDesc('Scan notes and review changes in an interactive diff table before modifying raw files.')
+			.addButton((btn) => {
+				btn.setButtonText('📄 Review & Sanitize Active Note')
+					.setCta()
+					.onClick(() => {
+						const active = this.app.workspace.getActiveFile();
+						if (!active || active.extension !== 'md') {
+							new Notice('No active Markdown note open!');
+							return;
+						}
+						new PreFlightDiffModal(this.app, 'active', current.rules || []).open();
+					});
+			})
+			.addButton((btn) => {
+				btn.setButtonText('🌐 Review & Sanitize Entire Vault')
+					.setWarning()
+					.onClick(() => {
+						new PreFlightDiffModal(this.app, 'vault', current.rules || []).open();
+					});
+			});
+
+		// Master Toggle
+		new Setting(containerEl)
+			.setName('Enable String Sanitizer Engine')
+			.setDesc('Master switch to enable/disable all string sanitizer transformations.')
+			.addToggle((t) => {
+				t.setValue(current.masterEnabled !== false)
+					.onChange(async (val) => {
+						current.masterEnabled = val;
+						this.settings.stringSanitizerSettings = current;
+						await this.saveSettings();
+					});
+			});
+
+		// Clipboard Sanitizer Toggle
+		new Setting(containerEl)
+			.setName('Codeblock Clipboard Auto-Sanitizer')
+			.setDesc('Automatically sanitize sensitive strings (e.g. usernames, local paths, credentials) when copying codeblocks.')
+			.addToggle((t) => {
+				t.setValue(current.enableClipboardSanitizer !== false)
+					.onChange(async (val) => {
+						current.enableClipboardSanitizer = val;
+						this.settings.stringSanitizerSettings = current;
+						await this.saveSettings();
+					});
+			});
+
+		// Rules Header
+		const rulesHeader = new Setting(containerEl)
+			.setName('Sanitizer Rules')
+			.setDesc('Define string replacement patterns. You can use plain text or regular expressions.')
+			.setHeading();
+
+		rulesHeader.addButton((btn) => {
+			btn.setButtonText('+ Add New Rule')
+				.setCta()
+				.onClick(async () => {
+					if (!current.rules) current.rules = [];
+					current.rules.push({
+						id: 'rule_' + Date.now(),
+						label: 'New Sanitizer Rule',
+						searchPattern: '',
+						replacementText: '',
+						isRegex: false,
+						caseSensitive: false,
+						enabled: true,
+						affectClipboard: true,
+						affectVirtualEditor: false
+					});
+					this.settings.stringSanitizerSettings = current;
+					await this.saveSettings();
+					this.renderSanitizerSettings(containerEl);
+				});
+		});
+
+		// Rules Container
+		const rulesContainer = containerEl.createDiv({ cls: 'sanitizer-rules-list' });
+
+		if (!current.rules || current.rules.length === 0) {
+			rulesContainer.createDiv({ 
+				text: 'No rules configured yet. Click "+ Add New Rule" to create your first replacement pattern.',
+				cls: 'sanitizer-loading-bar' 
+			});
+		} else {
+			current.rules.forEach((rule, index) => {
+				const card = rulesContainer.createDiv({ cls: 'sanitizer-rule-card' });
+
+				const infoDiv = card.createDiv({ cls: 'rule-card-info' });
+
+				// Row 1: Label & Enabled Toggle
+				const titleRow = infoDiv.createDiv({ cls: 'rule-title-row' });
+				const labelInput = titleRow.createEl('input', {
+					type: 'text',
+					value: rule.label || `Rule #${index + 1}`,
+					cls: 'rule-label-input'
+				});
+				labelInput.placeholder = 'Rule Description / Label';
+				labelInput.onchange = async () => {
+					rule.label = labelInput.value.trim();
+					this.settings.stringSanitizerSettings = current;
+					await this.saveSettings();
+				};
+
+				// Row 2: Search pattern -> Replacement text
+				const patternRow = infoDiv.createDiv({ cls: 'rule-pattern-row' });
+				
+				const searchInput = patternRow.createEl('input', {
+					type: 'text',
+					value: rule.searchPattern || '',
+					cls: 'pattern-box search-box'
+				});
+				searchInput.placeholder = 'Search string or regex...';
+				searchInput.onchange = async () => {
+					rule.searchPattern = searchInput.value;
+					this.settings.stringSanitizerSettings = current;
+					await this.saveSettings();
+					updateSandbox();
+				};
+
+				patternRow.createSpan({ text: '➔', cls: 'pattern-arrow' });
+
+				const replInput = patternRow.createEl('input', {
+					type: 'text',
+					value: rule.replacementText || '',
+					cls: 'pattern-box repl-box'
+				});
+				replInput.placeholder = 'Replacement text...';
+				replInput.onchange = async () => {
+					rule.replacementText = replInput.value;
+					this.settings.stringSanitizerSettings = current;
+					await this.saveSettings();
+					updateSandbox();
+				};
+
+				// Row 3: Options (Regex, Case-Sensitive, Affect Clipboard)
+				const optRow = infoDiv.createDiv({ cls: 'rule-pattern-row' });
+				
+				// Regex checkbox
+				const regexLabel = optRow.createEl('label', { cls: 'sanitizer-opt-label' });
+				const regexChk = regexLabel.createEl('input', { type: 'checkbox' });
+				regexChk.checked = !!rule.isRegex;
+				regexChk.onchange = async () => {
+					rule.isRegex = regexChk.checked;
+					this.settings.stringSanitizerSettings = current;
+					await this.saveSettings();
+					updateSandbox();
+				};
+				regexLabel.createSpan({ text: ' Regex' });
+
+				// Case Sensitive checkbox
+				const caseLabel = optRow.createEl('label', { cls: 'sanitizer-opt-label' });
+				const caseChk = caseLabel.createEl('input', { type: 'checkbox' });
+				caseChk.checked = !!rule.caseSensitive;
+				caseChk.onchange = async () => {
+					rule.caseSensitive = caseChk.checked;
+					this.settings.stringSanitizerSettings = current;
+					await this.saveSettings();
+					updateSandbox();
+				};
+				caseLabel.createSpan({ text: ' Case Sensitive' });
+
+				// Affect Clipboard checkbox
+				const clipLabel = optRow.createEl('label', { cls: 'sanitizer-opt-label' });
+				const clipChk = clipLabel.createEl('input', { type: 'checkbox' });
+				clipChk.checked = rule.affectClipboard !== false;
+				clipChk.onchange = async () => {
+					rule.affectClipboard = clipChk.checked;
+					this.settings.stringSanitizerSettings = current;
+					await this.saveSettings();
+				};
+				clipLabel.createSpan({ text: ' Affect Clipboard' });
+
+				// Action buttons on the right: Enable toggle & Delete button
+				const actionsDiv = card.createDiv({ cls: 'rule-card-actions' });
+				
+				const toggleBtn = actionsDiv.createEl('button', { 
+					text: rule.enabled ? 'Active' : 'Disabled',
+					cls: rule.enabled ? 'mod-cta' : ''
+				});
+				toggleBtn.onclick = async () => {
+					rule.enabled = !rule.enabled;
+					toggleBtn.setText(rule.enabled ? 'Active' : 'Disabled');
+					toggleBtn.classList.toggle('mod-cta', rule.enabled);
+					this.settings.stringSanitizerSettings = current;
+					await this.saveSettings();
+					updateSandbox();
+				};
+
+				const delBtn = actionsDiv.createEl('button', { 
+					text: '🗑️',
+					cls: 'sanitizer-del-btn'
+				});
+				delBtn.title = 'Delete this rule';
+				delBtn.onclick = async () => {
+					current.rules.splice(index, 1);
+					this.settings.stringSanitizerSettings = current;
+					await this.saveSettings();
+					this.renderSanitizerSettings(containerEl);
+				};
+			});
+		}
+
+		// Sandbox Live Tester
+		new Setting(containerEl)
+			.setName('Interactive Sandbox Tester')
+			.setDesc('Test your active rules against arbitrary text in real-time.')
+			.setHeading();
+
+		const sandboxBox = containerEl.createDiv({ cls: 'sanitizer-sandbox-box' });
+		const sandboxInput = sandboxBox.createEl('textarea', {
+			placeholder: 'Paste or type sample string here to test (e.g. C:\\Users\\fsl\\project)...'
+		});
+		sandboxInput.value = 'Remove-Item -Recurse -Force "C:\\Users\\fsl\\.gemini\\config\\plugins"';
+
+		const sandboxOutput = sandboxBox.createDiv({ cls: 'sanitizer-sandbox-output' });
+
+		const updateSandbox = () => {
+			const text = sandboxInput.value;
+			const res = SanitizerEngine.sanitizeText(text, current.rules || []);
+			sandboxOutput.setText(res.text || '(empty)');
+		};
+
+		sandboxInput.oninput = () => updateSandbox();
+		updateSandbox();
 	}
 }

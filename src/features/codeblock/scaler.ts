@@ -1,6 +1,7 @@
 import { MarkdownView, Notice } from 'obsidian';
 import { EditorView, ViewPlugin, ViewUpdate } from '@codemirror/view';
 import type PakCLIPlugin from '../../main';
+import { SanitizerEngine } from '../sanitizer';
 
 export interface CodeblockLanguageRule {
 	id: string;
@@ -1226,6 +1227,22 @@ export class CodeblockScaler {
 		return t;
 	}
 
+	/** Sanitizes clipboard text according to active String Sanitizer rules */
+	public applyClipboardSanitizer(text: string): { text: string; replacementsCount: number } {
+		try {
+			const settings = this.plugin?.settings?.stringSanitizerSettings;
+			if (!settings?.masterEnabled || !settings?.enableClipboardSanitizer) {
+				return { text, replacementsCount: 0 };
+			}
+			const rules = settings.rules || [];
+			const res = SanitizerEngine.sanitizeText(text, rules, (r) => r.affectClipboard);
+			return { text: res.text, replacementsCount: res.replacementsCount };
+		} catch (err) {
+			console.warn('[PakCLI] Error in applyClipboardSanitizer:', err);
+			return { text, replacementsCount: 0 };
+		}
+	}
+
 	/** Patches navigator.clipboard.writeText and Electron clipboard as guaranteed safety net */
 	private patchClipboardWriteText(): void {
 		// 1. Global / Window navigator.clipboard
@@ -1237,15 +1254,19 @@ export class CodeblockScaler {
 				this.originalClipboardWriteText = originalWriteText;
 
 				nav.writeText = async (text: string) => {
+					let finalText = text;
 					const pending = this.pendingClipboardTransform;
 					if (pending && (Date.now() - pending.timestamp < 3000)) {
 						console.log(`[PakCLI] Intercepted navigator.clipboard.writeText for "${pending.lang}" (${pending.template})`);
 						this.pendingClipboardTransform = null;
-						const transformed = this.transformClipboardContent(text, pending.template, pending.lang, pending.replaceExisting !== false);
+						finalText = this.transformClipboardContent(text, pending.template, pending.lang, pending.replaceExisting !== false);
 						new Notice(`[PakCLI] Copied with ${pending.lang} (${this.formatTemplateNoticeLabel(pending.template)}) template!`, 2500);
-						return originalWriteText(transformed);
 					}
-					return originalWriteText(text);
+					const sanitized = this.applyClipboardSanitizer(finalText);
+					if (sanitized.replacementsCount > 0) {
+						new Notice(`🛡️ Sanitized ${sanitized.replacementsCount} string(s) in clipboard!`, 2500);
+					}
+					return originalWriteText(sanitized.text);
 				};
 			}
 		}
@@ -1257,15 +1278,19 @@ export class CodeblockScaler {
 				activeWin.navigator.clipboard.__pakcliPatched = true;
 				const origDocWrite = activeWin.navigator.clipboard.writeText.bind(activeWin.navigator.clipboard);
 				activeWin.navigator.clipboard.writeText = async (text: string) => {
+					let finalText = text;
 					const pending = this.pendingClipboardTransform;
 					if (pending && (Date.now() - pending.timestamp < 3000)) {
 						console.log(`[PakCLI] Intercepted activeDoc writeText for "${pending.lang}" (${pending.template})`);
 						this.pendingClipboardTransform = null;
-						const transformed = this.transformClipboardContent(text, pending.template, pending.lang, pending.replaceExisting !== false);
+						finalText = this.transformClipboardContent(text, pending.template, pending.lang, pending.replaceExisting !== false);
 						new Notice(`[PakCLI] Copied with ${pending.lang} (${this.formatTemplateNoticeLabel(pending.template)}) template!`, 2500);
-						return origDocWrite(transformed);
 					}
-					return origDocWrite(text);
+					const sanitized = this.applyClipboardSanitizer(finalText);
+					if (sanitized.replacementsCount > 0) {
+						new Notice(`🛡️ Sanitized ${sanitized.replacementsCount} string(s) in clipboard!`, 2500);
+					}
+					return origDocWrite(sanitized.text);
 				};
 			}
 		} catch (e) {
@@ -1279,15 +1304,19 @@ export class CodeblockScaler {
 				electron.clipboard.__pakcliPatched = true;
 				const origElectronWrite = electron.clipboard.writeText.bind(electron.clipboard);
 				electron.clipboard.writeText = (text: string, type?: string) => {
+					let finalText = text;
 					const pending = this.pendingClipboardTransform;
 					if (pending && (Date.now() - pending.timestamp < 3000)) {
 						console.log(`[PakCLI] Intercepted electron.clipboard.writeText for "${pending.lang}" (${pending.template})`);
 						this.pendingClipboardTransform = null;
-						const transformed = this.transformClipboardContent(text, pending.template, pending.lang, pending.replaceExisting !== false);
+						finalText = this.transformClipboardContent(text, pending.template, pending.lang, pending.replaceExisting !== false);
 						new Notice(`[PakCLI] Copied with ${pending.lang} (${this.formatTemplateNoticeLabel(pending.template)}) template!`, 2500);
-						return origElectronWrite(transformed, type);
 					}
-					return origElectronWrite(text, type);
+					const sanitized = this.applyClipboardSanitizer(finalText);
+					if (sanitized.replacementsCount > 0) {
+						new Notice(`🛡️ Sanitized ${sanitized.replacementsCount} string(s) in clipboard!`, 2500);
+					}
+					return origElectronWrite(sanitized.text, type);
 				};
 			}
 		} catch (e) {
@@ -1427,7 +1456,12 @@ export class CodeblockScaler {
 			if (pending && rawCode) {
 				console.log('[PakCLI] Fallback writeText triggered from extracted rawCode');
 				this.pendingClipboardTransform = null;
-				const transformed = this.transformClipboardContent(rawCode, pending.template, pending.lang, pending.replaceExisting !== false);
+				let transformed = this.transformClipboardContent(rawCode, pending.template, pending.lang, pending.replaceExisting !== false);
+				const sanitized = this.applyClipboardSanitizer(transformed);
+				if (sanitized.replacementsCount > 0) {
+					transformed = sanitized.text;
+					new Notice(`🛡️ Sanitized ${sanitized.replacementsCount} string(s) in clipboard!`, 2500);
+				}
 				if (this.originalClipboardWriteText) {
 					await this.originalClipboardWriteText(transformed);
 				} else if (navigator.clipboard?.writeText) {
@@ -1593,7 +1627,12 @@ export class CodeblockScaler {
 			clone.querySelectorAll('.copy-code-button, .pakcli-cb-copy-btn, .code-block-flair, .code-block-header, button').forEach((el) => el.remove());
 			const content = clone.textContent ?? '';
 
-			const transformed = curScript ? this.transformClipboardContent(content, curScript, lang, curRule?.replaceExisting !== false) : content;
+			let transformed = curScript ? this.transformClipboardContent(content, curScript, lang, curRule?.replaceExisting !== false) : content;
+			const sanitized = this.applyClipboardSanitizer(transformed);
+			if (sanitized.replacementsCount > 0) {
+				transformed = sanitized.text;
+				new Notice(`🛡️ Sanitized ${sanitized.replacementsCount} string(s) in clipboard!`, 2500);
+			}
 
 			const flash = () => {
 				btn.classList.add('pakcli-cb-copy-btn--done');
@@ -1922,6 +1961,14 @@ export class CodeblockScaler {
 				line.style.setProperty('overflow-wrap', 'anywhere', 'important');
 				line.style.setProperty('word-wrap', 'break-word', 'important');
 				line.style.setProperty('overflow-x', 'hidden', 'important');
+				if (line.classList.contains('HyperMD-codeblock-begin')) {
+					line.style.setProperty('overflow-y', 'visible', 'important');
+					line.style.setProperty('position', 'relative', 'important');
+					line.style.setProperty('z-index', '1000', 'important');
+				} else {
+					line.style.setProperty('position', 'relative', 'important');
+					line.style.setProperty('z-index', '1', 'important');
+				}
 				line.style.setProperty('max-width', '100%', 'important');
 				line.style.setProperty('width', 'auto', 'important');
 				line.style.setProperty('min-width', '0', 'important');
@@ -1951,6 +1998,14 @@ export class CodeblockScaler {
 				line.style.setProperty('white-space', 'pre', 'important');
 				line.style.setProperty('font-size', 'min(var(--code-size, 13px), 2.2vw)', 'important');
 				line.style.setProperty('overflow-x', 'auto', 'important');
+				if (line.classList.contains('HyperMD-codeblock-begin')) {
+					line.style.setProperty('overflow-y', 'visible', 'important');
+					line.style.setProperty('position', 'relative', 'important');
+					line.style.setProperty('z-index', '1000', 'important');
+				} else {
+					line.style.setProperty('position', 'relative', 'important');
+					line.style.setProperty('z-index', '1', 'important');
+				}
 				line.style.setProperty('max-width', '100%', 'important');
 				line.style.setProperty('width', 'auto', 'important');
 				line.style.setProperty('min-width', '0', 'important');
@@ -1987,7 +2042,15 @@ export class CodeblockScaler {
 				line.style.setProperty('word-break', 'normal', 'important');
 				line.style.setProperty('word-wrap', 'normal', 'important');
 				line.style.setProperty('overflow-x', 'auto', 'important');
-				line.style.setProperty('overflow-y', 'hidden', 'important');
+				if (line.classList.contains('HyperMD-codeblock-begin')) {
+					line.style.setProperty('overflow-y', 'visible', 'important');
+					line.style.setProperty('position', 'relative', 'important');
+					line.style.setProperty('z-index', '1000', 'important');
+				} else {
+					line.style.setProperty('overflow-y', 'hidden', 'important');
+					line.style.setProperty('position', 'relative', 'important');
+					line.style.setProperty('z-index', '1', 'important');
+				}
 				line.style.setProperty('max-width', '100%', 'important');
 				line.style.setProperty('width', 'auto', 'important');
 				line.style.setProperty('min-width', '0', 'important');
@@ -2032,7 +2095,15 @@ export class CodeblockScaler {
 				l.style.setProperty('word-wrap', 'normal', 'important');
 				l.style.overflowWrap = 'normal';
 				l.style.setProperty('overflow-x', 'hidden', 'important');
-				l.style.setProperty('overflow-y', 'hidden', 'important');
+				if (l.classList.contains('HyperMD-codeblock-begin')) {
+					l.style.setProperty('overflow-y', 'visible', 'important');
+					l.style.setProperty('position', 'relative', 'important');
+					l.style.setProperty('z-index', '1000', 'important');
+				} else {
+					l.style.setProperty('overflow-y', 'hidden', 'important');
+					l.style.setProperty('position', 'relative', 'important');
+					l.style.setProperty('z-index', '1', 'important');
+				}
 				l.style.setProperty('max-width', '100%', 'important');
 				l.style.setProperty('width', 'auto', 'important');
 				l.style.setProperty('min-width', '0', 'important');
@@ -2055,6 +2126,11 @@ export class CodeblockScaler {
 				const isFence = l.classList.contains('HyperMD-codeblock-begin') || l.classList.contains('HyperMD-codeblock-end');
 				if (isFence) {
 					l.style.setProperty('overflow-x', 'hidden', 'important');
+					if (l.classList.contains('HyperMD-codeblock-begin')) {
+						l.style.setProperty('overflow-y', 'visible', 'important');
+						l.style.setProperty('position', 'relative', 'important');
+						l.style.setProperty('z-index', '1000', 'important');
+					}
 					return;
 				}
 				const currentSpacer = parseFloat(l.style.getPropertyValue('--codeblock-spacer-width')) || 0;
@@ -2075,6 +2151,11 @@ export class CodeblockScaler {
 				const isFence = line.classList.contains('HyperMD-codeblock-begin') || line.classList.contains('HyperMD-codeblock-end');
 				if (isFence) {
 					line.style.setProperty('overflow-x', 'hidden', 'important');
+					if (line.classList.contains('HyperMD-codeblock-begin')) {
+						line.style.setProperty('overflow-y', 'visible', 'important');
+						line.style.setProperty('position', 'relative', 'important');
+						line.style.setProperty('z-index', '1000', 'important');
+					}
 					line.style.removeProperty('--codeblock-spacer-width');
 					line.style.removeProperty('padding-right');
 					line.scrollLeft = 0;

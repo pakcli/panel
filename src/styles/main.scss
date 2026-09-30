@@ -20,6 +20,7 @@
 @use 'audioPlayer';
 @use 'ribbonManager';
 @use 'todolist';
+@use 'sanitizer';
 
 
 @use '../features/sqlseal/modules/explorer/explorer/style.scss';
@@ -3277,15 +3278,38 @@ pre,
   position: relative !important;
 }
 
-/* Ensure Live Preview first line does not clip flair/copy button */
+/* Ensure Live Preview first line does not clip flair/copy button and sits on top of all subsequent rows */
 .markdown-source-view.mod-cm6 .cm-line.HyperMD-codeblock.HyperMD-codeblock-begin,
 .cm-line.HyperMD-codeblock.HyperMD-codeblock-begin {
+  position: relative !important;
+  z-index: 1000 !important;
   overflow: visible !important;
   overflow-x: visible !important;
   overflow-y: visible !important;
 }
 
-/* Position and clear corners for all copy buttons and flairs so they don't clip into border-radius */
+/* Force all subsequent codeblock lines to lower stacking layer so they never paint over the button */
+.markdown-source-view.mod-cm6 .cm-line.HyperMD-codeblock:not(.HyperMD-codeblock-begin),
+.cm-line.HyperMD-codeblock:not(.HyperMD-codeblock-begin) {
+  position: relative !important;
+  z-index: 1 !important;
+}
+
+/* Ensure Reading View pre containers keep button on the absolute toppest layer */
+pre,
+.markdown-rendered pre,
+.markdown-preview-view pre,
+.cm-embed-block pre {
+  position: relative !important;
+
+  > code,
+  > .code-block-content {
+    position: relative;
+    z-index: 1 !important;
+  }
+}
+
+/* Position and elevate all copy buttons and flairs to the toppest z-index */
 body .copy-code-button,
 body .code-block-flair,
 body .pakcli-cb-copy-btn,
@@ -3293,23 +3317,27 @@ body .pakcli-cb-copy-btn,
 .markdown-preview-view pre .copy-code-button,
 .markdown-source-view pre .copy-code-button,
 .cm-embed-block pre .copy-code-button,
-pre .copy-code-button {
+pre .copy-code-button,
+.code-block-flair,
+.pakcli-cb-copy-btn {
   position: absolute !important;
-  top: 8px !important;
-  right: 10px !important;
+  top: 4px !important;
+  right: 8px !important;
   margin: 0 !important;
-  z-index: 15 !important;
+  z-index: 999999 !important;
   box-sizing: border-box !important;
   overflow: visible !important;
   line-height: 1 !important;
+  pointer-events: auto !important;
 }
 
-/* If button is inside flair or header container, don't break layout */
+/* If button is inside flair or header container, don't break layout but maintain supreme z-index */
 .code-block-flair .copy-code-button,
 .code-block-header .copy-code-button {
   position: static !important;
   top: auto !important;
   right: auto !important;
+  z-index: 999999 !important;
 }
 
 /* Ensure SVG strokes inside copy buttons do not get clipped at viewBox boundary */
@@ -3327,9 +3355,9 @@ pre:has(.pakcli-cb-copy-btn) .copy-code-button {
 
 .pakcli-cb-copy-btn {
   position: absolute !important;
-  top: 8px !important;
-  right: 10px !important;
-  z-index: 15 !important;
+  top: 4px !important;
+  right: 8px !important;
+  z-index: 999999 !important;
   display: flex !important;
   align-items: center !important;
   justify-content: center !important;
@@ -3345,9 +3373,12 @@ pre:has(.pakcli-cb-copy-btn) .copy-code-button {
   transition: opacity 0.15s ease, color 0.15s ease, background 0.15s ease;
   box-shadow: 0 1px 4px rgba(0,0,0,0.15);
   overflow: visible !important;
+  pointer-events: auto !important;
 }
 
-pre:hover .pakcli-cb-copy-btn {
+pre:hover .pakcli-cb-copy-btn,
+.cm-line:hover .pakcli-cb-copy-btn,
+.HyperMD-codeblock:hover .pakcli-cb-copy-btn {
   opacity: 1;
 }
 
