@@ -12,6 +12,9 @@ export { DEFAULT_AUDIO_SETTINGS };
 import { RibbonManagerSettings, DEFAULT_RIBBON_MANAGER_SETTINGS } from './features/ribbon/types';
 export type { RibbonManagerSettings };
 export { DEFAULT_RIBBON_MANAGER_SETTINGS };
+import { TodoListSettings, DEFAULT_TODOLIST_SETTINGS, TodoPanelPosition, TodoSortOption, TodoScopeMode } from './features/todolist/types';
+export type { TodoListSettings, TodoPanelPosition, TodoSortOption, TodoScopeMode };
+export { DEFAULT_TODOLIST_SETTINGS };
 
 export type BubbleGraphIntegrationMode = 'deactivate' | 'replace' | 'second';
 export type BubbleNodeGlyphOption = 'no-dot' | 'dot' | 'plus' | 'minus' | 'i' | 'square' | 'ring' | 'star';
@@ -212,6 +215,7 @@ export interface PakCLITableSettings extends
     carouselHoldDuration?: number;
     carouselAutoPlay?: boolean;
     htmlSnapshotMode?: HtmlSnapshotMode;
+    todoListSettings?: TodoListSettings;
     [key: string]: unknown;
 }
 
@@ -339,5 +343,6 @@ export const DEFAULT_TABLE_SETTINGS: PakCLITableSettings = {
     carouselHoldDuration: 1.0,
     carouselAutoPlay: true,
     htmlSnapshotMode: 'html-only',
+    todoListSettings: DEFAULT_TODOLIST_SETTINGS,
 };
 

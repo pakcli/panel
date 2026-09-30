@@ -65,6 +65,9 @@ import {
 // Ribbon Organizer & Grouping Imports
 import { RibbonManager, RibbonManagerSettingTab } from './features/ribbon';
 
+// Todo & Pomodoro Hub (v05_todolist) Imports
+import { TODOLIST_VIEW_TYPE, TodoListView, TodoListSettings, DEFAULT_TODOLIST_SETTINGS } from './features/todolist';
+
 export default class PakCLITablePlugin extends Plugin {
 	declare settings: PakCLITableSettings;
 	ribbonManager!: RibbonManager;
@@ -81,10 +84,37 @@ export default class PakCLITablePlugin extends Plugin {
 	vaultRoot: string = '';
 	bubbleRibbonEl: HTMLElement | null = null;
 	audioRibbonEl: HTMLElement | null = null;
+	todoRibbonEl: HTMLElement | null = null;
 	audioEngine!: AudioEngine;
 	playlistManager!: PlaylistManager;
 	audioPlayerPopup: AudioPlayerPopup | null = null;
 	audioStatusBar: AudioStatusBar | null = null;
+
+	async openTodoListView(): Promise<void> {
+		const existing = this.app.workspace.getLeavesOfType(TODOLIST_VIEW_TYPE);
+		let targetLeaf = existing.length > 0 ? existing[0] : null;
+		if (targetLeaf) {
+			this.app.workspace.revealLeaf(targetLeaf);
+			return;
+		}
+
+		const pos = this.settings.todoListSettings?.defaultPanelPosition || 'sidebar-left';
+		if (pos === 'sidebar-left') {
+			targetLeaf = this.app.workspace.getLeftLeaf(false);
+		} else if (pos === 'sidebar-right') {
+			targetLeaf = this.app.workspace.getRightLeaf(false);
+		} else { // 'center'
+			targetLeaf = this.app.workspace.getLeaf('tab');
+		}
+
+		if (targetLeaf) {
+			await targetLeaf.setViewState({
+				type: TODOLIST_VIEW_TYPE,
+				active: true
+			});
+			this.app.workspace.revealLeaf(targetLeaf);
+		}
+	}
 
 	async openAudioPlayerTab(): Promise<void> {
 		const existing = this.app.workspace.getLeavesOfType(PAKCLI_AUDIO_VIEW_TYPE);
@@ -491,6 +521,28 @@ export default class PakCLITablePlugin extends Plugin {
 					await this.saveSettings();
 					new Notice('Bubble View settings reset to default');
 				}
+			}
+		});
+
+		// 10. Initialize Todo List & Pomodoro Split View (v05_todolist)
+		this.registerView(
+			TODOLIST_VIEW_TYPE,
+			(leaf) => new TodoListView(leaf, this.settings.todoListSettings || DEFAULT_TODOLIST_SETTINGS)
+		);
+
+		this.todoRibbonEl = this.addRibbonIcon(
+			this.settings.todoListSettings?.ribbonIcon || 'target',
+			'Todo & Pomodoro Hub (v05_todolist)',
+			async () => {
+				await this.openTodoListView();
+			}
+		);
+
+		this.addCommand({
+			id: 'open-todolist-pomodoro-view',
+			name: 'Open Todo & Pomodoro Hub (v05_todolist)',
+			callback: () => {
+				this.openTodoListView();
 			}
 		});
 
@@ -5645,6 +5697,138 @@ export default class PakCLITablePlugin extends Plugin {
 				const ribbonTab = new RibbonManagerSettingTab(this.app, this, this.ribbonManager);
 				ribbonTab.containerEl = containerEl;
 				ribbonTab.display();
+			}
+		});
+
+		// 9. Todo & Pomodoro Hub Handler (v05_todolist)
+		settingsTab.registerLocalSection({
+			id: 'table-todolist',
+			category: 'table',
+			title: 'Todo & Pomodoro Hub',
+			icon: 'target',
+			isInstalled: true,
+			render: (containerEl) => {
+				const current = this.settings.todoListSettings || DEFAULT_TODOLIST_SETTINGS;
+
+				new Setting(containerEl)
+					.setName('Default Panel Position')
+					.setDesc('Choose where the Todo & Pomodoro Hub opens when clicking the ribbon icon or command.')
+					.addDropdown((dd) => {
+						dd.addOption('sidebar-left', 'Left Sidebar (Default)')
+							.addOption('sidebar-right', 'Right Sidebar')
+							.addOption('center', 'Active Note Center')
+							.setValue(current.defaultPanelPosition || 'sidebar-left')
+							.onChange(async (val) => {
+								current.defaultPanelPosition = val as any;
+								this.settings.todoListSettings = current;
+								await this.saveSettings();
+							});
+					});
+
+				new Setting(containerEl)
+					.setName('Pomodoro Split Position')
+					.setDesc('Position of Pomodoro timer relative to the task list.')
+					.addDropdown((dd) => {
+						dd.addOption('top', 'Pomodoro on Top')
+							.addOption('bottom', 'Pomodoro on Bottom')
+							.setValue(current.pomodoroPosition || 'top')
+							.onChange(async (val) => {
+								current.pomodoroPosition = val as any;
+								this.settings.todoListSettings = current;
+								await this.saveSettings();
+								this.app.workspace.getLeavesOfType(TODOLIST_VIEW_TYPE).forEach((leaf) => {
+									if (leaf.view instanceof TodoListView) {
+										leaf.view.updateSettings(current);
+									}
+								});
+							});
+					});
+
+				new Setting(containerEl)
+					.setName('Default Task Scope')
+					.setDesc('Scan tasks from the entire vault or restrict to a specific directory.')
+					.addDropdown((dd) => {
+						dd.addOption('vault', 'Whole Vault')
+							.addOption('directory', 'Specific Directory')
+							.setValue(current.defaultScopeMode || 'vault')
+							.onChange(async (val) => {
+								current.defaultScopeMode = val as any;
+								this.settings.todoListSettings = current;
+								await this.saveSettings();
+							});
+					});
+
+				new Setting(containerEl)
+					.setName('Default Directory Path')
+					.setDesc('Folder path to scan when scope is set to Specific Directory.')
+					.addText((txt) => {
+						txt.setValue(current.defaultScopeDirectory || 'Projects')
+							.setPlaceholder('e.g. Projects')
+							.onChange(async (val) => {
+								current.defaultScopeDirectory = val;
+								this.settings.todoListSettings = current;
+								await this.saveSettings();
+							});
+					});
+
+				new Setting(containerEl)
+					.setName('Default Sort Strategy')
+					.setDesc('Default ordering of tasks in the sidebar panel.')
+					.addDropdown((dd) => {
+						dd.addOption('dateend_closest', 'Date End Closest (Default)')
+							.addOption('oldest_task', 'Oldest Task')
+							.addOption('newest_task', 'Newest Task')
+							.addOption('a_z', 'Alphabetical A -> Z')
+							.addOption('z_a', 'Alphabetical Z -> A')
+							.setValue(current.defaultSortOption || 'dateend_closest')
+							.onChange(async (val) => {
+								current.defaultSortOption = val as any;
+								this.settings.todoListSettings = current;
+								await this.saveSettings();
+							});
+					});
+
+				new Setting(containerEl)
+					.setName('Work Duration (Minutes)')
+					.setDesc('Pomodoro focus work period in minutes.')
+					.addText((txt) => {
+						txt.setValue(String(current.workDurationMinutes || 25))
+							.onChange(async (val) => {
+								const num = parseInt(val, 10);
+								if (!isNaN(num) && num > 0) {
+									current.workDurationMinutes = num;
+									this.settings.todoListSettings = current;
+									await this.saveSettings();
+								}
+							});
+					});
+
+				new Setting(containerEl)
+					.setName('Short Break (Minutes)')
+					.setDesc('Duration of short break in minutes.')
+					.addText((txt) => {
+						txt.setValue(String(current.shortBreakMinutes || 5))
+							.onChange(async (val) => {
+								const num = parseInt(val, 10);
+								if (!isNaN(num) && num > 0) {
+									current.shortBreakMinutes = num;
+									this.settings.todoListSettings = current;
+									await this.saveSettings();
+								}
+							});
+					});
+
+				new Setting(containerEl)
+					.setName('Play Chime Sound')
+					.setDesc('Play a pleasant harmonic synthesizer chime when a Pomodoro session completes.')
+					.addToggle((tg) => {
+						tg.setValue(current.playChimeSound !== false)
+							.onChange(async (val) => {
+								current.playChimeSound = val;
+								this.settings.todoListSettings = current;
+								await this.saveSettings();
+							});
+					});
 			}
 		});
 
