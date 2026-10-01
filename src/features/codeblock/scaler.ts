@@ -533,14 +533,19 @@ export class CodeblockScaler {
 
 			const jsonStr = JSON.stringify(data, null, 2);
 
-			// 1. Write to vault root
-			await this.plugin.app.vault.adapter.write('debug_codeblock.json', jsonStr);
-
-			// 2. Write to vault artifacts folder if present
+			// 1. Clean up legacy root debug_codeblock.json if it exists so it won't appear in root vault
 			try {
-				if (await this.plugin.app.vault.adapter.exists('artifacts')) {
-					await this.plugin.app.vault.adapter.write('artifacts/debug_codeblock.json', jsonStr);
+				if (await this.plugin.app.vault.adapter.exists('debug_codeblock.json')) {
+					await this.plugin.app.vault.adapter.remove('debug_codeblock.json');
 				}
+			} catch (_) {}
+
+			// 2. Write to vault artifacts folder (ensure directory exists)
+			try {
+				if (!(await this.plugin.app.vault.adapter.exists('artifacts'))) {
+					await this.plugin.app.vault.createFolder('artifacts').catch(() => {});
+				}
+				await this.plugin.app.vault.adapter.write('artifacts/debug_codeblock.json', jsonStr);
 			} catch (_) {}
 
 			// 3. Write directly to Antigravity IDE artifacts directory

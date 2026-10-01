@@ -23,7 +23,7 @@ import { registerCommands as registerTreeCommands } from './features/tree/comman
 import { FolderSuggest } from './features/tree/ui/folder-suggest';
 import { ConfirmModal } from './features/tree/ui/modals';
 import { TREE_FORMAT_RULES_MD, TREE_FORMAT_RULES_BRIEF, TREE_EXAMPLE_CODEBLOCK } from './features/tree/utils/formatRules';
-import { copyToClipboard } from './features/tree/utils/clipboard';
+import { copyToClipboard, copyFilesToNativeOsClipboard, getAbsoluteFileSystemPath } from './features/tree/utils/clipboard';
 import { TimelineNarrativeRenderer } from './features/timelineNarrative/TimelineNarrativeRenderer';
 import { TimelineNarrativeEditorSuggest } from './features/timelineNarrative/timelineAutocomplete';
 
@@ -593,6 +593,23 @@ export default class PakCLITablePlugin extends Plugin {
 		this.registerEditorExtension([createVirtualMaskExtension(this)]);
 		registerReadingViewSanitizer(this);
 
+		// Command: Copy Active File as Native OS File
+		this.addCommand({
+			id: 'copy-active-file-native-os',
+			name: 'Copy Active File as Native OS File',
+			checkCallback: (checking: boolean) => {
+				const activeFile = this.app.workspace.getActiveFile();
+				if (activeFile) {
+					if (!checking) {
+						const absPath = getAbsoluteFileSystemPath(this.app, activeFile);
+						void copyFilesToNativeOsClipboard([absPath], `"${activeFile.name}"`);
+					}
+					return true;
+				}
+				return false;
+			}
+		});
+
 		// Settings Tab Navigation Commands
 		this.addCommand({
 			id: 'open-asset-router-settings',
@@ -1138,6 +1155,16 @@ export default class PakCLITablePlugin extends Plugin {
 					});
 			});
 
+			(menu as any).__pakcli_native_file_copy_added = true;
+			menu.addItem((item) => {
+				item.setTitle(`Copy as files (Native OS) (${count} items)`)
+					.setIcon('copy')
+					.onClick(async () => {
+						const absPaths = targetFiles.map(f => getAbsoluteFileSystemPath(this.app, f));
+						await copyFilesToNativeOsClipboard(absPaths, `${count} items`);
+					});
+			});
+
 			// Copy contents as markdown block (multi)
 			const copyableFiles = targetFiles.filter((f): f is TFile => f instanceof TFile);
 			if (copyableFiles.length > 0) {
@@ -1355,6 +1382,16 @@ export default class PakCLITablePlugin extends Plugin {
 					});
 			});
 
+			(menu as any).__pakcli_native_folder_copy_added = true;
+			menu.addItem((item: any) => {
+				item.setTitle('Copy folder (Native OS)')
+					.setIcon('copy')
+					.onClick(async () => {
+						const absPath = getAbsoluteFileSystemPath(this.app, folder);
+						await copyFilesToNativeOsClipboard([absPath], `folder "${folder.name}"`);
+					});
+			});
+
 			menu.addItem((item: any) => {
 				item.setTitle('Scope Bubble View to this folder')
 					.setIcon('circle-dot')
@@ -1416,6 +1453,15 @@ export default class PakCLITablePlugin extends Plugin {
 							.setIcon('clock')
 							.onClick(() => {
 								this.splitViewManager?.moveToBacklog(file, true);
+							});
+					});
+					(menu as any).__pakcli_native_file_copy_added = true;
+					menu.addItem((item) => {
+						item.setTitle('Copy as a file (Native OS)')
+							.setIcon('copy')
+							.onClick(async () => {
+								const absPath = getAbsoluteFileSystemPath(this.app, file);
+								await copyFilesToNativeOsClipboard([absPath], `"${file.name}"`);
 							});
 					});
 					menu.addItem((item) => {
