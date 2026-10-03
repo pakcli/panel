@@ -141,6 +141,15 @@ export class RibbonManager {
 		});
 	}
 
+	private isItemHidden(itemId: string, itemTitle: string, hiddenSet: Set<string>): boolean {
+		if (hiddenSet.has(itemId)) return true;
+		const suffix = `::${itemTitle.trim().toLowerCase()}`;
+		for (const h of hiddenSet) {
+			if (h.endsWith(suffix)) return true;
+		}
+		return false;
+	}
+
 	/**
 	 * Get structured detected groups and items for Settings UI rendering.
 	 */
@@ -151,7 +160,7 @@ export class RibbonManager {
 
 		// Update cached items
 		detected.forEach(d => {
-			d.itemConfig.visible = !hiddenSet.has(d.itemConfig.id);
+			d.itemConfig.visible = !this.isItemHidden(d.itemConfig.id, d.itemConfig.title, hiddenSet);
 			this.cachedDetectedItems.set(d.itemConfig.id, d.itemConfig);
 		});
 
@@ -249,7 +258,7 @@ export class RibbonManager {
 			const targetActionElements: HTMLElement[] = [];
 			groups.forEach(grp => {
 				grp.items.forEach(item => {
-					if (!hiddenSet.has(item.id)) {
+					if (!this.isItemHidden(item.id, item.title, hiddenSet)) {
 						const el = elementMap.get(item.id);
 						if (el) targetActionElements.push(el);
 					}
@@ -272,7 +281,7 @@ export class RibbonManager {
 			}
 
 			// Filter only visible groups (groups with at least 1 visible item)
-			const visibleGroups = groups.filter(grp => grp.items.some(item => !hiddenSet.has(item.id)));
+			const visibleGroups = groups.filter(grp => grp.items.some(item => !this.isItemHidden(item.id, item.title, hiddenSet)));
 			const expectedDividerCount = Math.max(0, visibleGroups.length - 1);
 			const existingDividers = container.querySelectorAll('.pakcli-ribbon-injected');
 
@@ -285,12 +294,12 @@ export class RibbonManager {
 			container.querySelectorAll('.pakcli-ribbon-injected').forEach(el => el.remove());
 
 			groups.forEach(grp => {
-				const isGrpVisible = grp.items.some(item => !hiddenSet.has(item.id));
+				const isGrpVisible = grp.items.some(item => !this.isItemHidden(item.id, item.title, hiddenSet));
 
 				grp.items.forEach(item => {
 					const el = elementMap.get(item.id);
 					if (el) {
-						if (hiddenSet.has(item.id)) {
+						if (this.isItemHidden(item.id, item.title, hiddenSet)) {
 							el.classList.add('pakcli-ribbon-hidden');
 						} else {
 							el.classList.remove('pakcli-ribbon-hidden');
@@ -320,10 +329,16 @@ export class RibbonManager {
 	public async toggleItemVisibility(itemId: string, visible: boolean): Promise<void> {
 		const pluginSettings = (this.plugin as any).settings as RibbonManagerSettings;
 		const hiddenList = new Set(pluginSettings.ribbonHiddenItemIds || []);
+		const suffix = itemId.includes('::') ? itemId.substring(itemId.indexOf('::')) : `::${itemId}`;
 
-		if (visible) {
-			hiddenList.delete(itemId);
-		} else {
+		// Clean up any matching entries (legacy or new)
+		for (const h of Array.from(hiddenList)) {
+			if (h === itemId || h.endsWith(suffix)) {
+				hiddenList.delete(h);
+			}
+		}
+
+		if (!visible) {
 			hiddenList.add(itemId);
 		}
 

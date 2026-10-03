@@ -79,6 +79,15 @@ import {
 	registerReadingViewSanitizer
 } from './features/sanitizer';
 
+// Frontmatter Scoped Suggester (v10) Imports
+import { FrontmatterSuggestManager } from './features/frontmatterSuggester/FrontmatterSuggestManager';
+import { FrontmatterSuggestCardRenderer } from './features/frontmatterSuggester/ui/FrontmatterSuggestCardRenderer';
+
+// Pane Zoom Engine (v11) & Scrollback Explorer (v14) Imports
+import { ZoomManager } from './features/zoom/ZoomManager';
+import { ScrollbackManager } from './features/scrollback/ScrollbackManager';
+import { AssetRouterQuickManageModal } from './features/tree/ui/AssetRouterQuickManageModal';
+
 export default class PakCLITablePlugin extends Plugin {
 	declare settings: PakCLITableSettings;
 	ribbonManager!: RibbonManager;
@@ -92,6 +101,9 @@ export default class PakCLITablePlugin extends Plugin {
 	splitViewManager!: SplitViewManager;
 	relationshipExplorerManager!: RelationshipExplorerManager;
 	dictionaryExplorerManager!: DictionaryExplorerManager;
+	frontmatterSuggestManager!: FrontmatterSuggestManager;
+	zoomManager!: ZoomManager;
+	scrollbackManager!: ScrollbackManager;
 	vaultRoot: string = '';
 	bubbleRibbonEl: HTMLElement | null = null;
 	audioRibbonEl: HTMLElement | null = null;
@@ -900,6 +912,54 @@ export default class PakCLITablePlugin extends Plugin {
 		this.dictionaryExplorerManager = new DictionaryExplorerManager(this);
 		this.dictionaryExplorerManager.init();
 
+		// Initialize Frontmatter Suggest Manager (Scoped suggestions for Base & properties)
+		this.frontmatterSuggestManager = new FrontmatterSuggestManager(this);
+		this.frontmatterSuggestManager.init();
+
+		// Initialize Pane Zoom Engine (v11) & Scrollback Explorer Helper (v14)
+		this.zoomManager = new ZoomManager(this);
+		this.zoomManager.init();
+
+		this.scrollbackManager = new ScrollbackManager(this);
+		this.scrollbackManager.init();
+
+		// Zoom Commands (Hotkeys Module)
+		this.addCommand({
+			id: 'pakcli-zoom-in',
+			name: 'Zoom In Active View (v11)',
+			callback: () => {
+				const active = this.app.workspace.activeLeaf;
+				if (active) this.zoomManager.adjustLeafZoom(active, this.settings.zoomStep ?? 0.1);
+			}
+		});
+
+		this.addCommand({
+			id: 'pakcli-zoom-out',
+			name: 'Zoom Out Active View (v11)',
+			callback: () => {
+				const active = this.app.workspace.activeLeaf;
+				if (active) this.zoomManager.adjustLeafZoom(active, -(this.settings.zoomStep ?? 0.1));
+			}
+		});
+
+		this.addCommand({
+			id: 'pakcli-zoom-reset',
+			name: 'Reset Active View Zoom to 100% (v11)',
+			callback: () => {
+				const active = this.app.workspace.activeLeaf;
+				if (active) this.zoomManager.resetLeafZoom(active);
+			}
+		});
+
+		this.addCommand({
+			id: 'pakcli-zoom-toggle-width',
+			name: 'Toggle Full Width Mode (Edge-to-Edge) (v11)',
+			callback: () => {
+				const active = this.app.workspace.activeLeaf;
+				if (active) this.zoomManager.toggleWidthMode(active);
+			}
+		});
+
 		// Replace Vanilla GraphView listener if enabled
 		this.registerEvent(
 			this.app.workspace.on('layout-change', () => {
@@ -1212,6 +1272,18 @@ export default class PakCLITablePlugin extends Plugin {
 				});
 			}
 
+			const selectedFolders = targetFiles.filter((f): f is TFolder => f instanceof TFolder);
+			if (selectedFolders.length > 0) {
+				menu.addSeparator();
+				menu.addItem((item) => {
+					item.setTitle(`PakCLI: Asset Router Quick Manage (${selectedFolders.length} folders)`)
+						.setIcon('route')
+						.onClick(() => {
+							new AssetRouterQuickManageModal(this.app, this, selectedFolders).open();
+						});
+				});
+			}
+
 			// Audio handling for multi-selection
 			const audioFiles = targetFiles.filter((f): f is TFile => {
 				return f instanceof TFile && SUPPORTED_AUDIO_EXTENSIONS.has((f.extension || '').toLowerCase());
@@ -1313,6 +1385,14 @@ export default class PakCLITablePlugin extends Plugin {
 					.setIcon('gallery-thumbnails')
 					.onClick(() => {
 						openImageCarouselTab(folder, 'edit');
+					});
+			});
+
+			menu.addItem((item: any) => {
+				item.setTitle('PakCLI: Asset Router Quick Manage')
+					.setIcon('route')
+					.onClick(() => {
+						new AssetRouterQuickManageModal(this.app, this, [folder]).open();
 					});
 			});
 
@@ -1617,6 +1697,15 @@ export default class PakCLITablePlugin extends Plugin {
 		}
 		if (this.dictionaryExplorerManager) {
 			this.dictionaryExplorerManager.destroy();
+		}
+		if (this.frontmatterSuggestManager) {
+			this.frontmatterSuggestManager.destroy();
+		}
+		if (this.zoomManager) {
+			this.zoomManager.destroy();
+		}
+		if (this.scrollbackManager) {
+			this.scrollbackManager.destroy();
 		}
 		eventBus.emit('table:unloaded', { version: this.manifest.version });
 	}
@@ -3425,6 +3514,130 @@ export default class PakCLITablePlugin extends Plugin {
 						b.setButtonText('Open Bubble Graph ↗')
 							.onClick(() => {
 								this.openBubbleGraphView();
+							});
+					});
+			}
+		});
+
+		// 0.6. Frontmatter Property Scoper (v10) (table-frontmatter-suggest)
+		settingsTab.registerLocalSection({
+			id: 'table-frontmatter-suggest',
+			category: 'table',
+			title: 'Property Scoper (v10)',
+			icon: 'list-filter',
+			isInstalled: true,
+			render: (containerEl) => {
+				const renderer = new FrontmatterSuggestCardRenderer(this);
+				renderer.render(containerEl, async () => {
+					await this.saveSettings();
+				});
+			}
+		});
+
+		// 0.7. Pane Zoom & Hotkeys (v11) (table-zoom)
+		settingsTab.registerLocalSection({
+			id: 'table-zoom',
+			category: 'table',
+			title: 'Pane Zoom & Hotkeys (v11)',
+			icon: 'zoom-in',
+			isInstalled: true,
+			render: (containerEl) => {
+				new Setting(containerEl)
+					.setName('Pane Zoom & Hotkeys Engine (v11)')
+					.setDesc('Scoped viewport zoom via Ctrl + MouseWheel or hotkeys. Keeps top header and status bar 100% fixed, with status bar footer indicator and 2 width modes.')
+					.setHeading();
+
+				new Setting(containerEl)
+					.setName('Enable Ctrl + MouseWheel Zoom')
+					.setDesc('Hold Ctrl and scroll mouse wheel up/down to smoothly zoom active note content or page browser without scaling header or footer.')
+					.addToggle((toggle) => {
+						toggle.setValue(this.settings.enablePaneZoom !== false)
+							.onChange(async (val) => {
+								this.settings.enablePaneZoom = val;
+								await this.saveSettings();
+								new Notice(val ? 'Pane Zoom enabled!' : 'Pane Zoom disabled.');
+							});
+					});
+
+				new Setting(containerEl)
+					.setName('Default Width Mode (Menutupi Width Kiri Kanan)')
+					.setDesc('Mode A preserves Obsidian readable line margins. Mode B (Full Width) stretches content edge-to-edge eliminating side gaps.')
+					.addDropdown((dropdown) => {
+						dropdown
+							.addOption('keep-margins', 'Mode A: Preserved Margins (Standard Gutters)')
+							.addOption('fill-width', 'Mode B: Full Width (Edge-to-Edge, No Side Gaps)')
+							.setValue(this.settings.defaultWidthMode || 'keep-margins')
+							.onChange(async (val: any) => {
+								this.settings.defaultWidthMode = val;
+								await this.saveSettings();
+								const activeLeaf = this.app.workspace.activeLeaf;
+								if (activeLeaf) {
+									this.zoomManager.toggleWidthMode(activeLeaf);
+								}
+							});
+					});
+
+				new Setting(containerEl)
+					.setName('Show Zoom in Status Bar (Footer)')
+					.setDesc('Display live zoom percentage (🔍 100%) in Obsidian\'s bottom footer beside word count. Left-click to reset (100%), right-click for quick presets.')
+					.addToggle((toggle) => {
+						toggle.setValue(this.settings.showZoomInStatusBar !== false)
+							.onChange(async (val) => {
+								this.settings.showZoomInStatusBar = val;
+								await this.saveSettings();
+								this.zoomManager.updateStatusBar();
+							});
+					});
+
+				new Setting(containerEl)
+					.setName('Zoom Step Increment')
+					.setDesc('Percentage scaled per scroll tick (default: 10%).')
+					.addSlider((slider) => {
+						slider.setLimits(0.05, 0.25, 0.05)
+							.setValue(this.settings.zoomStep ?? 0.1)
+							.setDynamicTooltip()
+							.onChange(async (val) => {
+								this.settings.zoomStep = val;
+								await this.saveSettings();
+							});
+					});
+
+				new Setting(containerEl)
+					.setName('Reset Active View Zoom')
+					.setDesc('Immediately reset current active note zoom to 100%.')
+					.addButton((btn) => {
+						btn.setButtonText('Reset to 100%')
+							.onClick(() => {
+								const activeLeaf = this.app.workspace.activeLeaf;
+								if (activeLeaf) this.zoomManager.resetLeafZoom(activeLeaf);
+							});
+					});
+
+				// Section 0.7.2: Tree Explorer Scrollback (v14)
+				new Setting(containerEl)
+					.setName('Tree Explorer Scrollback Helper (v14)')
+					.setDesc('Adds a dedicated "Scrollback" button on the left ribbon that acts as a return ticket to your previous file/folder tree location before jumping to a bookmark.')
+					.setHeading();
+
+				new Setting(containerEl)
+					.setName('Enable Scrollback Ribbon Button')
+					.setDesc('Show the history/return icon on the left ribbon bar.')
+					.addToggle((toggle) => {
+						toggle.setValue(this.settings.enableScrollbackRibbon !== false)
+							.onChange(async (val) => {
+								this.settings.enableScrollbackRibbon = val;
+								await this.saveSettings();
+								new Notice('Please reload the plugin to apply ribbon icon visibility changes.');
+							});
+					});
+
+				new Setting(containerEl)
+					.setName('Test Scrollback Jump')
+					.setDesc('Trigger scrollback now to reveal and pulse the last recorded explorer node.')
+					.addButton((btn) => {
+						btn.setButtonText('⏪ Test Scrollback')
+							.onClick(() => {
+								this.scrollbackManager.executeScrollback();
 							});
 					});
 			}

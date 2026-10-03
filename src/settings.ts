@@ -18,6 +18,15 @@ export { DEFAULT_TODOLIST_SETTINGS };
 import { StringSanitizerSettings, DEFAULT_STRING_SANITIZER_SETTINGS, StringSanitizerRule } from './features/sanitizer/types';
 export type { StringSanitizerSettings, StringSanitizerRule };
 export { DEFAULT_STRING_SANITIZER_SETTINGS };
+import { FrontmatterSuggesterSettings, DEFAULT_FRONTMATTER_SUGGESTER_SETTINGS, FrontmatterSuggestRule, FrontmatterSuggestDirectory } from './features/frontmatterSuggester/types';
+export type { FrontmatterSuggesterSettings, FrontmatterSuggestRule, FrontmatterSuggestDirectory };
+export { DEFAULT_FRONTMATTER_SUGGESTER_SETTINGS };
+import { ZoomSettings, DEFAULT_ZOOM_SETTINGS, ZoomWidthMode } from './features/zoom/types';
+export type { ZoomSettings, ZoomWidthMode };
+export { DEFAULT_ZOOM_SETTINGS };
+import { ScrollbackSettings, DEFAULT_SCROLLBACK_SETTINGS } from './features/scrollback/types';
+export type { ScrollbackSettings };
+export { DEFAULT_SCROLLBACK_SETTINGS };
 
 export type BubbleGraphIntegrationMode = 'deactivate' | 'replace' | 'second';
 export type BubbleNodeGlyphOption = 'no-dot' | 'dot' | 'plus' | 'minus' | 'i' | 'square' | 'ring' | 'star';
@@ -194,7 +203,10 @@ export interface PakCLITableSettings extends
     BubbleGraphSettings,
     ExplorerSettings,
     AudioPluginSettings,
-    RibbonManagerSettings 
+    RibbonManagerSettings,
+    FrontmatterSuggesterSettings,
+    ZoomSettings,
+    ScrollbackSettings 
 {
     dateFormat: string;
     codeblockWrapMode: 'flowclip' | 'wrap' | 'scalefit';
@@ -329,6 +341,9 @@ export const DEFAULT_TABLE_SETTINGS: PakCLITableSettings = {
     ...DEFAULT_EXPLORER_SETTINGS,
     ...DEFAULT_AUDIO_SETTINGS,
     ...DEFAULT_RIBBON_MANAGER_SETTINGS,
+    ...DEFAULT_FRONTMATTER_SUGGESTER_SETTINGS,
+    ...DEFAULT_ZOOM_SETTINGS,
+    ...DEFAULT_SCROLLBACK_SETTINGS,
     dateFormat: '_{yyyy}{mm}{dd}',
     codeblockWrapMode: 'flowclip',
     flowclipSliderMode: 'all-lines',

@@ -1048,4 +1048,53 @@ pre:hover .pakcli-cb-copy-btn {
   }
 }
 
+/* ─── Pane Zoom Engine (v11) ─── */
+.pakcli-zoom-full-width {
+  --file-line-width: 100% !important;
+  --line-width: 100% !important;
+}
+
+.pakcli-zoom-full-width .markdown-preview-sizer,
+.pakcli-zoom-full-width .cm-sizer,
+.pakcli-zoom-full-width .markdown-preview-view,
+.pakcli-zoom-full-width .cm-content,
+.pakcli-zoom-full-width .cm-line {
+  max-width: 100% !important;
+  width: 100% !important;
+  margin-left: 0 !important;
+  margin-right: 0 !important;
+  padding-left: 18px !important;
+  padding-right: 18px !important;
+}
+
+/* ─── Tree Explorer Scrollback (v14) Pulse Highlight ─── */
+.pakcli-scrollback-pulse {
+  animation: pakcli-scrollback-glow 1.5s cubic-bezier(0.16, 1, 0.3, 1) !important;
+  border-radius: 4px;
+}
+
+@keyframes pakcli-scrollback-glow {
+  0% {
+    background-color: var(--text-highlight-bg) !important;
+    box-shadow: 0 0 0 2px var(--interactive-accent) !important;
+  }
+  50% {
+    background-color: var(--text-highlight-bg) !important;
+    box-shadow: 0 0 12px 3px var(--interactive-accent) !important;
+  }
+  100% {
+    background-color: transparent !important;
+    box-shadow: 0 0 0 0 transparent !important;
+  }
+}
+
+.pakcli-scrollback-ribbon-btn {
+  transition: opacity 0.2s ease, transform 0.15s ease;
+}
+
+.pakcli-scrollback-ribbon-btn:active {
+  transform: scale(0.92);
+}
+
+
 
