@@ -5524,92 +5524,84 @@ export default class PakCLITablePlugin extends Plugin {
 							});
 							console.log('[PakCLI DBG] behavior change listener registered on sel');
 
-							// On Clipboard column
+							// On Clipboard column: preset dropdown for EVERY language (+ Custom template)
 							const clipTd = row.createEl('td', { cls: 'pakcli-cb-clip-td' });
+							const CLIP_PRESETS: { label: string; value: string }[] = [
+								{ label: '— none —',    value: 'none' },
+								{ label: '{}.invoke()', value: 'invoke' },
+								{ label: '.{}',         value: 'dot' },
+								{ label: '@{}',         value: 'at' },
+								{ label: 'Custom…',     value: 'custom' },
+							];
+							const presetOf = (raw: string): string => {
+								const v = (raw ?? '').trim();
+								if (!v) return 'none';
+								if (v === 'invoke' || v === '{}.invoke()' || v === '{}.invoke' || v === '{}.incvoke') return 'invoke';
+								if (v === 'dot' || v === '.{}') return 'dot';
+								if (v === 'at' || v === '@{}') return 'at';
+								return 'custom';
+							};
 
-							const isPs = ['powershell', 'ps1', 'pwsh', 'ps'].includes(rule.language.trim().toLowerCase());
+							const clipSel = clipTd.createEl('select', { cls: 'dropdown pakcli-cb-ps-select' });
+							CLIP_PRESETS.forEach((p) => {
+								const opt = clipSel.createEl('option', { text: p.label });
+								opt.value = p.value;
+							});
+							const currentPreset = presetOf(rule.onClipboard ?? '');
+							clipSel.value = currentPreset;
 
-							if (isPs) {
-								// Hardcoded PowerShell presets as a dropdown
-								const PS_PRESETS: { label: string; value: string }[] = [
-									{ label: '— none —',    value: '' },
-									{ label: '{}.invoke()', value: 'invoke' },
-									{ label: '.{}',         value: 'dot' },
-									{ label: '@{}',         value: 'at' },
-								];
+							const clipArea = clipTd.createEl('textarea', { cls: 'pakcli-cb-clip-area' });
+							clipArea.placeholder = '.{\n\tscripts\n}\n// or\n{\n\tscripts\n}invoke()';
+							clipArea.value = currentPreset === 'custom' ? (rule.onClipboard || '') : '';
+							clipArea.rows = 2;
+							clipArea.title = 'Custom clipboard template. Use "scripts" where code should be inserted.';
+							clipArea.style.display = currentPreset === 'custom' ? '' : 'none';
 
-								const psSel = clipTd.createEl('select', { cls: 'dropdown pakcli-cb-ps-select' });
-								const currentVal = (rule.onClipboard ?? '').trim();
-								PS_PRESETS.forEach((preset) => {
-									const opt = psSel.createEl('option', { text: preset.label });
-									opt.value = preset.value;
-									const isSelected =
-										currentVal === preset.value ||
-										(preset.value === 'invoke' && (currentVal.includes('invoke') || currentVal === '{}.invoke()' || currentVal === '{}.incvoke' || currentVal === 'invoke')) ||
-										(preset.value === 'dot' && (currentVal.startsWith('.{') || currentVal === '.{}' || currentVal.includes('. prefix') || currentVal === 'dot')) ||
-										(preset.value === 'at' && (currentVal.startsWith('@{') || currentVal === '@{}' || currentVal.includes('@ prefix') || currentVal.includes("'@'") || currentVal === 'at'));
-									opt.selected = isSelected;
-								});
-								psSel.addEventListener('change', async () => {
-									try {
-										rule.onClipboard = psSel.value;
-										await this.saveSettings();
-										this.codeblockScaler.scheduleRescale();
-										new Notice(`Saved PowerShell clipboard setting: ${psSel.options[psSel.selectedIndex]?.text}`);
-									} catch (err) {
-										console.error('[PakCLI] onClipboard save error:', err);
-										new Notice('Failed to save clipboard setting.');
-									}
-								});
-							} else {
-								// Free textarea for all other languages
-								const clipArea = clipTd.createEl('textarea', { cls: 'pakcli-cb-clip-area' });
-								clipArea.placeholder = '.{\n\tscripts\n}\n// or\n{\n\tscripts\n}invoke()';
-								clipArea.value = rule.onClipboard || '';
-								clipArea.rows = 2;
-								clipArea.title = 'Custom clipboard template. Use "scripts" where code should be inserted.';
-								const saveClipScript = async () => {
-									try {
-										rule.onClipboard = clipArea.value.trim();
-										await this.saveSettings();
-										this.codeblockScaler.scheduleRescale();
-										new Notice('Saved clipboard template.');
-									} catch (err) {
-										console.error('[PakCLI] clipboard script save error:', err);
-										new Notice('Failed to save clipboard script.');
-									}
-								};
-								clipArea.addEventListener('change', saveClipScript);
-								clipArea.addEventListener('blur',   saveClipScript);
-							}
+							const saveClip = async (msg?: string) => {
+								try {
+									await this.saveSettings();
+									this.codeblockScaler.scheduleRescale();
+									if (msg) new Notice(msg);
+								} catch (err) {
+									console.error('[PakCLI] onClipboard save error:', err);
+									new Notice('Failed to save clipboard setting.');
+								}
+							};
+							clipSel.addEventListener('change', async () => {
+								const v = clipSel.value;
+								if (v === 'custom') {
+									clipArea.style.display = '';
+									rule.onClipboard = clipArea.value.trim();
+									clipArea.focus();
+								} else {
+									clipArea.style.display = 'none';
+									rule.onClipboard = v === 'none' ? '' : v;
+								}
+								await saveClip(`On Clipboard (${rule.language}): ${clipSel.options[clipSel.selectedIndex]?.text}`);
+							});
+							const saveCustomClip = async () => {
+								if (clipSel.value !== 'custom') return;
+								rule.onClipboard = clipArea.value.trim();
+								await saveClip();
+							};
+							clipArea.addEventListener('change', saveCustomClip);
+							clipArea.addEventListener('blur', saveCustomClip);
 
-							// Replace Wrapper column (Yes / No)
+							// Replace Wrapper column (Yes / No) - for every language
 							const replaceTd = row.createEl('td', { cls: 'pakcli-cb-replace-td' });
-							if (isPs) {
-								const repSel = replaceTd.createEl('select', { cls: 'dropdown pakcli-cb-replace-select' });
-								[
-									{ label: 'Yes', value: 'true' },
-									{ label: 'No',  value: 'false' },
-								].forEach((optData) => {
-									const opt = repSel.createEl('option', { text: optData.label });
-									opt.value = optData.value;
-									opt.selected = (rule.replaceExisting !== false && optData.value === 'true') ||
-									               (rule.replaceExisting === false && optData.value === 'false');
-								});
-								repSel.addEventListener('change', async () => {
-									try {
-										rule.replaceExisting = repSel.value === 'true';
-										await this.saveSettings();
-										this.codeblockScaler.scheduleRescale();
-										new Notice(`PowerShell replace wrapper: ${rule.replaceExisting ? 'Yes' : 'No'}`);
-									} catch (err) {
-										console.error('[PakCLI] replaceExisting save error:', err);
-										new Notice('Failed to save replace setting.');
-									}
-								});
-							} else {
-								replaceTd.createEl('span', { text: '—', cls: 'pakcli-cb-dash' });
-							}
+							const repSel = replaceTd.createEl('select', { cls: 'dropdown pakcli-cb-replace-select' });
+							[
+								{ label: 'Yes', value: 'true' },
+								{ label: 'No',  value: 'false' },
+							].forEach((optData) => {
+								const opt = repSel.createEl('option', { text: optData.label });
+								opt.value = optData.value;
+							});
+							repSel.value = rule.replaceExisting === false ? 'false' : 'true';
+							repSel.addEventListener('change', async () => {
+								rule.replaceExisting = repSel.value === 'true';
+								await saveClip(`Replace wrapper (${rule.language}): ${rule.replaceExisting ? 'Yes' : 'No'}`);
+							});
 
 							const actTd = row.createEl('td');
 							const delBtn = new ButtonComponent(actTd)

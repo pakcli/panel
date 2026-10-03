@@ -696,10 +696,12 @@ body pre.pakcli-codeblock-flowclip-native,
     min-width: 1px !important;
 }
 
-/* Codeblock In-Flow Bottom Slider Bar (Google <div class="rq1a2"> / VSCode style) */
+/* Codeblock Bottom Slider Bar (Live Preview) — fixed overlay, positioned by JS at the bottom of the visible codeblock */
 .cm-line.HyperMD-codeblock .pakcli-codeblock-slider-bar,
 .pakcli-codeblock-slider-bar {
     display: none;
+    position: fixed !important;
+    z-index: 9999 !important;
     width: 100% !important;
     max-width: 100% !important;
     height: 12px !important;
@@ -709,9 +711,8 @@ body pre.pakcli-codeblock-flowclip-native,
     overflow-y: hidden !important;
     box-sizing: border-box !important;
     pointer-events: auto !important;
-    margin-top: 4px !important;
-    margin-bottom: 2px !important;
-    background: transparent !important;
+    margin: 0 !important;
+    background: var(--code-background, rgba(30, 30, 30, 0.85)) !important;
     border-radius: 0 0 6px 6px !important;
     user-select: none !important;
     white-space: normal !important;

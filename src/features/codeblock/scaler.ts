@@ -426,7 +426,7 @@ export class CodeblockScaler {
 			});
 		} finally {
 			this.isProcessing = false;
-			this.dumpDebugInfo();
+			if ((this.plugin.settings as any).codeblockDebug) this.dumpDebugInfo();
 		}
 	}
 
@@ -630,12 +630,10 @@ export class CodeblockScaler {
 		const rules = settings?.codeblockLanguageRules || [];
 		const matched = this.findMatchingRule(cleanLang, rules);
 		if (matched) {
-			console.log(`[PakCLI Scaler] Language "${cleanLang}" matched rule "${matched.language}" -> Behavior: "${matched.behavior}"`);
 			return matched.behavior;
 		}
 
 		// 3. If not configured in Per-Language Rules, strictly fallback to default codeblock wrap mode
-		console.log(`[PakCLI Scaler] Language "${cleanLang}" uncustomized in rules -> Fallback to default: "${defaultBehavior}"`);
 		return defaultBehavior;
 	}
 
@@ -723,6 +721,19 @@ export class CodeblockScaler {
 			const behavior = this.getBehaviorForElement(pre, codeEl);
 
 			pre.classList.remove('pakcli-codeblock-wrap', 'pakcli-codeblock-flowclip', 'pakcli-codeblock-scalefit');
+
+			// Behavior changed since last pass (rule edit / default mode switch): wipe every inline style
+			// the previous behavior set, otherwise stale !important styles override the new behavior.
+			const prevBehavior = pre.getAttribute('data-pakcli-behavior');
+			if (prevBehavior !== behavior) {
+				this.resetPreInlineStyles(pre, codeEl);
+				pre.setAttribute('data-pakcli-behavior', behavior);
+			}
+			if (behavior !== 'flowclip' && (pre as any)._pakcliStickyBar) {
+				(pre as any)._pakcliStickyBar.remove();
+				(pre as any)._pakcliStickyBar = null;
+				(pre as any)._pakcliStickyPositionBar = null;
+			}
 
 			const existingSvg = pre.querySelector('.pakcli-ascii-svg-wrapper');
 
@@ -910,6 +921,31 @@ export class CodeblockScaler {
 					this.processCmLines(lines, editorView);
 				}
 			}
+		}
+	}
+
+	/** Removes every inline style the scaler may have set on a <pre> block (and its wrappers). */
+	private resetPreInlineStyles(pre: HTMLElement, codeEl: HTMLElement): void {
+		const props = [
+			'white-space', 'word-break', 'word-wrap', 'overflow-wrap', 'overflow', 'overflow-x', 'overflow-y',
+			'max-width', 'width', 'min-width', 'box-sizing', 'contain', 'display', 'padding-bottom',
+			'scrollbar-width', '-ms-overflow-style', 'font-size'
+		];
+		const targets: Array<HTMLElement | null | undefined> = [
+			pre,
+			codeEl !== pre ? codeEl : null,
+			pre.parentElement,
+			pre.closest('.cm-embed-block') as HTMLElement | null
+		];
+		for (const t of targets) {
+			if (!t) continue;
+			for (const p of props) t.style.removeProperty(p);
+		}
+		pre.classList.remove('pakcli-codeblock-flowclip-native');
+		const oldHandler = (pre as any)._pakcliPreNativeScroll;
+		if (oldHandler) {
+			pre.removeEventListener('scroll', oldHandler);
+			(pre as any)._pakcliPreNativeScroll = null;
 		}
 	}
 
@@ -1105,7 +1141,7 @@ export class CodeblockScaler {
 	 *   - `{ ... }`
 	 * Returns the unwrapped inner script content.
 	 */
-	unwrapExistingWrapper(content: string): string {
+	unwrapExistingWrapper(content: string, allowPlainBraces: boolean = true): string {
 		const s = (content || '').replace(/\r\n/g, '\n').trim();
 		if (!s) return content;
 
@@ -1128,7 +1164,7 @@ export class CodeblockScaler {
 		}
 
 		// 4. {\n ... \n} (plain script block wrapper)
-		const braceMatch = s.match(/^\{([\s\S]*)\}\s*$/);
+		const braceMatch = allowPlainBraces ? s.match(/^\{([\s\S]*)\}\s*$/) : null;
 		if (braceMatch) {
 			return this.unindentLines(braceMatch[1]);
 		}
@@ -1154,9 +1190,12 @@ export class CodeblockScaler {
 
 		const isPowerShell = ['powershell', 'ps1', 'pwsh', 'ps'].includes((language || '').trim().toLowerCase());
 
-		// When replaceExisting is enabled for PowerShell, unwrap any existing .{}, @{}, {}.invoke() wrapper first
-		if (replaceExisting && isPowerShell) {
-			raw = this.unwrapExistingWrapper(raw);
+		// Presets (`invoke`/`dot`/`at`) + replaceExisting: strip an existing .{} / @{} / {}.invoke() wrapper first.
+		// For non-PowerShell languages plain `{ }` is NOT stripped (it is legitimate code, e.g. JS objects).
+		const tl = (template || '').trim();
+		const isPresetTemplate = ['invoke', 'dot', 'at', '{}.invoke()', '{}.invoke', '.{}', '@{}'].includes(tl) || /\{\s*\}\s*\.?\s*in[vc]oke/i.test(tl);
+		if (replaceExisting && (isPowerShell || isPresetTemplate)) {
+			raw = this.unwrapExistingWrapper(raw, isPowerShell);
 		}
 
 		if (!t) return raw;
@@ -1945,10 +1984,22 @@ export class CodeblockScaler {
 		blockKey: string,
 		editorView?: EditorView
 	): void {
-		// Clean up any old injected bars from previous versions
+		// Clean up any old injected bars from previous versions, including legacy in-flow slider bars
+		// (these were the cause of two sliders appearing for one codeblock).
 		currentBlockLines.forEach((line) => {
-			const oldBar = line.querySelector('.pakcli-codeblock-flowclip-bar');
-			if (oldBar) oldBar.remove();
+			line.querySelectorAll('.pakcli-codeblock-flowclip-bar, :scope > .pakcli-codeblock-slider-bar').forEach((b) => b.remove());
+			if (behavior !== 'flowclip') {
+				const synced = (line as any)._pakcliAllSyncedScroll;
+				if (synced) {
+					line.removeEventListener('scroll', synced);
+					(line as any)._pakcliAllSyncedScroll = null;
+				}
+				line.classList.remove('pakcli-codeblock-line-all-synced');
+				line.style.removeProperty('--codeblock-spacer-width');
+				line.style.removeProperty('scrollbar-width');
+				line.style.removeProperty('padding-bottom');
+				line.style.removeProperty('font-size');
+			}
 		});
 
 		if (behavior === 'wrap') {
@@ -2289,52 +2340,54 @@ export class CodeblockScaler {
 		endLn: number,
 		editorView?: EditorView
 	): void {
-		// Clean up any old floating bars on document.body
-		const oldFloatingBar = this.activeCmBars.get(blockKey);
-		if (oldFloatingBar) {
-			oldFloatingBar.remove();
-			this.activeCmBars.delete(blockKey);
+		// Legacy in-flow bars (older builds appended the bar INSIDE the cm-line) -> always remove
+		for (const l of blockLines) {
+			l.querySelectorAll(':scope > .pakcli-codeblock-slider-bar').forEach((b) => b.remove());
 		}
 
 		if (this.flowclipMode === 'per-line') {
-			const b = anchorLine.querySelector(':scope > .pakcli-codeblock-slider-bar');
-			if (b) b.remove();
+			const old = this.activeCmBars.get(blockKey);
+			if (old) {
+				old.remove();
+				this.activeCmBars.delete(blockKey);
+			}
 			return;
 		}
 
-		// Ensure non-anchor lines in this block do not hold duplicate slider bars
-		for (const l of blockLines) {
-			if (l !== anchorLine) {
-				const b = l.querySelector(':scope > .pakcli-codeblock-slider-bar');
-				if (b) b.remove();
-			}
-		}
-
-		let sliderBar = anchorLine.querySelector(':scope > .pakcli-codeblock-slider-bar') as HTMLElement | null;
+		// ONE fixed bar per block (lives on document.body, tracked in activeCmBars).
+		// It sticks to the bottom of the visible part of the block and hides when the block is off-screen.
+		let sliderBar: HTMLElement | null = this.activeCmBars.get(blockKey) || null;
+		if (sliderBar && !sliderBar.isConnected) sliderBar = null;
 		if (!sliderBar) {
 			sliderBar = document.createElement('div');
 			sliderBar.className = 'pakcli-codeblock-slider-bar';
 			sliderBar.setAttribute('contenteditable', 'false');
-			const inner = document.createElement('div');
-			inner.className = 'pakcli-codeblock-slider-inner';
-			sliderBar.appendChild(inner);
-			anchorLine.appendChild(sliderBar);
+			const newInner = document.createElement('div');
+			newInner.className = 'pakcli-codeblock-slider-inner';
+			sliderBar.appendChild(newInner);
+			document.body.appendChild(sliderBar);
+			this.activeCmBars.set(blockKey, sliderBar);
 		}
 
 		sliderBar.setAttribute('data-block-key', blockKey);
+		(sliderBar as any)._pakcliAnchorLine = anchorLine;
+		(sliderBar as any)._pakcliBlockLines = blockLines;
 
 		const inner = sliderBar.firstElementChild as HTMLElement;
 		const effectiveMax = (anchorLine as any)._pakcliNaturalMaxScrollWidth || (this.blockMaxScrollWidthCache.get(blockKey) || 0) + 60;
 		const lineW = anchorLine.clientWidth;
 		const hasOverflow = lineW > 0 && effectiveMax > lineW + 2;
+		(sliderBar as any)._pakcliHasOverflow = hasOverflow;
+
+		this.bindCmBarPositioning(editorView);
 
 		if (!hasOverflow) {
 			sliderBar.style.setProperty('display', 'none', 'important');
 			return;
 		}
 
-		sliderBar.style.setProperty('display', 'block', 'important');
 		inner.style.setProperty('width', `${effectiveMax}px`, 'important');
+		this.positionCmBar(sliderBar);
 
 		const isAllLines = this.flowclipMode === 'all-lines';
 
@@ -2437,7 +2490,7 @@ export class CodeblockScaler {
 				if (!line) return;
 				const bKey = (line as any)._pakcliBlockKey;
 				if (!bKey) return;
-				const b = line.parentElement?.querySelector(`.pakcli-codeblock-slider-bar[data-block-key="${bKey}"]`) as HTMLElement | null;
+				const b = this.activeCmBars.get(bKey) || null;
 				if (b && b.style.display !== 'none') {
 					const nextScroll = b.scrollLeft + evt.deltaX;
 					if (nextScroll <= 3) {
@@ -2448,6 +2501,66 @@ export class CodeblockScaler {
 				}
 			}, { passive: true });
 		}
+	}
+
+	/** Re-positions every Live Preview slider on scroll / resize (bound once per editor). */
+	private bindCmBarPositioning(editorView?: EditorView): void {
+		if (!editorView || (editorView as any)._pakcliBarPosBound) return;
+		(editorView as any)._pakcliBarPosBound = true;
+		let raf = 0;
+		const sched = () => {
+			if (raf) return;
+			raf = window.requestAnimationFrame(() => {
+				raf = 0;
+				this.activeCmBars.forEach((b) => this.positionCmBar(b));
+			});
+		};
+		editorView.scrollDOM.addEventListener('scroll', sched, { passive: true });
+		this.plugin.registerDomEvent(window, 'resize', sched);
+	}
+
+	/**
+	 * Places the fixed slider at the bottom of the codeblock, clamped to the bottom of the editor
+	 * viewport while the block extends below it. Hidden when the block is not visible on screen.
+	 */
+	private positionCmBar(bar: HTMLElement): void {
+		const BAR_H = 12;
+		const hide = () => bar.style.setProperty('display', 'none', 'important');
+		const anchor = (bar as any)._pakcliAnchorLine as HTMLElement | undefined;
+		const lines = (((bar as any)._pakcliBlockLines as HTMLElement[] | undefined) || []).filter((l) => l.isConnected);
+		if (!anchor || !anchor.isConnected || lines.length === 0 || !(bar as any)._pakcliHasOverflow || this.flowclipMode === 'per-line') {
+			hide();
+			return;
+		}
+		if (anchor.offsetParent === null) {
+			hide();
+			return;
+		}
+		const view = anchor.closest('.markdown-source-view');
+		if (view && !view.classList.contains('is-live-preview')) {
+			hide();
+			return;
+		}
+		const first = lines[0].getBoundingClientRect();
+		const last = lines[lines.length - 1].getBoundingClientRect();
+		const aRect = anchor.getBoundingClientRect();
+		const scroller = anchor.closest('.cm-scroller') as HTMLElement | null;
+		const sr = scroller ? scroller.getBoundingClientRect() : ({ top: 0, bottom: window.innerHeight } as DOMRect);
+
+		// Block must be visible inside the editor viewport
+		if (last.bottom <= sr.top || first.top >= sr.bottom) {
+			hide();
+			return;
+		}
+		const barTop = Math.min(last.bottom, sr.bottom, window.innerHeight) - BAR_H;
+		if (barTop < Math.max(first.top, sr.top)) {
+			hide();
+			return;
+		}
+		bar.style.setProperty('display', 'block', 'important');
+		bar.style.setProperty('left', `${aRect.left}px`, 'important');
+		bar.style.setProperty('width', `${aRect.width}px`, 'important');
+		bar.style.setProperty('top', `${barTop}px`, 'important');
 	}
 
 	clearCache(): void {
