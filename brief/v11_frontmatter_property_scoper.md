@@ -159,7 +159,55 @@ Resources/Templates:0
 
 ---
 
-## 5. Edge Cases & Resilience
+## 5. Right-Click Column Header Quick Scoper Modal
+
+```text
+┌─ Column Header Right-Click Menu ────────────────────────────────────────┐
+│  Hide column                                                            │
+│  Summarize...                                                           │
+│  Group by this property                                                 │
+│ ─────────────────────────────────────────────────────────────────────── │
+│  Sort A → Z                                                             │
+│  Sort Z → A                                                             │
+│ ─────────────────────────────────────────────────────────────────────── │
+│  Edit property...                                                       │
+│  Property type >                                                        │
+│ ─────────────────────────────────────────────────────────────────────── │
+│  🏷️ Scope Suggestions (category)...           ◀── INJECTED ACTION       │
+└─────────────────────────────────────────────────────────────────────────┘
+                                   │
+                                   ▼ (Opens Quick Modal)
+┌─ 🏷️ Scope Suggestions: "category" ─────────────────────────────────────┐
+│  Constrain property autocomplete dropdowns to specific vault folders.   │
+│                                                                         │
+│  [X] Active   [X] ⚡ All Bases in Vault   [ + Add Current Note Folder ] │
+│ ─────────────────────────────────────────────────────────────────────── │
+│  📁 Scoped Vault Directories:                       [ + Add Directory ] │
+│  📁 [ Dictionary                    ] [✔ Valid]  [🟢 1 (Active)]  [✕]   │
+│  📁 [ Projects/IT                   ] [✔ Valid]  [🟢 1 (Active)]  [✕]   │
+│ ─────────────────────────────────────────────────────────────────────── │
+│  Live Discovered Values: 14 found                                       │
+│  [Automation] [CI/CD] [Database] [DevOps] [Frontend] [Security] ...     │
+│ ─────────────────────────────────────────────────────────────────────── │
+│  ⚙️ Open Full Settings                            [ Cancel ] [ Save & Apply ] │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+### 5.1 Zero-Friction Workflow
+- Users working inside an Obsidian Base (`.base`), Dataview table, or Note Properties header can **right-click directly on any column header** (e.g. `category`).
+- Obsidian's context menu automatically reveals:
+  - `Scope Suggestions: Active (N dirs)...` (if rule exists and enabled)
+  - `Scope Suggestions: Disabled (name)...` (if rule exists but disabled)
+  - `Scope Suggestions (name)...` (if no rule exists yet)
+- Clicking opens [`QuickPropertyScoperModal`](file:///d:/0pro/pakcli-plugin/panel/src/features/frontmatterSuggester/ui/QuickPropertyScoperModal.ts):
+  - 1-click `+ Add Current Note Folder` button automatically adds the active note's parent directory.
+  - Interactive folder row with autocomplete search (`FolderSuggest`).
+  - Live value preview chips dynamically re-evaluating as folders change.
+  - `Save & Apply` instantly updates settings and invalidates cache without leaving the table.
+
+---
+
+## 6. Edge Cases & Resilience
 
 1. **Missing or Deleted Vault Folders**:
    - `isFolderValid(dir.path)` verifies physical existence via `app.vault.getAbstractFileByPath()`.
@@ -177,12 +225,14 @@ Resources/Templates:0
 
 ---
 
-## 6. Verification & Quality Checklist
+## 7. Verification & Quality Checklist
 
 - [x] Master toggle completely turns off monkey-patches when disabled.
+- [x] Right-clicking on table column headers in `.base` and properties injects `Scope Suggestions...`.
 - [x] Autocomplete popovers in Reading/Live Preview and `.base` tables strictly display scoped values.
 - [x] Multiple directories merge values without duplicates.
 - [x] Inactive directories (`:0`) are excluded from discovered values.
 - [x] Folder picker (`FolderSuggest`) accurately suggests subfolders.
 - [x] String View parses and serializes multiline text bidirectionally without data loss.
 - [x] TypeScript compiles with 0 errors (`npx tsc --noEmit`).
+

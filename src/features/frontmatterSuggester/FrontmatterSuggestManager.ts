@@ -1,9 +1,10 @@
-import { App, EventRef, normalizePath, TFile, TFolder } from 'obsidian';
+import { App, EventRef, Menu, MenuItem, normalizePath, TFile, TFolder } from 'obsidian';
 import type PakCLITablePlugin from '../../main';
 import {
   FrontmatterSuggestRule,
   FrontmatterSuggesterSettings
 } from './types';
+import { QuickPropertyScoperModal } from './ui/QuickPropertyScoperModal';
 
 interface CachedValues {
   timestamp: number;
@@ -16,6 +17,12 @@ export class FrontmatterSuggestManager {
   private originalGetFrontmatterPropertyValues: ((key: string) => string[]) | null = null;
   private originalMetadataTypeGetValues: ((key: string) => string[]) | null = null;
   private originalMetadataTypeGetAssignedValues: ((key: string) => string[]) | null = null;
+  private originalMenuShowAtMouseEvent: ((evt: MouseEvent) => any) | null = null;
+  private originalMenuShowAtPosition: ((pos: any) => any) | null = null;
+  private lastContextMenuTarget: HTMLElement | null = null;
+  private onWindowContextMenu = (evt: MouseEvent) => {
+    this.lastContextMenuTarget = evt.target as HTMLElement | null;
+  };
   private cacheByRuleId: Map<string, CachedValues> = new Map();
   private eventRefs: EventRef[] = [];
 
@@ -26,11 +33,13 @@ export class FrontmatterSuggestManager {
 
   public init(): void {
     this.patchObsidianSuggesters();
+    this.patchContextMenu();
     this.registerCacheInvalidation();
   }
 
   public destroy(): void {
     this.unpatchObsidianSuggesters();
+    this.unpatchContextMenu();
     for (const ref of this.eventRefs) {
       this.app.metadataCache.offref(ref);
     }
@@ -143,6 +152,176 @@ export class FrontmatterSuggestManager {
       typeManager.getAssignedValues = this.originalMetadataTypeGetAssignedValues;
       this.originalMetadataTypeGetAssignedValues = null;
     }
+  }
+
+  /**
+   * Patches Obsidian's Menu prototype to hook into table column header & property context menus
+   */
+  private patchContextMenu(): void {
+    const self = this;
+    if (typeof window !== 'undefined') {
+      window.addEventListener('contextmenu', this.onWindowContextMenu, true);
+    }
+
+    const proto = Menu.prototype as any;
+    if (!proto.__pakcliScoperPatched) {
+      proto.__pakcliScoperPatched = true;
+      this.originalMenuShowAtMouseEvent = proto.showAtMouseEvent;
+      this.originalMenuShowAtPosition = proto.showAtPosition;
+
+      proto.showAtMouseEvent = function (evt: MouseEvent) {
+        try {
+          self.enhanceColumnContextMenu(this, (evt?.target as HTMLElement) || self.lastContextMenuTarget);
+        } catch (err) {
+          console.warn('[PakCLI PropertyScoper] Context menu enhance error:', err);
+        }
+        return self.originalMenuShowAtMouseEvent
+          ? self.originalMenuShowAtMouseEvent.call(this, evt)
+          : this;
+      };
+
+      proto.showAtPosition = function (pos: any) {
+        try {
+          if (self.lastContextMenuTarget) {
+            self.enhanceColumnContextMenu(this, self.lastContextMenuTarget);
+          }
+        } catch (err) {
+          console.warn('[PakCLI PropertyScoper] Context menu enhance at pos error:', err);
+        }
+        return self.originalMenuShowAtPosition
+          ? self.originalMenuShowAtPosition.call(this, pos)
+          : this;
+      };
+    }
+  }
+
+  private unpatchContextMenu(): void {
+    if (typeof window !== 'undefined') {
+      window.removeEventListener('contextmenu', this.onWindowContextMenu, true);
+    }
+    const proto = Menu.prototype as any;
+    if (proto && proto.__pakcliScoperPatched) {
+      if (this.originalMenuShowAtMouseEvent) {
+        proto.showAtMouseEvent = this.originalMenuShowAtMouseEvent;
+        this.originalMenuShowAtMouseEvent = null;
+      }
+      if (this.originalMenuShowAtPosition) {
+        proto.showAtPosition = this.originalMenuShowAtPosition;
+        this.originalMenuShowAtPosition = null;
+      }
+      proto.__pakcliScoperPatched = false;
+    }
+  }
+
+  /**
+   * Adds "Scope Property Suggestions..." to Obsidian Base / Table column header context menus
+   */
+  private enhanceColumnContextMenu(menu: Menu, target: HTMLElement | null): void {
+    if (!target) return;
+    const settings = this.plugin.settings as any;
+    if (settings.enableFrontmatterSuggester === false) return;
+
+    // Guard against duplicate injections
+    const items: any[] = (menu as any).items || [];
+    const alreadyEnhanced = items.some((it: any) => {
+      const title = (it.title || it.titleEl?.textContent || it.dom?.textContent || '').toLowerCase();
+      return title.includes('scope suggestions') || title.includes('property scoper');
+    });
+    if (alreadyEnhanced) return;
+
+    // Detect if this menu belongs to a column header or property key
+    const isColumnMenu = items.some((it: any) => {
+      const text = (it.title || it.titleEl?.textContent || it.dom?.textContent || '').toLowerCase();
+      return (
+        text.includes('hide column') ||
+        text.includes('summarize') ||
+        text.includes('group by') ||
+        text.includes('sort a') ||
+        text.includes('edit property') ||
+        text.includes('property type') ||
+        text.includes('insert column') ||
+        text.includes('delete column')
+      );
+    });
+
+    const isPropertyKey = !!target.closest(
+      '.metadata-property-key, .metadata-property, [data-property], [data-property-name], th, [role="columnheader"]'
+    );
+
+    if (!isColumnMenu && !isPropertyKey) {
+      return;
+    }
+
+    // Extract property / column name
+    const propName = this.extractPropertyNameFromTarget(target);
+    if (!propName) return;
+
+    // Look for existing rule to provide dynamic status text
+    const rules = settings.frontmatterSuggestRules || [];
+    const existingRule = rules.find((r: any) => {
+      const keys = (r.propertyKey || '').split(',').map((k: string) => k.trim().toLowerCase());
+      return keys.includes(propName.toLowerCase());
+    });
+
+    menu.addSeparator();
+    menu.addItem((item: MenuItem) => {
+      if (existingRule && existingRule.enabled) {
+        const activeCount = existingRule.directories?.filter((d: any) => d.active).length || 0;
+        item.setTitle(`Scope Suggestions: Active (${activeCount} dirs)...`);
+        item.setIcon('list-filter');
+      } else if (existingRule && !existingRule.enabled) {
+        item.setTitle(`Scope Suggestions: Disabled (${propName})...`);
+        item.setIcon('list-filter');
+      } else {
+        item.setTitle(`Scope Suggestions (${propName})...`);
+        item.setIcon('list-filter');
+      }
+      item.onClick(() => {
+        new QuickPropertyScoperModal(this.app, this.plugin, propName).open();
+      });
+    });
+  }
+
+  private extractPropertyNameFromTarget(target: HTMLElement): string {
+    const headerCell =
+      target.closest(
+        'th, [role="columnheader"], [class*="header"], [class*="column"], [class*="cell"], .metadata-property-key, .metadata-property'
+      ) || target;
+
+    // 1. Direct dataset / attributes
+    let prop =
+      headerCell.getAttribute('data-property-name') ||
+      headerCell.getAttribute('data-property') ||
+      headerCell.getAttribute('data-property-key') ||
+      headerCell.getAttribute('data-field') ||
+      headerCell.getAttribute('data-column-id') ||
+      headerCell.getAttribute('data-col-id') ||
+      '';
+
+    if (prop) return prop.trim();
+
+    // 2. Input element value if inside property editor
+    const input = headerCell.querySelector('input') || (headerCell instanceof HTMLInputElement ? headerCell : null);
+    if (input?.value?.trim()) {
+      return input.value.trim();
+    }
+
+    // 3. Text content inspection
+    const titleEl =
+      headerCell.querySelector(
+        '[class*="property-name"], [class*="column-name"], [class*="header-text"], [class*="title"], span:not(.svg-icon):not([class*="icon"])'
+      ) || headerCell;
+    let raw = (titleEl.textContent || target.textContent || '').trim();
+
+    // Strip common leading list/property icons (e.g. ":=", "•", bullets)
+    raw = raw.replace(/^[:=•\s\u2022\u25CF\u22EE\u205D\u2630\uF0C9]+/, '').trim();
+    const firstLine = raw.split(/\r?\n/)[0]?.trim();
+
+    if (firstLine && firstLine.length < 50 && !firstLine.toLowerCase().includes('hide column')) {
+      return firstLine.replace(/^[:=•\s]+/, '').trim();
+    }
+
+    return '';
   }
 
   /**
