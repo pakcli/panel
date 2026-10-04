@@ -214,6 +214,12 @@ export interface PakCLITableSettings extends
     flowclipSaveState?: boolean;
     flowclipScrollStates?: Record<string, number>;
     codeblockLanguageRules: CodeblockLanguageRule[];
+    codeblockTheme?: 'obsidian' | 'midnight' | 'paper' | 'terminal' | 'custom';
+    codeblockThemeScope?: 'all' | 'rules-only';
+    codeblockCustomColors?: { bg: string; fg: string; border: string; accent: string };
+    codeblockDebug?: boolean;
+    asciiCanvasTheme?: string;
+    enableAsciiRenderer?: boolean;
     enableAssetDrag: boolean;
     enableCsvEditor?: boolean;
     gridTheme?: string;
@@ -350,8 +356,14 @@ export const DEFAULT_TABLE_SETTINGS: PakCLITableSettings = {
     flowclipSaveState: true,
     flowclipScrollStates: {},
     codeblockLanguageRules: [
-        { id: '1', language: 'ascii', behavior: 'scalefit' }
+        { id: '1', language: 'ascii', behavior: 'scalefit', enabled: true }
     ],
+    codeblockTheme: 'obsidian',
+    codeblockThemeScope: 'all',
+    codeblockCustomColors: { bg: '#1e1e1e', fg: '#d4d4d4', border: '#333333', accent: '#7c3aed' },
+    codeblockDebug: false,
+    asciiCanvasTheme: 'Monochrome Matrix',
+    enableAsciiRenderer: true,
     enableAssetDrag: true,
     carouselOrientation: 'horizontal',
     carouselVisibleSideCards: 5,

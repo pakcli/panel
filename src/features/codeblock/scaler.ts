@@ -7,6 +7,8 @@ export interface CodeblockLanguageRule {
 	id: string;
 	language: string;
 	behavior: 'scalefit' | 'flowclip' | 'wrap';
+	/** Whether this rule is currently enabled/active */
+	enabled?: boolean;
 	/** Optional script template fired on clipboard copy.
 	 *  Supports two styles:
 	 *   • `.{ <scripts> }`          – dot-block style
@@ -123,6 +125,7 @@ interface StickyBarEntry {
 
 export class CodeblockScaler {
 	private isProcessing = false;
+	private queuedRescale = false;
 	private debounceTimer: number | null = null;
 	private observer: MutationObserver | null = null;
 	private pendingClipboardTransform: { timestamp: number; lang: string; template: string; replaceExisting?: boolean } | null = null;
@@ -389,7 +392,10 @@ export class CodeblockScaler {
 	}
 
 	rescaleAll(): void {
-		if (this.isProcessing) return;
+		if (this.isProcessing) {
+			this.queuedRescale = true;
+			return;
+		}
 		this.isProcessing = true;
 
 		try {
@@ -426,8 +432,21 @@ export class CodeblockScaler {
 			});
 		} finally {
 			this.isProcessing = false;
+			if (this.queuedRescale) {
+				this.queuedRescale = false;
+				setTimeout(() => this.rescaleAll(), 20);
+			}
 			if ((this.plugin.settings as any).codeblockDebug) this.dumpDebugInfo();
 		}
+	}
+
+	/** Clears all element caches, marks all blocks dirty, and forces a full re-evaluation. */
+	refreshAll(): void {
+		this.clearCache();
+		document.querySelectorAll('pre[data-pakcli-behavior]').forEach((pre) => {
+			pre.removeAttribute('data-pakcli-behavior');
+		});
+		this.rescaleAll();
 	}
 
 	async dumpDebugInfo(): Promise<void> {
@@ -547,40 +566,21 @@ export class CodeblockScaler {
 				}
 				await this.plugin.app.vault.adapter.write('artifacts/debug_codeblock.json', jsonStr);
 			} catch (_) {}
-
-			// 3. Write directly to Antigravity IDE artifacts directory
-			try {
-				const fs = (window as any).require?.('fs') || (typeof require !== 'undefined' ? require('fs') : null);
-				const path = (window as any).require?.('path') || (typeof require !== 'undefined' ? require('path') : null);
-				if (fs && path) {
-					const brainDir = 'C:\\Users\\fsl\\.gemini\\antigravity-ide\\brain';
-					if (fs.existsSync(brainDir)) {
-						const folders = fs.readdirSync(brainDir, { withFileTypes: true })
-							.filter((d: any) => d.isDirectory() && !d.name.startsWith('.') && d.name !== 'tempmediaStorage')
-							.sort((a: any, b: any) => {
-								try {
-									return fs.statSync(path.join(brainDir, b.name)).mtimeMs - fs.statSync(path.join(brainDir, a.name)).mtimeMs;
-								} catch {
-									return 0;
-								}
-							});
-						if (folders.length > 0) {
-							const targetDir = path.join(brainDir, folders[0].name);
-							fs.writeFileSync(path.join(targetDir, 'debug_codeblock.json'), jsonStr, 'utf8');
-						}
-					}
-				}
-			} catch (writeErr) {
-				console.warn('[PakCLI Scaler] Failed to write debug_codeblock.json to artifacts:', writeErr);
-			}
 		} catch (err) {
 			console.warn('[PakCLI Scaler] dumpDebugInfo error:', err);
 		}
 	}
 
 	findMatchingRule(lang: string, rules: CodeblockLanguageRule[]): CodeblockLanguageRule | null {
+		const activeRules = (rules || []).filter((r) => r.enabled !== false);
 		const cleanLang = (lang || '').trim().toLowerCase();
-		if (!cleanLang) return null;
+		const wildcard = activeRules.find((r) => ['*', 'all', 'default'].includes((r.language || '').trim().toLowerCase())) || null;
+		if (!cleanLang) return wildcard;
+		const specific = this.findSpecificRule(cleanLang, activeRules);
+		return specific || wildcard;
+	}
+
+	private findSpecificRule(cleanLang: string, rules: CodeblockLanguageRule[]): CodeblockLanguageRule | null {
 
 		const aliasGroups = [
 			['powershell', 'ps1', 'pwsh', 'ps'],
@@ -638,6 +638,11 @@ export class CodeblockScaler {
 	}
 
 	getLanguageFromElement(preEl: HTMLElement, codeEl: HTMLElement): string {
+		const isIgnored = (l: string) => {
+			const s = (l || '').trim().toLowerCase();
+			return !s || s === 'hypermd' || s === 'none' || s === 'null' || s === 'undefined' || s === 'copy';
+		};
+
 		// 1. Check data-language or data-lang attributes on pre, code, or any ancestor
 		const dataLang =
 			preEl.getAttribute('data-language') ||
@@ -648,24 +653,25 @@ export class CodeblockScaler {
 			preEl.parentElement?.getAttribute('data-lang') ||
 			preEl.closest('[data-language]')?.getAttribute('data-language') ||
 			preEl.closest('[data-lang]')?.getAttribute('data-lang');
-		if (dataLang) {
+		if (dataLang && !isIgnored(dataLang)) {
 			return dataLang.trim().toLowerCase();
 		}
 
-		// 2. Check classes on codeEl, preEl, parentElement, or closest block container
+		// 2. Check classes on preEl, parentElement, block-language wrapper, embed block, or codeEl
+		// Priority: Check specific language tags on preEl and parent first (they hold the real block-language-xxx)
 		const elementsToCheck = [
-			codeEl,
 			preEl,
 			preEl.parentElement,
 			preEl.closest('[class*="block-language-"]'),
-			preEl.closest('[class*="language-"]'),
-			preEl.closest('.cm-embed-block')
+			preEl.closest('.cm-embed-block'),
+			codeEl,
+			preEl.closest('[class*="language-"]')
 		].filter(Boolean) as HTMLElement[];
 
 		for (const el of elementsToCheck) {
 			for (const cls of Array.from(el.classList)) {
-				const m = cls.match(/^(?:language|block-language)-([a-zA-Z0-9_-]+)$/i);
-				if (m) {
+				const m = cls.match(/^(?:language|block-language|cm-lang)-([a-zA-Z0-9_-]+)$/i);
+				if (m && !isIgnored(m[1])) {
 					return m[1].toLowerCase();
 				}
 			}
@@ -676,7 +682,7 @@ export class CodeblockScaler {
 		const flair = wrapper?.querySelector('.code-block-flair, .code-block-language, .code-language, .code-block-header span');
 		if (flair && flair.textContent) {
 			const tag = flair.textContent.trim().toLowerCase();
-			if (tag && tag.length < 40) {
+			if (tag && tag.length < 40 && !isIgnored(tag)) {
 				return tag;
 			}
 		}
@@ -1152,6 +1158,11 @@ export class CodeblockScaler {
 		}
 
 		// 2. @{\n ... \n} or @{ ... }
+		const ampMatch = s.match(/^&\s*\{([\s\S]*)\}\s*$/);
+		if (ampMatch) {
+			return this.unindentLines(ampMatch[1]);
+		}
+
 		const atMatch = s.match(/^@\s*\{([\s\S]*)\}\s*$/);
 		if (atMatch) {
 			return this.unindentLines(atMatch[1]);
@@ -1193,7 +1204,7 @@ export class CodeblockScaler {
 		// Presets (`invoke`/`dot`/`at`) + replaceExisting: strip an existing .{} / @{} / {}.invoke() wrapper first.
 		// For non-PowerShell languages plain `{ }` is NOT stripped (it is legitimate code, e.g. JS objects).
 		const tl = (template || '').trim();
-		const isPresetTemplate = ['invoke', 'dot', 'at', '{}.invoke()', '{}.invoke', '.{}', '@{}'].includes(tl) || /\{\s*\}\s*\.?\s*in[vc]oke/i.test(tl);
+		const isPresetTemplate = ['invoke', 'dot', 'at', 'amp', '{}.invoke()', '{}.invoke', '.{}', '@{}', '&{}'].includes(tl) || /\{\s*\}\s*\.?\s*in[vc]oke/i.test(tl);
 		if (replaceExisting && (isPowerShell || isPresetTemplate)) {
 			raw = this.unwrapExistingWrapper(raw, isPowerShell);
 		}
@@ -1210,16 +1221,21 @@ export class CodeblockScaler {
 		// 1. PowerShell Presets
 		const isInvoke = t === 'invoke' || t === '{}.invoke()' || t === '{}.invoke' || t === '{}.incvoke' || /\{\s*\}\s*\.?\s*in[vc]oke/i.test(t);
 		const isDot = t === 'dot' || t === '.{}' || t === '. prefix' || /^\s*\.\s*\{\s*\}\s*$/i.test(t);
+		const isAmp = t === 'amp' || t === '&{}' || /^\s*&\s*\{\s*\}\s*$/i.test(t);
 		const isAt = t === 'at' || t === '@{}' || t === '@ prefix' || /^\s*@\s*\{\s*\}\s*$/i.test(t) || t.includes("'@'");
 
+		// Presets emit the script UNINDENTED (indenting would corrupt here-strings / multi-line literals)
 		if (isInvoke) {
-			return `{\n${indentWith(raw, '\t')}\n}.invoke()`;
+			return `{\n${raw}\n}.invoke()`;
 		}
 		if (isDot) {
-			return `.{\n${indentWith(raw, '\t')}\n}`;
+			return `.{\n${raw}\n}`;
+		}
+		if (isAmp) {
+			return `&{\n${raw}\n}`;
 		}
 		if (isAt) {
-			return `@{\n${indentWith(raw, '\t')}\n}`;
+			return `@{\n${raw}\n}`;
 		}
 
 		// 2. Custom template with placeholder keyword
@@ -1267,6 +1283,7 @@ export class CodeblockScaler {
 		const t = (tpl || '').trim();
 		if (t === 'invoke' || t === '{}.invoke()' || t === '{}.incvoke' || /invoke/i.test(t)) return '{}.invoke()';
 		if (t === 'dot' || t === '.{}' || t.includes('. prefix')) return '.{}';
+		if (t === 'amp' || t === '&{}') return '&{}';
 		if (t === 'at' || t === '@{}' || t.includes('@ prefix')) return '@{}';
 		return t;
 	}
@@ -1380,6 +1397,11 @@ export class CodeblockScaler {
 		) as HTMLElement | null;
 		if (!copyBtn) return;
 
+		const isIgnored = (l: string) => {
+			const s = (l || '').trim().toLowerCase();
+			return !s || s === 'hypermd' || s === 'none' || s === 'null' || s === 'undefined' || s === 'copy';
+		};
+
 		let detectedLang = '';
 		let rawCode = '';
 
@@ -1387,7 +1409,8 @@ export class CodeblockScaler {
 		// 1. If copyBtn is or contains .code-block-flair (Obsidian Live Preview)
 		const flair = (copyBtn.classList.contains('code-block-flair') ? copyBtn : copyBtn.closest('.code-block-flair')) as HTMLElement | null;
 		if (flair && flair.textContent) {
-			detectedLang = flair.textContent.trim().toLowerCase().split(/\s+/)[0];
+			const tag = flair.textContent.trim().toLowerCase().split(/\s+/)[0];
+			if (!isIgnored(tag)) detectedLang = tag;
 		}
 
 		// 2. From closest pre > code or container (Reading View / Embed block)
@@ -1405,15 +1428,18 @@ export class CodeblockScaler {
 			while (line) {
 				if (line.classList.contains('HyperMD-codeblock-begin')) {
 					const m = (line.textContent || '').match(/`{3,}\s*([a-zA-Z0-9_-]+)/);
-					if (m) {
+					if (m && !isIgnored(m[1])) {
 						detectedLang = m[1].toLowerCase();
 						break;
 					}
 				}
 				const f = line.querySelector('.code-block-flair');
 				if (f?.textContent?.trim()) {
-					detectedLang = f.textContent.trim().toLowerCase().split(/\s+/)[0];
-					break;
+					const tag = f.textContent.trim().toLowerCase().split(/\s+/)[0];
+					if (!isIgnored(tag)) {
+						detectedLang = tag;
+						break;
+					}
 				}
 				if (!line.classList.contains('HyperMD-codeblock') && !line.querySelector('.HyperMD-codeblock') && !line.className.includes('codeblock')) {
 					break;
@@ -1422,13 +1448,13 @@ export class CodeblockScaler {
 			}
 		}
 
-		// 4. From container class list (e.g. language-powershell, block-language-powershell)
+		// 4. From container class list (e.g. language-powershell, block-language-powershell, cm-lang-powershell)
 		if (!detectedLang) {
-			const block = copyBtn.closest('[class*="language-"], [class*="block-language-"]') as HTMLElement | null;
+			const block = copyBtn.closest('[class*="language-"], [class*="block-language-"], [class*="cm-lang-"]') as HTMLElement | null;
 			if (block) {
 				for (const cls of Array.from(block.classList)) {
-					const m = cls.match(/^(?:language|block-language)-([a-zA-Z0-9_-]+)$/i);
-					if (m) {
+					const m = cls.match(/^(?:language|block-language|cm-lang)-([a-zA-Z0-9_-]+)$/i);
+					if (m && !isIgnored(m[1])) {
 						detectedLang = m[1].toLowerCase();
 						break;
 					}
@@ -1436,26 +1462,7 @@ export class CodeblockScaler {
 			}
 		}
 
-		console.log(`[PakCLI Copy Click] detectedLang="${detectedLang}"`);
-
-		const rules = this.plugin?.settings?.codeblockLanguageRules || [];
-		const matchedRule = this.findMatchingRule(detectedLang, rules);
-
-		if (!matchedRule?.onClipboard?.trim()) {
-			this.pendingClipboardTransform = null;
-			return; // Native copy without transform
-		}
-
-		// Arm safety net for writeText: when Obsidian calls writeText(code), it will be intercepted and transformed!
-		this.pendingClipboardTransform = {
-			timestamp: Date.now(),
-			lang: detectedLang,
-			template: matchedRule.onClipboard.trim(),
-			replaceExisting: matchedRule.replaceExisting !== false
-		};
-		console.log(`[PakCLI Copy Click] Armed transform for "${detectedLang}" (${matchedRule.onClipboard}, replaceExisting=${matchedRule.replaceExisting !== false})`);
-
-		// ─── B. Extract rawCode from DOM for 70ms fallback ───
+		// ─── B. Extract rawCode from DOM or Editor ───
 		let beginLine = copyBtn.closest('.cm-line.HyperMD-codeblock-begin, .HyperMD-codeblock-begin') as HTMLElement | null;
 		if (!beginLine && flair) {
 			beginLine = (flair.closest('.cm-line.HyperMD-codeblock-begin') ||
@@ -1464,7 +1471,30 @@ export class CodeblockScaler {
 				flair.parentElement?.querySelector('.cm-line.HyperMD-codeblock-begin')) as HTMLElement | null;
 		}
 
+		// Primary source: editor document (exact text, independent of virtualized DOM / flowclip styling)
 		if (beginLine) {
+			try {
+				const cm = (this.plugin.app.workspace.getActiveViewOfType(MarkdownView)?.editor as any)?.cm as EditorView | undefined;
+				if (cm?.state?.doc) {
+					const doc = cm.state.doc;
+					const startNo = doc.lineAt(cm.posAtDOM(beginLine)).number;
+					const open = doc.line(startNo).text.trim().match(/^(`{3,}|~{3,})/);
+					if (open) {
+						const out: string[] = [];
+						for (let i = startNo + 1; i <= doc.lines; i++) {
+							const tt = doc.line(i).text;
+							if (/^(`{3,}|~{3,})\s*$/.test(tt.trim()) && tt.trim().startsWith(open[1][0])) break;
+							out.push(tt);
+						}
+						if (out.length > 0) rawCode = out.join('\n');
+					}
+				}
+			} catch (err) {
+				console.warn('[PakCLI] doc extraction failed, using DOM fallback', err);
+			}
+		}
+
+		if (beginLine && !rawCode) {
 			const codeLines: string[] = [];
 			let nextLine = beginLine.nextElementSibling as HTMLElement | null;
 			while (nextLine) {
@@ -1490,30 +1520,99 @@ export class CodeblockScaler {
 			}
 		}
 
+		// ─── C. Heuristic language detection fallback ───
+		if ((!detectedLang || detectedLang === 'hypermd') && rawCode) {
+			if (/^\s*<#/m.test(rawCode) || /\b(Read-Host|Write-Host|Get-ChildItem|param\s*\(|\$targetFolder|\$true|\$false|Sort-Object|Test-Path)\b/i.test(rawCode)) {
+				detectedLang = 'powershell';
+			}
+		}
+
+		console.log(`[PakCLI Copy Click] detectedLang="${detectedLang}" rawCodeLength=${rawCode.length}`);
+
+		const rules = this.plugin?.settings?.codeblockLanguageRules || [];
+		let matchedRule = this.findMatchingRule(detectedLang, rules);
+
+		// If no rule matches yet but code looks like PowerShell, check powershell rule specifically
+		if (!matchedRule?.onClipboard?.trim() && rawCode && (detectedLang === 'powershell' || /^\s*<#/m.test(rawCode))) {
+			matchedRule = this.findMatchingRule('powershell', rules);
+			if (matchedRule?.onClipboard?.trim()) detectedLang = 'powershell';
+		}
+
+		if (!matchedRule?.onClipboard?.trim()) {
+			this.pendingClipboardTransform = null;
+			return; // Native copy without transform
+		}
+
+		const tpl = matchedRule.onClipboard.trim();
+		const replaceEx = matchedRule.replaceExisting !== false;
+
+		// Arm safety net for writeText: keeps active for 1500ms so even if Obsidian fires an async writeText, it is guaranteed intercepted!
+		this.pendingClipboardTransform = {
+			timestamp: Date.now(),
+			lang: detectedLang || 'powershell',
+			template: tpl,
+			replaceExisting: replaceEx
+		};
+
 		// Visual feedback
 		copyBtn.classList.add('pakcli-cb-copy-btn--done');
 		setTimeout(() => copyBtn.classList.remove('pakcli-cb-copy-btn--done'), 1500);
 
-		// Fallback timer (70ms): If Obsidian's writeText did not fire, write our transformed rawCode directly
-		window.setTimeout(async () => {
-			const pending = this.pendingClipboardTransform;
-			if (pending && rawCode) {
-				console.log('[PakCLI] Fallback writeText triggered from extracted rawCode');
-				this.pendingClipboardTransform = null;
-				let transformed = this.transformClipboardContent(rawCode, pending.template, pending.lang, pending.replaceExisting !== false);
-				const sanitized = this.applyClipboardSanitizer(transformed);
-				if (sanitized.replacementsCount > 0) {
-					transformed = sanitized.text;
-					new Notice(`🛡️ Sanitized ${sanitized.replacementsCount} string(s) in clipboard!`, 2500);
-				}
-				if (this.originalClipboardWriteText) {
-					await this.originalClipboardWriteText(transformed);
-				} else if (navigator.clipboard?.writeText) {
-					await navigator.clipboard.writeText(transformed);
-				}
-				new Notice(`[PakCLI] Copied with ${pending.lang} (${this.formatTemplateNoticeLabel(pending.template)}) template!`, 2500);
+		if (rawCode) {
+			// We own the copy: stop Obsidian's native handler from overwriting our transformed text
+			evt.preventDefault();
+			evt.stopPropagation();
+			evt.stopImmediatePropagation();
+
+			let transformed = this.transformClipboardContent(rawCode, tpl, detectedLang || 'powershell', replaceEx);
+			const sanitized = this.applyClipboardSanitizer(transformed);
+			if (sanitized.replacementsCount > 0) {
+				transformed = sanitized.text;
+				new Notice(`🛡️ Sanitized ${sanitized.replacementsCount} string(s) in clipboard!`, 2500);
 			}
-		}, 70);
+
+			await this.writeToClipboard(transformed);
+			new Notice(`[PakCLI] Copied with ${detectedLang || 'powershell'} (${this.formatTemplateNoticeLabel(tpl)}) template!`, 2500);
+			return;
+		}
+	}
+
+	/** Multi-tiered clipboard writer supporting Electron, Navigator, and DOM execCommand */
+	async writeToClipboard(text: string): Promise<boolean> {
+		let success = false;
+		try {
+			const electron = (window as any).require?.('electron');
+			if (electron?.clipboard?.writeText) {
+				electron.clipboard.writeText(text);
+				success = true;
+			}
+		} catch (_) {}
+
+		try {
+			if (this.originalClipboardWriteText) {
+				await this.originalClipboardWriteText(text);
+				success = true;
+			} else if (navigator.clipboard?.writeText) {
+				await navigator.clipboard.writeText(text);
+				success = true;
+			}
+		} catch (_) {}
+
+		if (!success) {
+			try {
+				const ta = document.createElement('textarea');
+				ta.value = text;
+				ta.style.position = 'fixed';
+				ta.style.opacity = '0';
+				document.body.appendChild(ta);
+				ta.focus();
+				ta.select();
+				document.execCommand('copy');
+				ta.remove();
+				success = true;
+			} catch (_) {}
+		}
+		return success;
 	}
 
 	/** Pre-arms clipboard transform when user right-clicks on code or inside a codeblock */

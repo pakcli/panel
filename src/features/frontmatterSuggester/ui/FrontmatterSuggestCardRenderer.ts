@@ -27,7 +27,7 @@ export class FrontmatterSuggestCardRenderer {
 
     // 1. Header & Master Toggle
     new Setting(containerEl)
-      .setName('Scoped Property Suggestions (v10)')
+      .setName('Scoped Property Suggestions (v11)')
       .setDesc('Scope Obsidian Base and note property dropdowns (e.g. "category") to specific vault directories, eliminating vault-wide autocomplete noise.')
       .setHeading();
 

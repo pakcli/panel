@@ -1894,12 +1894,35 @@ export default class PakCLITablePlugin extends Plugin {
 	applyCodeblockStyle() {
 		const mode = this.settings.codeblockWrapMode || 'flowclip';
 		const sliderMode = this.settings.flowclipSliderMode || 'all-lines';
+		const theme = this.settings.codeblockTheme || 'obsidian';
+
 		document.body.classList.remove(
 			'pakcli-flowclip', 'pakcli-wrap', 'pakcli-scalefit',
 			'codeblock-flowclip', 'codeblock-wrap', 'codeblock-scalefit',
-			'flowclip-mode-all-lines', 'flowclip-mode-current', 'flowclip-mode-per-line'
+			'flowclip-mode-all-lines', 'flowclip-mode-current', 'flowclip-mode-per-line',
+			'pakcli-cb-theme-obsidian', 'pakcli-cb-theme-midnight', 'pakcli-cb-theme-paper', 'pakcli-cb-theme-terminal', 'pakcli-cb-theme-custom'
 		);
-		document.body.classList.add(`pakcli-${mode}`, `codeblock-${mode}`, `flowclip-mode-${sliderMode}`);
+		document.body.classList.add(`pakcli-${mode}`, `codeblock-${mode}`, `flowclip-mode-${sliderMode}`, `pakcli-cb-theme-${theme}`);
+
+		let customStyleEl = document.getElementById('pakcli-cb-custom-theme-style') as HTMLStyleElement | null;
+		if (theme === 'custom' && this.settings.codeblockCustomColors) {
+			if (!customStyleEl) {
+				customStyleEl = document.createElement('style');
+				customStyleEl.id = 'pakcli-cb-custom-theme-style';
+				document.head.appendChild(customStyleEl);
+			}
+			const { bg, fg, border, accent } = this.settings.codeblockCustomColors;
+			customStyleEl.textContent = `
+				body.pakcli-cb-theme-custom {
+					--pakcli-cb-bg: ${bg || '#1e1e1e'};
+					--pakcli-cb-fg: ${fg || '#d4d4d4'};
+					--pakcli-cb-border: ${border || '#333333'};
+					--pakcli-cb-accent: ${accent || '#7c3aed'};
+				}
+			`;
+		} else if (customStyleEl) {
+			customStyleEl.remove();
+		}
 	}
 
 	getFileColumnConfig(filePath: string, columnCount: number): ColumnConfig {
@@ -3519,11 +3542,11 @@ export default class PakCLITablePlugin extends Plugin {
 			}
 		});
 
-		// 0.6. Frontmatter Property Scoper (v10) (table-frontmatter-suggest)
+		// 0.6. Frontmatter Property Scoper (v11) (table-frontmatter-suggest)
 		settingsTab.registerLocalSection({
 			id: 'table-frontmatter-suggest',
 			category: 'table',
-			title: 'Property Scoper (v10)',
+			title: 'Property Scoper (v11)',
 			icon: 'list-filter',
 			isInstalled: true,
 			render: (containerEl) => {
@@ -5396,6 +5419,12 @@ export default class PakCLITablePlugin extends Plugin {
 					.setDesc('Auto-scaler, syntax themes, flowclip viewer, and responsive codeblock wrapping.')
 					.setHeading();
 
+				// --- Section 1: DEFAULTS ---
+				new Setting(containerEl)
+					.setName('Defaults')
+					.setDesc('Global settings for codeblocks without specific language rules.')
+					.setHeading();
+
 				new Setting(containerEl)
 					.setName('Default Codeblock Wrap & Flow Mode')
 					.setDesc('Choose how long code lines are handled in Live Preview and Reading views.')
@@ -5408,9 +5437,43 @@ export default class PakCLITablePlugin extends Plugin {
 								this.settings.codeblockWrapMode = v as 'flowclip' | 'wrap' | 'scalefit';
 								this.applyCodeblockStyle();
 								await this.saveSettings();
-								this.codeblockScaler.scheduleRescale();
+								this.codeblockScaler.refreshAll();
 							});
 					});
+
+				new Setting(containerEl)
+					.setName('Enable Native Asset Drag & Drop')
+					.setDesc('Allow dragging images, PDFs, and media directly out of rendered codeblocks.')
+					.addToggle((t) => {
+						t.setValue(this.settings.enableAssetDrag !== false)
+							.onChange(async (v) => {
+								this.settings.enableAssetDrag = v;
+								await this.saveSettings();
+							});
+					});
+
+				new Setting(containerEl)
+					.setName('Debug Diagnostics Mode')
+					.setDesc('Write detailed codeblock DOM & style dump to artifacts/debug_codeblock.json on rescale.')
+					.addToggle((t) => {
+						t.setValue(this.settings.codeblockDebug === true)
+							.onChange(async (v) => {
+								this.settings.codeblockDebug = v;
+								await this.saveSettings();
+								if (v) this.codeblockScaler.dumpDebugInfo();
+							});
+					});
+
+				// --- Section 2: FLOWCLIP OPTIONS ---
+				const flowclipHeading = new Setting(containerEl)
+					.setName('Flowclip Options')
+					.setHeading();
+
+				if (this.settings.codeblockWrapMode !== 'flowclip') {
+					flowclipHeading.setDesc(`Note: Default mode is currently "${this.settings.codeblockWrapMode}". Slider settings apply to codeblocks configured with Flowclip rule.`);
+				} else {
+					flowclipHeading.setDesc('Behavior of the sticky scrollbar and codeblock lines in Flowclip mode.');
+				}
 
 				new Setting(containerEl)
 					.setName('Flowclip Slider Mode')
@@ -5422,12 +5485,10 @@ export default class PakCLITablePlugin extends Plugin {
 							.setValue(this.settings.flowclipSliderMode || 'all-lines')
 							.onChange(async (v: string) => {
 								this.settings.flowclipSliderMode = v as 'all-lines' | 'current' | 'per-line';
-								// Reset saved scroll state on mode switch as requested
 								this.settings.flowclipScrollStates = {};
 								await this.saveSettings();
 								this.applyCodeblockStyle();
-								this.codeblockScaler.clearCache();
-								this.codeblockScaler.rescaleAll();
+								this.codeblockScaler.refreshAll();
 							});
 					});
 
@@ -5445,29 +5506,148 @@ export default class PakCLITablePlugin extends Plugin {
 							});
 					});
 
+				// --- Section 3: THEME ---
 				new Setting(containerEl)
-					.setName('Enable Native Asset Drag & Drop')
-					.setDesc('Allow dragging images, PDFs, and media directly out of rendered codeblocks.')
-					.addToggle((t) => {
-						t.setValue(this.settings.enableAssetDrag !== false)
-							.onChange(async (v) => {
-								this.settings.enableAssetDrag = v;
+					.setName('Codeblock Theme')
+					.setDesc('Color theme and visual styling for codeblocks.')
+					.setHeading();
+
+				let previewBox: HTMLElement | null = null;
+				let customColorContainer: HTMLElement | null = null;
+
+				const updateThemePreview = () => {
+					if (!previewBox) return;
+					const curTheme = this.settings.codeblockTheme || 'obsidian';
+					previewBox.className = 'pakcli-cb-preview-box';
+					if (curTheme !== 'obsidian') {
+						previewBox.classList.add(`pakcli-cb-theme-${curTheme}`);
+					}
+					const badge = previewBox.querySelector('.pakcli-cb-preview-badge');
+					if (badge) badge.textContent = `${curTheme.toUpperCase()} THEME PREVIEW`;
+
+					if (curTheme === 'custom' && this.settings.codeblockCustomColors) {
+						const { bg, fg, border, accent } = this.settings.codeblockCustomColors;
+						previewBox.style.setProperty('--pakcli-cb-bg', bg || '#1e1e1e');
+						previewBox.style.setProperty('--pakcli-cb-fg', fg || '#d4d4d4');
+						previewBox.style.setProperty('--pakcli-cb-border', border || '#333333');
+						previewBox.style.setProperty('--pakcli-cb-accent', accent || '#7c3aed');
+					} else {
+						previewBox.style.removeProperty('--pakcli-cb-bg');
+						previewBox.style.removeProperty('--pakcli-cb-fg');
+						previewBox.style.removeProperty('--pakcli-cb-border');
+						previewBox.style.removeProperty('--pakcli-cb-accent');
+					}
+				};
+
+				new Setting(containerEl)
+					.setName('Theme Preset')
+					.setDesc('Choose a pre-configured theme for codeblocks.')
+					.addDropdown((d) => {
+						d.addOption('obsidian', 'Obsidian (Default Theme)')
+							.addOption('midnight', 'Midnight (Dark Navy Slate)')
+							.addOption('paper', 'Paper (Warm Light Clean)')
+							.addOption('terminal', 'Terminal (Retro Matrix Green)')
+							.addOption('custom', 'Custom Colors…')
+							.setValue(this.settings.codeblockTheme || 'obsidian')
+							.onChange(async (v: string) => {
+								this.settings.codeblockTheme = v as any;
+								if (customColorContainer) {
+									customColorContainer.style.display = v === 'custom' ? 'block' : 'none';
+								}
+								this.applyCodeblockStyle();
 								await this.saveSettings();
+								updateThemePreview();
+								this.codeblockScaler.refreshAll();
 							});
 					});
 
 				new Setting(containerEl)
+					.setName('Theme Scope')
+					.setDesc('Apply theme to all codeblocks or only codeblocks matching Per-Language Rules.')
+					.addDropdown((d) => {
+						d.addOption('all', 'All Codeblocks')
+							.addOption('rules-only', 'Rules-Only Codeblocks')
+							.setValue(this.settings.codeblockThemeScope || 'all')
+							.onChange(async (v: string) => {
+								this.settings.codeblockThemeScope = v as any;
+								await this.saveSettings();
+								this.applyCodeblockStyle();
+								this.codeblockScaler.refreshAll();
+							});
+					});
+
+				customColorContainer = containerEl.createDiv({ cls: 'pakcli-cb-custom-colors-box' });
+				customColorContainer.style.display = (this.settings.codeblockTheme === 'custom') ? 'block' : 'none';
+				if (!this.settings.codeblockCustomColors) {
+					this.settings.codeblockCustomColors = { bg: '#1e1e1e', fg: '#d4d4d4', border: '#333333', accent: '#7c3aed' };
+				}
+
+				new Setting(customColorContainer)
+					.setName('Custom Background Color')
+					.addText((t) => {
+						t.setValue(this.settings.codeblockCustomColors?.bg || '#1e1e1e')
+							.onChange(async (v) => {
+								if (this.settings.codeblockCustomColors) this.settings.codeblockCustomColors.bg = v.trim();
+								this.applyCodeblockStyle();
+								await this.saveSettings();
+								updateThemePreview();
+							});
+					});
+
+				new Setting(customColorContainer)
+					.setName('Custom Text / Foreground Color')
+					.addText((t) => {
+						t.setValue(this.settings.codeblockCustomColors?.fg || '#d4d4d4')
+							.onChange(async (v) => {
+								if (this.settings.codeblockCustomColors) this.settings.codeblockCustomColors.fg = v.trim();
+								this.applyCodeblockStyle();
+								await this.saveSettings();
+								updateThemePreview();
+							});
+					});
+
+				new Setting(customColorContainer)
+					.setName('Custom Border Color')
+					.addText((t) => {
+						t.setValue(this.settings.codeblockCustomColors?.border || '#333333')
+							.onChange(async (v) => {
+								if (this.settings.codeblockCustomColors) this.settings.codeblockCustomColors.border = v.trim();
+								this.applyCodeblockStyle();
+								await this.saveSettings();
+								updateThemePreview();
+							});
+					});
+
+				new Setting(customColorContainer)
+					.setName('Custom Accent Color')
+					.addText((t) => {
+						t.setValue(this.settings.codeblockCustomColors?.accent || '#7c3aed')
+							.onChange(async (v) => {
+								if (this.settings.codeblockCustomColors) this.settings.codeblockCustomColors.accent = v.trim();
+								this.applyCodeblockStyle();
+								await this.saveSettings();
+								updateThemePreview();
+							});
+					});
+
+				// Live preview element
+				previewBox = containerEl.createDiv({ cls: 'pakcli-cb-preview-box' });
+				previewBox.createDiv({ cls: 'pakcli-cb-preview-badge', text: 'THEME PREVIEW' });
+				const previewCode = previewBox.createDiv({ cls: 'pakcli-cb-preview-code' });
+				previewCode.textContent = `# Sample Codeblock\nfunction Get-FolderTree {\n    Write-Host "PakCLI theme ready!" -ForegroundColor Cyan\n}`;
+				updateThemePreview();
+
+				// --- Section 4: PER-LANGUAGE RULES ---
+				new Setting(containerEl)
 					.setName('Per-Language Rules')
-					.setDesc('Customize behavior for specific languages (e.g., ascii, python, sql, markdown).')
+					.setDesc('Customize behavior for specific languages (e.g. powershell, ascii, python, sql, markdown).')
 					.setHeading();
 
 				const rulesBox = containerEl.createDiv({ cls: 'pakcli-codeblock-rules-section' });
 
 				const renderLangRules = () => {
-					console.log('[PakCLI DBG] renderLangRules called');
 					rulesBox.empty();
 					const rules = this.settings.codeblockLanguageRules || [];
-					console.log('[PakCLI DBG] rules array:', JSON.stringify(rules));
 
 					if (rules.length === 0) {
 						rulesBox.createEl('p', {
@@ -5476,25 +5656,48 @@ export default class PakCLITablePlugin extends Plugin {
 						});
 					} else {
 						const table = rulesBox.createEl('table');
-						table.style.width = '100%';
-						table.style.marginBottom = '12px';
-						table.style.borderCollapse = 'collapse';
 						const thead = table.createEl('thead');
 						const hRow = thead.createEl('tr');
+						hRow.createEl('th', { text: 'Active', title: 'Enable or disable rule' });
 						hRow.createEl('th', { text: 'Language' });
 						hRow.createEl('th', { text: 'Behavior' });
 						const thClip = hRow.createEl('th', { text: 'On Clipboard' });
-						thClip.title = 'Custom script triggered on copy. Use .{ scripts } or { scripts }invoke()';
+						thClip.title = 'Custom script wrapper triggered on copy button click.';
 						const thReplace = hRow.createEl('th', { text: 'Replace Wrapper' });
 						thReplace.title = 'If Yes, scans prefix and suffix (.{}, {}.invoke(), @{}) and replaces already written wrappers instead of double-wrapping.';
 						hRow.createEl('th', { text: 'Delete' });
 
 						const tbody = table.createEl('tbody');
 						rules.forEach((rule, idx) => {
-							console.log(`[PakCLI DBG] rendering row ${idx}:`, JSON.stringify(rule));
 							const row = tbody.createEl('tr');
-							row.createEl('td', { text: rule.language });
 
+							// Active toggle checkbox
+							const activeTd = row.createEl('td', { cls: 'pakcli-cb-active-td' });
+							const activeCheckbox = activeTd.createEl('input', { type: 'checkbox' });
+							activeCheckbox.checked = rule.enabled !== false;
+							activeCheckbox.title = 'Toggle this rule on/off';
+							activeCheckbox.addEventListener('change', async () => {
+								rule.enabled = activeCheckbox.checked;
+								await this.saveSettings();
+								this.codeblockScaler.refreshAll();
+								new Notice(`Rule "${rule.language}" ${rule.enabled ? 'enabled' : 'disabled'}.`);
+							});
+
+							// Language editable text input
+							const langTd = row.createEl('td');
+							const langInput = langTd.createEl('input', { cls: 'pakcli-cb-rule-lang-input' });
+							langInput.value = rule.language || '';
+							langInput.placeholder = 'e.g. powershell';
+							langInput.addEventListener('change', async () => {
+								const val = langInput.value.trim().toLowerCase();
+								if (val) {
+									rule.language = val;
+									await this.saveSettings();
+									this.codeblockScaler.refreshAll();
+								}
+							});
+
+							// Behavior dropdown
 							const behaviorTd = row.createEl('td');
 							const sel = behaviorTd.createEl('select', { cls: 'dropdown' });
 							[
@@ -5505,24 +5708,17 @@ export default class PakCLITablePlugin extends Plugin {
 								const opt = sel.createEl('option', { text });
 								opt.value = value;
 								opt.selected = rule.behavior === value;
-								console.log(`[PakCLI DBG] option created: text="${text}" value="${opt.value}" selected=${opt.selected}`);
 							});
-							console.log(`[PakCLI DBG] sel.value after options set = "${sel.value}"`);
 							sel.addEventListener('change', async () => {
-								console.log(`[PakCLI DBG] behavior change fired: sel.value="${sel.value}" rule was:`, JSON.stringify(rule));
 								try {
 									rule.behavior = sel.value as 'scalefit' | 'flowclip' | 'wrap';
-									console.log('[PakCLI DBG] calling saveSettings...');
 									await this.saveSettings();
-									console.log('[PakCLI DBG] saveSettings done, calling scheduleRescale...');
-									this.codeblockScaler.scheduleRescale();
-									console.log('[PakCLI DBG] scheduleRescale done. settings now:', JSON.stringify(this.settings.codeblockLanguageRules));
+									this.codeblockScaler.refreshAll();
 								} catch (err) {
 									console.error('[PakCLI] behavior save error:', err);
 									new Notice('Failed to save behavior setting.');
 								}
 							});
-							console.log('[PakCLI DBG] behavior change listener registered on sel');
 
 							// On Clipboard column: preset dropdown for EVERY language (+ Custom template)
 							const clipTd = row.createEl('td', { cls: 'pakcli-cb-clip-td' });
@@ -5530,6 +5726,7 @@ export default class PakCLITablePlugin extends Plugin {
 								{ label: '— none —',    value: 'none' },
 								{ label: '{}.invoke()', value: 'invoke' },
 								{ label: '.{}',         value: 'dot' },
+								{ label: '&{}',         value: 'amp' },
 								{ label: '@{}',         value: 'at' },
 								{ label: 'Custom…',     value: 'custom' },
 							];
@@ -5538,6 +5735,7 @@ export default class PakCLITablePlugin extends Plugin {
 								if (!v) return 'none';
 								if (v === 'invoke' || v === '{}.invoke()' || v === '{}.invoke' || v === '{}.incvoke') return 'invoke';
 								if (v === 'dot' || v === '.{}') return 'dot';
+								if (v === 'amp' || v === '&{}') return 'amp';
 								if (v === 'at' || v === '@{}') return 'at';
 								return 'custom';
 							};
@@ -5604,13 +5802,13 @@ export default class PakCLITablePlugin extends Plugin {
 							});
 
 							const actTd = row.createEl('td');
-							const delBtn = new ButtonComponent(actTd)
+							new ButtonComponent(actTd)
 								.setButtonText('Delete')
 								.setWarning()
 								.onClick(async () => {
 									this.settings.codeblockLanguageRules.splice(idx, 1);
 									await this.saveSettings();
-									this.codeblockScaler.scheduleRescale();
+									this.codeblockScaler.refreshAll();
 									renderLangRules();
 								});
 						});
@@ -5620,7 +5818,7 @@ export default class PakCLITablePlugin extends Plugin {
 					let newLang = '';
 					let newBehavior: 'scalefit' | 'flowclip' | 'wrap' = 'scalefit';
 
-					new Setting(rulesBox)
+					const addSetting = new Setting(rulesBox)
 						.setName('Add Language Rule')
 						.setDesc('Define a custom behavior for a specific language tag.')
 						.addText((t) => {
@@ -5648,14 +5846,28 @@ export default class PakCLITablePlugin extends Plugin {
 									this.settings.codeblockLanguageRules.push({
 										id: String(Date.now()),
 										language: newLang,
-										behavior: newBehavior
+										behavior: newBehavior,
+										enabled: true
 									});
 									await this.saveSettings();
-									this.codeblockScaler.scheduleRescale();
+									this.codeblockScaler.refreshAll();
 									renderLangRules();
 									new Notice(`Added rule for "${newLang}".`);
 								});
 						});
+
+					addSetting.addButton((b) => {
+						b.setButtonText('Reset to Defaults')
+							.onClick(async () => {
+								this.settings.codeblockLanguageRules = [
+									{ id: '1', language: 'ascii', behavior: 'scalefit', enabled: true }
+								];
+								await this.saveSettings();
+								this.codeblockScaler.refreshAll();
+								renderLangRules();
+								new Notice('Reset codeblock rules to defaults.');
+							});
+					});
 				};
 
 				renderLangRules();
@@ -5679,8 +5891,9 @@ export default class PakCLITablePlugin extends Plugin {
 					.setName('Enable ASCII Canvas Renderer')
 					.setDesc('Render ASCII diagrams with interactive playback controls and copy buttons.')
 					.addToggle((t) => {
-						t.setValue(true)
+						t.setValue(this.settings.enableAsciiRenderer !== false)
 							.onChange(async (v) => {
+								this.settings.enableAsciiRenderer = v;
 								await this.saveSettings();
 							});
 					});
@@ -5693,8 +5906,9 @@ export default class PakCLITablePlugin extends Plugin {
 							.addOption('Cyberpunk Amber', 'Cyberpunk Amber (Amber Glow)')
 							.addOption('Chalkboard White', 'Chalkboard White (Classic)')
 							.addOption('Dracula Neon', 'Dracula Neon (Purple/Cyan)')
-							.setValue('Monochrome Matrix')
+							.setValue(this.settings.asciiCanvasTheme || 'Monochrome Matrix')
 							.onChange(async (v) => {
+								this.settings.asciiCanvasTheme = v;
 								await this.saveSettings();
 							});
 					});

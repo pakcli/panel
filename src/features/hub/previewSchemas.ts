@@ -192,6 +192,8 @@ export const ECOSYSTEM_MODULES: BlueprintSection[] = [
     description: "Syntax highlighter, auto-scaler, copy buttons, and responsive codeblock wrapping.",
     fields: [
       { key: "codeblockWrapMode", type: "dropdown", name: "Codeblock Wrap & Flow Mode", desc: "Choose how long code lines are handled in Live Preview and Reading views.", defaultVal: "flowclip", options: ["flowclip", "wrap", "scalefit"] },
+      { key: "flowclipSliderMode", type: "dropdown", name: "Flowclip Slider Mode", desc: "How the horizontal scrollbar behaves in Flowclip mode.", defaultVal: "all-lines", options: ["all-lines", "current", "per-line"] },
+      { key: "codeblockTheme", type: "dropdown", name: "Codeblock Theme", desc: "Color theme for codeblocks.", defaultVal: "obsidian", options: ["obsidian", "midnight", "paper", "terminal", "custom"] },
       { key: "enableAssetDrag", type: "toggle", name: "Enable Native Asset Drag & Drop", desc: "Allow dragging images, PDFs, and media directly out of rendered codeblocks.", defaultVal: true },
     ],
   },
@@ -205,7 +207,7 @@ export const ECOSYSTEM_MODULES: BlueprintSection[] = [
     description: "Interactive canvas for ASCII diagrams, architecture drawings, and frame animations.",
     fields: [
       { key: "enableAsciiRenderer", type: "toggle", name: "Enable ASCII Canvas Renderer", desc: "Render ASCII diagrams with interactive playback controls and copy buttons.", defaultVal: true },
-      { key: "asciiTheme", type: "dropdown", name: "Default ASCII Canvas Theme", desc: "Color theme for ASCII diagrams.", defaultVal: "Monochrome Matrix", options: ["Monochrome Matrix", "Cyberpunk Amber", "Chalkboard White", "Dracula Neon"] },
+      { key: "asciiCanvasTheme", type: "dropdown", name: "Default ASCII Canvas Theme", desc: "Color theme for ASCII diagrams.", defaultVal: "Monochrome Matrix", options: ["Monochrome Matrix", "Cyberpunk Amber", "Chalkboard White", "Dracula Neon"] },
     ],
   },
   {

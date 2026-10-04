@@ -847,6 +847,125 @@ body .markdown-source-view.mod-cm6 .cm-line.HyperMD-codeblock.pakcli-codeblock-l
     }
 }
 
+/* ========================================================================= */
+/* Codeblock Themes & Settings Styling                                       */
+/* ========================================================================= */
+body.pakcli-cb-theme-midnight {
+    --pakcli-cb-bg: #0f172a;
+    --pakcli-cb-fg: #e2e8f0;
+    --pakcli-cb-border: #1e293b;
+    --pakcli-cb-accent: #38bdf8;
+}
+
+body.pakcli-cb-theme-paper {
+    --pakcli-cb-bg: #f8fafc;
+    --pakcli-cb-fg: #1e293b;
+    --pakcli-cb-border: #cbd5e1;
+    --pakcli-cb-accent: #2563eb;
+}
+
+body.pakcli-cb-theme-terminal {
+    --pakcli-cb-bg: #0a0f0d;
+    --pakcli-cb-fg: #00ff66;
+    --pakcli-cb-border: #003b1f;
+    --pakcli-cb-accent: #00ff99;
+}
+
+body.pakcli-cb-theme-midnight,
+body.pakcli-cb-theme-paper,
+body.pakcli-cb-theme-terminal,
+body.pakcli-cb-theme-custom {
+    pre,
+    .cm-embed-block:has(pre),
+    .markdown-rendered pre,
+    .markdown-source-view.mod-cm6 .cm-line.HyperMD-codeblock {
+        background-color: var(--pakcli-cb-bg) !important;
+        color: var(--pakcli-cb-fg) !important;
+        border-color: var(--pakcli-cb-border) !important;
+    }
+
+    .pakcli-cb-sticky-bar {
+        border-top: 1px solid var(--pakcli-cb-border) !important;
+        background: var(--pakcli-cb-bg) !important;
+    }
+
+    .copy-code-button,
+    .pakcli-cb-copy-btn {
+        background-color: var(--pakcli-cb-bg) !important;
+        color: var(--pakcli-cb-accent) !important;
+        border-color: var(--pakcli-cb-border) !important;
+    }
+}
+
+.pakcli-cb-preview-box {
+    margin: 10px 0 16px;
+    padding: 12px 16px;
+    border-radius: var(--radius-m);
+    border: 1px solid var(--pakcli-cb-border, var(--background-modifier-border));
+    background-color: var(--pakcli-cb-bg, var(--background-secondary));
+    color: var(--pakcli-cb-fg, var(--text-normal));
+    font-family: var(--font-monospace);
+    font-size: 13px;
+    line-height: 1.5;
+    position: relative;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+
+    .pakcli-cb-preview-badge {
+        position: absolute;
+        top: 8px;
+        right: 10px;
+        font-size: 10px;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        color: var(--pakcli-cb-accent, var(--interactive-accent));
+        opacity: 0.8;
+    }
+
+    .pakcli-cb-preview-code {
+        white-space: pre;
+    }
+}
+
+.pakcli-codeblock-rules-section {
+    table {
+        width: 100%;
+        margin-bottom: 14px;
+        border-collapse: collapse;
+        font-size: var(--font-ui-small);
+
+        th {
+            text-align: left;
+            padding: 8px 10px;
+            border-bottom: 2px solid var(--background-modifier-border);
+            color: var(--text-muted);
+            font-weight: 600;
+        }
+
+        td {
+            padding: 8px 10px;
+            border-bottom: 1px solid var(--background-modifier-border);
+            vertical-align: middle;
+        }
+
+        tr:hover td {
+            background-color: var(--background-secondary-alt);
+        }
+    }
+
+    .pakcli-cb-rule-lang-input {
+        width: 120px;
+        font-family: var(--font-monospace);
+        font-size: 12px;
+    }
+
+    .pakcli-cb-clip-area {
+        width: 100%;
+        min-width: 160px;
+        margin-top: 4px;
+        font-family: var(--font-monospace);
+        font-size: 11px;
+    }
+}
 
 /* ========================================================================= */
 /* Two-Section Codeblock & Folder Sync Component                              */
