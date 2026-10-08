@@ -166,10 +166,10 @@ export function renderAudioPlayerContent(ctx: AudioPlayerRenderContext): () => v
     modeRow.createSpan({ text: 'MODE:', cls: 'pakcli-mode-label' });
 
     const modes: { id: PlaybackMode; label: string; icon: string; title: string }[] = [
-        { id: 'loop_all', label: 'Loop All', icon: 'repeat', title: 'Loop entire playlist sequentially' },
-        { id: 'loop_one', label: 'Loop 1', icon: 'repeat-1', title: 'Loop active track continuously' },
-        { id: 'shuffle', label: 'Shuffle', icon: 'shuffle', title: 'Shuffle tracks randomly without repeat' },
-        { id: 'linear', label: 'Linear', icon: 'arrow-right', title: 'Play once to the end then stop' }
+        { id: 'loop_all', label: 'All', icon: 'repeat', title: 'Loop All: Repeat entire playlist sequentially' },
+        { id: 'loop_one', label: '1', icon: 'repeat-1', title: 'Loop 1: Repeat active track continuously' },
+        { id: 'shuffle', label: 'Shuf', icon: 'shuffle', title: 'Shuffle: Play tracks randomly without repeats' },
+        { id: 'linear', label: 'Line', icon: 'arrow-right', title: 'Linear: Play once to end of playlist then stop' }
     ];
 
     const modeBtns: Map<PlaybackMode, HTMLButtonElement> = new Map();

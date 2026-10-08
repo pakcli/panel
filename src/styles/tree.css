@@ -168,6 +168,15 @@ table{
 	background: var(--background-modifier-hover);
 }
 
+.tree-control-button {
+	min-width: 58px;
+	text-align: center;
+	justify-content: center;
+	display: inline-flex;
+	align-items: center;
+	box-sizing: border-box;
+}
+
 /* ============================================
    CONTROL PANEL (OLD - DEPRECATED)
    ============================================ */
@@ -1042,6 +1051,15 @@ table{
 .spec-tree-btn:disabled {
 	opacity: 0.4;
 	cursor: not-allowed;
+}
+
+.spec-tree-lock-btn {
+	min-width: 120px;
+	text-align: center;
+	justify-content: center;
+	display: inline-flex;
+	align-items: center;
+	box-sizing: border-box;
 }
 
 .spec-tree-lock-btn.is-active {

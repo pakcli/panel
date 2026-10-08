@@ -283,7 +283,7 @@ export class FrontmatterSuggestCardRenderer {
       // Active / Inactive Switch Button (1 vs 0)
       const toggleActiveBtn = itemRow.createEl('button');
       toggleActiveBtn.style.cssText =
-        'font-size: 11px; padding: 2px 8px; font-family: var(--font-monospace); font-weight: 600; white-space: nowrap;';
+        'font-size: 11px; padding: 2px 8px; font-family: var(--font-monospace); font-weight: 600; white-space: nowrap; min-width: 110px; text-align: center; justify-content: center; display: inline-flex; align-items: center; box-sizing: border-box;';
       if (dir.active) {
         toggleActiveBtn.setText('🟢 1 (Active)');
         toggleActiveBtn.style.color = '#10b981';

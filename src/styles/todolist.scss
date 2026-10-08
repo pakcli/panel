@@ -278,6 +278,9 @@
 
         .pomo-start-btn {
             padding: 6px 16px;
+            min-width: 95px;
+            box-sizing: border-box;
+            text-align: center;
             font-weight: 600;
             font-size: 12px;
             background: var(--interactive-accent);

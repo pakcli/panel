@@ -238,6 +238,15 @@
         display: flex;
         align-items: center;
         gap: 4px;
+
+        button:first-child {
+            min-width: 72px;
+            text-align: center;
+            justify-content: center;
+            display: inline-flex;
+            align-items: center;
+            box-sizing: border-box;
+        }
     }
 }
 

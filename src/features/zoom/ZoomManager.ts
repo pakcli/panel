@@ -530,7 +530,7 @@ export class ZoomManager {
     zoomSpan.setText(`🔍 ${pct}%`);
     zoomSpan.style.cssText = `font-weight: ${isStandard ? '400' : '600'}; color: ${
       isStandard ? 'var(--text-muted)' : 'var(--text-accent)'
-    };`;
+    }; min-width: 56px; display: inline-flex; justify-content: center; align-items: center; text-align: center; box-sizing: border-box;`;
     zoomSpan.title = 'Click to reset zoom (100%). Right-click for presets.';
 
     // Mode badge pill
@@ -538,13 +538,13 @@ export class ZoomManager {
     if (isWebviewer) {
       modeSpan.setText('🌐 Web');
       modeSpan.style.cssText =
-        'font-size: 9px; padding: 1px 4px; border-radius: 3px; background: var(--background-modifier-border); color: var(--text-muted); margin-left: 2px;';
+        'font-size: 9px; padding: 1px 4px; border-radius: 3px; background: var(--background-modifier-border); color: var(--text-muted); margin-left: 2px; min-width: 68px; display: inline-flex; justify-content: center; align-items: center; text-align: center; box-sizing: border-box;';
       modeSpan.title = 'Website Viewer Page Zoom active';
     } else {
       modeSpan.setText(isFullWidth ? '↔ Full' : '↔ Margins');
       modeSpan.style.cssText = `font-size: 9px; padding: 1px 4px; border-radius: 3px; background: ${
         isFullWidth ? 'var(--interactive-accent)' : 'var(--background-modifier-border)'
-      }; color: ${isFullWidth ? '#ffffff' : 'var(--text-muted)'}; margin-left: 2px;`;
+      }; color: ${isFullWidth ? '#ffffff' : 'var(--text-muted)'}; margin-left: 2px; min-width: 68px; display: inline-flex; justify-content: center; align-items: center; text-align: center; box-sizing: border-box;`;
       modeSpan.title = 'Click to toggle Width Mode (Preserved Margins vs Full Width)';
 
       modeSpan.onclick = (e) => {

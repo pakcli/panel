@@ -302,15 +302,16 @@
     color: var(--text-muted);
     border-radius: var(--radius-s);
     cursor: pointer;
-    padding: 4px 6px;
+    padding: 4px 4px;
     font-size: 0.75rem;
-    font-weight: 500;
+    font-weight: 600;
     display: inline-flex;
     align-items: center;
     justify-content: center;
     gap: 4px;
     white-space: nowrap;
     overflow: hidden;
+    box-sizing: border-box;
     transition: all 0.15s ease;
 
     &:hover {
@@ -322,7 +323,7 @@
         background-color: rgba(var(--interactive-accent-rgb, 100, 100, 255), 0.18);
         border-color: var(--interactive-accent);
         color: var(--interactive-accent);
-        font-weight: 700;
+        font-weight: 600;
     }
 }
 
@@ -421,6 +422,10 @@
     flex-shrink: 0;
     white-space: nowrap;
     box-sizing: border-box;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
 
     &:hover {
         background-color: var(--background-modifier-hover);
@@ -431,6 +436,18 @@
         color: #ef4444;
         border-color: rgba(239, 68, 68, 0.35);
     }
+}
+
+.pakcli-btn-mute {
+    width: 82px !important;
+    min-width: 82px !important;
+    max-width: 82px !important;
+}
+
+.pakcli-btn-test-sfx {
+    width: 76px !important;
+    min-width: 76px !important;
+    max-width: 76px !important;
 }
 
 .pakcli-btn-test-sfx:hover {

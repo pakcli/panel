@@ -861,6 +861,9 @@
         font-size: 11px;
         padding: 2px 9px;
         height: 26px;
+        min-width: 82px;
+        text-align: center;
+        justify-content: center;
     }
 
     button.pakcli-lines-toggle-btn,
@@ -2193,6 +2196,12 @@
         .pakcli-popup-action-btn {
             height: 24px;
             padding: 2px 10px;
+            min-width: 140px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            box-sizing: border-box;
             font-size: 11px;
             font-weight: 500;
             border-radius: var(--radius-s);

@@ -182,7 +182,7 @@ export class QuickPropertyScoperModal extends Modal {
 
         // Active State Toggle
         const activeBtn = row.createEl('button');
-        activeBtn.style.cssText = 'font-size: 11px; padding: 2px 6px; font-family: var(--font-monospace); font-weight: 600; white-space: nowrap;';
+        activeBtn.style.cssText = 'font-size: 11px; padding: 2px 6px; font-family: var(--font-monospace); font-weight: 600; white-space: nowrap; min-width: 52px; text-align: center; justify-content: center; display: inline-flex; align-items: center; box-sizing: border-box;';
         if (dir.active) {
           activeBtn.setText('🟢 1');
           activeBtn.style.color = '#10b981';

@@ -4569,6 +4569,12 @@ export default class PakCLITablePlugin extends Plugin {
 				copyBtn.style.padding = '4px 10px';
 				copyBtn.style.cursor = 'pointer';
 				copyBtn.style.whiteSpace = 'nowrap';
+				copyBtn.style.minWidth = '100px';
+				copyBtn.style.textAlign = 'center';
+				copyBtn.style.justifyContent = 'center';
+				copyBtn.style.display = 'inline-flex';
+				copyBtn.style.alignItems = 'center';
+				copyBtn.style.boxSizing = 'border-box';
 				copyBtn.addEventListener('click', async (evt) => {
 					evt.preventDefault();
 					const textToCopy = this.settings.baseDefaultFilterFormula || 'file.folder == this.file.folder && !file.name.contains("index")';
