@@ -9,6 +9,29 @@ export class ZoomManager {
   private leafModeMap: WeakMap<WorkspaceLeaf, ZoomWidthMode> = new WeakMap();
   private statusBarEl: HTMLElement | null = null;
   private wheelListener: ((evt: WheelEvent) => void) | null = null;
+  private ctrlDownListener: ((evt: KeyboardEvent) => void) | null = null;
+  private ctrlUpListener: ((evt: KeyboardEvent) => void) | null = null;
+  private windowBlurListener: (() => void) | null = null;
+  private boundWebviews: WeakSet<HTMLElement> = new WeakSet();
+  private webviewObserver: MutationObserver | null = null;
+
+  // In-guest capture script to intercept Ctrl+Wheel when webview has focus
+  private static readonly GUEST_ZOOM_SCRIPT = `
+(function() {
+  if (window.__pakcli_zoom_injected) return;
+  window.__pakcli_zoom_injected = true;
+
+  window.addEventListener('wheel', function(e) {
+    if (e.ctrlKey) {
+      e.preventDefault();
+      e.stopPropagation();
+      e.stopImmediatePropagation();
+      var dir = e.deltaY < 0 ? 1 : -1;
+      console.log('__PAKCLI_ZOOM_WHEEL__:' + dir);
+    }
+  }, { capture: true, passive: false });
+})();
+`;
 
   constructor(plugin: PakCLITablePlugin) {
     this.plugin = plugin;
@@ -17,6 +40,8 @@ export class ZoomManager {
 
   public init(): void {
     this.registerWheelListener();
+    this.registerCtrlKeyListeners();
+    this.setupWebviewObserver();
     this.initStatusBar();
     this.registerActiveLeafListener();
   }
@@ -26,6 +51,24 @@ export class ZoomManager {
       window.removeEventListener('wheel', this.wheelListener, { capture: true });
       this.wheelListener = null;
     }
+    if (this.ctrlDownListener) {
+      window.removeEventListener('keydown', this.ctrlDownListener, { capture: true });
+      this.ctrlDownListener = null;
+    }
+    if (this.ctrlUpListener) {
+      window.removeEventListener('keyup', this.ctrlUpListener, { capture: true });
+      window.removeEventListener('pointerup', this.ctrlUpListener, { capture: true });
+      this.ctrlUpListener = null;
+    }
+    if (this.windowBlurListener) {
+      window.removeEventListener('blur', this.windowBlurListener, { capture: true });
+      this.windowBlurListener = null;
+    }
+    if (this.webviewObserver) {
+      this.webviewObserver.disconnect();
+      this.webviewObserver = null;
+    }
+    document.body.classList.remove('pakcli-ctrl-pressed');
     if (this.statusBarEl) {
       this.statusBarEl.remove();
       this.statusBarEl = null;
@@ -45,11 +88,143 @@ export class ZoomManager {
   }
 
   /**
-   * Listens for Ctrl + Wheel events strictly inside content viewports
+   * Tracks Control key state to enable pointer-events passthrough on webviews / iframes.
+   * This allows the host window to intercept Ctrl+Wheel even when cursor is over an Electron webview.
+   */
+  private registerCtrlKeyListeners(): void {
+    this.ctrlDownListener = (evt: KeyboardEvent) => {
+      if (evt.key === 'Control' || evt.ctrlKey) {
+        document.body.classList.add('pakcli-ctrl-pressed');
+      }
+    };
+
+    this.ctrlUpListener = (evt: KeyboardEvent) => {
+      if (evt.key === 'Control' || !evt.ctrlKey) {
+        document.body.classList.remove('pakcli-ctrl-pressed');
+      }
+    };
+
+    this.windowBlurListener = () => {
+      document.body.classList.remove('pakcli-ctrl-pressed');
+    };
+
+    window.addEventListener('keydown', this.ctrlDownListener, { capture: true, passive: true });
+    window.addEventListener('keyup', this.ctrlUpListener, { capture: true, passive: true });
+    window.addEventListener('blur', this.windowBlurListener, { capture: true, passive: true });
+    window.addEventListener('pointerup', this.ctrlUpListener, { capture: true, passive: true });
+  }
+
+  /**
+   * Observes workspace for webview elements (e.g. core webviewer, WhatsApp, websites)
+   * and binds lifecycle & IPC bridges.
+   */
+  private setupWebviewObserver(): void {
+    this.scanAndBindWebviews();
+
+    this.webviewObserver = new MutationObserver((mutations) => {
+      let found = false;
+      for (const m of mutations) {
+        for (let i = 0; i < m.addedNodes.length; i++) {
+          const n = m.addedNodes[i];
+          if (n.nodeType === Node.ELEMENT_NODE) {
+            const el = n as HTMLElement;
+            if (el.tagName === 'WEBVIEW' || el.querySelector?.('webview')) {
+              found = true;
+              break;
+            }
+          }
+        }
+        if (found) break;
+      }
+      if (found) {
+        this.scanAndBindWebviews();
+      }
+    });
+
+    this.webviewObserver.observe(document.body, { childList: true, subtree: true });
+  }
+
+  private scanAndBindWebviews(): void {
+    const webviews = document.querySelectorAll('webview');
+    webviews.forEach((wv) => {
+      this.attachWebview(wv as HTMLElement);
+    });
+  }
+
+  /**
+   * Finds the WorkspaceLeaf associated with an element
+   */
+  private findLeafForElement(el: HTMLElement): WorkspaceLeaf | null {
+    const leafEl = el.closest('.workspace-leaf') as HTMLElement | null;
+    if (!leafEl) return null;
+
+    let foundLeaf: WorkspaceLeaf | null = null;
+    this.app.workspace.iterateAllLeaves((l) => {
+      if ((l as any).containerEl === leafEl || (l.view as any)?.containerEl === leafEl) {
+        foundLeaf = l;
+      }
+    });
+    return foundLeaf;
+  }
+
+  /**
+   * Binds zoom listeners and guest script bridges to an Electron webview
+   */
+  private attachWebview(wv: HTMLElement, leaf?: WorkspaceLeaf): void {
+    if (this.boundWebviews.has(wv)) return;
+    this.boundWebviews.add(wv);
+
+    const onReadyOrNavigate = () => {
+      const targetLeaf = leaf || this.findLeafForElement(wv) || this.app.workspace.activeLeaf;
+      if (targetLeaf) {
+        const currentZoom = this.getLeafZoom(targetLeaf);
+        try {
+          if (typeof (wv as any).setZoomFactor === 'function') {
+            (wv as any).setZoomFactor(currentZoom);
+          }
+        } catch {}
+      }
+      this.injectGuestZoomScript(wv);
+    };
+
+    wv.addEventListener('dom-ready', onReadyOrNavigate);
+    wv.addEventListener('did-navigate', () => this.injectGuestZoomScript(wv));
+    wv.addEventListener('did-frame-finish-load', () => this.injectGuestZoomScript(wv));
+
+    // Listen for console-message forwarded from guest page when Ctrl+Wheel occurs inside webview
+    wv.addEventListener('console-message', (evt: any) => {
+      const msg = evt?.message;
+      if (typeof msg === 'string' && msg.startsWith('__PAKCLI_ZOOM_WHEEL__:')) {
+        const dir = parseInt(msg.split(':')[1], 10);
+        const delta = dir > 0 ? this.settings.zoomStep : -this.settings.zoomStep;
+        const target = leaf || this.findLeafForElement(wv) || this.app.workspace.activeLeaf;
+        if (target) {
+          this.adjustLeafZoom(target, delta);
+        }
+      }
+    });
+
+    // Execute immediately in case webview is already loaded
+    onReadyOrNavigate();
+  }
+
+  private injectGuestZoomScript(wv: HTMLElement): void {
+    try {
+      if (typeof (wv as any).executeJavaScript === 'function') {
+        (wv as any).executeJavaScript(ZoomManager.GUEST_ZOOM_SCRIPT);
+      }
+    } catch {}
+  }
+
+  /**
+   * Listens for Ctrl + Wheel events inside content viewports
    */
   private registerWheelListener(): void {
     this.wheelListener = (evt: WheelEvent) => {
-      if (!evt.ctrlKey) return;
+      if (!evt.ctrlKey) {
+        document.body.classList.remove('pakcli-ctrl-pressed');
+        return;
+      }
       if (!this.settings.enablePaneZoom) return;
 
       const target = evt.target as HTMLElement | null;
@@ -65,9 +240,11 @@ export class ZoomManager {
         return;
       }
 
-      // 2. Identify view content container
-      const viewContent = target.closest('.view-content') as HTMLElement | null;
-      if (!viewContent) return;
+      // 2. Identify view content container or leaf container
+      const contentEl = target.closest(
+        '.view-content, .workspace-leaf-content, .workspace-leaf, webview, iframe, [data-type="webviewer"]'
+      ) as HTMLElement | null;
+      if (!contentEl) return;
 
       // Prevent Electron from zooming the entire window
       evt.preventDefault();
@@ -85,6 +262,13 @@ export class ZoomManager {
       }
 
       if (!targetLeaf) return;
+
+      // Ensure active leaf matches for immediate status bar sync
+      if (targetLeaf !== this.app.workspace.activeLeaf) {
+        try {
+          (this.app.workspace as any).setActiveLeaf(targetLeaf, { focus: false });
+        } catch {}
+      }
 
       // Scroll Up = Zoom In, Scroll Down = Zoom Out
       const delta = evt.deltaY < 0 ? this.settings.zoomStep : -this.settings.zoomStep;
@@ -140,6 +324,7 @@ export class ZoomManager {
         if (active) {
           this.applyStoredZoom(active);
         }
+        this.scanAndBindWebviews();
       })
     );
 
@@ -166,6 +351,9 @@ export class ZoomManager {
     const pct = Math.round(currentScale * 100);
     const isStandard = pct === 100;
     const isFullWidth = currentMode === 'fill-width';
+    const isWebviewer =
+      (activeLeaf?.view as any)?.getViewType?.() === 'webviewer' ||
+      (activeLeaf as any)?.getViewState?.()?.type === 'webviewer';
 
     this.statusBarEl.empty();
 
@@ -179,18 +367,25 @@ export class ZoomManager {
 
     // Mode badge pill
     const modeSpan = this.statusBarEl.createSpan();
-    modeSpan.setText(isFullWidth ? '↔ Full' : '↔ Margins');
-    modeSpan.style.cssText = `font-size: 9px; padding: 1px 4px; border-radius: 3px; background: ${
-      isFullWidth ? 'var(--interactive-accent)' : 'var(--background-modifier-border)'
-    }; color: ${isFullWidth ? '#ffffff' : 'var(--text-muted)'}; margin-left: 2px;`;
-    modeSpan.title = 'Click to toggle Width Mode (Preserved Margins vs Full Width)';
+    if (isWebviewer) {
+      modeSpan.setText('🌐 Web');
+      modeSpan.style.cssText =
+        'font-size: 9px; padding: 1px 4px; border-radius: 3px; background: var(--background-modifier-border); color: var(--text-muted); margin-left: 2px;';
+      modeSpan.title = 'Website Viewer Page Zoom active';
+    } else {
+      modeSpan.setText(isFullWidth ? '↔ Full' : '↔ Margins');
+      modeSpan.style.cssText = `font-size: 9px; padding: 1px 4px; border-radius: 3px; background: ${
+        isFullWidth ? 'var(--interactive-accent)' : 'var(--background-modifier-border)'
+      }; color: ${isFullWidth ? '#ffffff' : 'var(--text-muted)'}; margin-left: 2px;`;
+      modeSpan.title = 'Click to toggle Width Mode (Preserved Margins vs Full Width)';
 
-    modeSpan.onclick = (e) => {
-      e.stopPropagation();
-      if (activeLeaf) {
-        this.toggleWidthMode(activeLeaf);
-      }
-    };
+      modeSpan.onclick = (e) => {
+        e.stopPropagation();
+        if (activeLeaf) {
+          this.toggleWidthMode(activeLeaf);
+        }
+      };
+    }
   }
 
   public getLeafZoom(leaf: WorkspaceLeaf): number {
@@ -231,34 +426,76 @@ export class ZoomManager {
   }
 
   /**
-   * Applies CSS zoom & width overrides cleanly to the leaf's content
+   * Applies CSS zoom & width overrides to normal leaves,
+   * and native setZoomFactor to webview tags (websites/webviewer).
    */
   private applyZoomToLeafDOM(leaf: WorkspaceLeaf, zoom: number, mode: ZoomWidthMode): void {
     const view = leaf.view as any;
+    const container = ((leaf as any).containerEl || view?.containerEl || view?.contentEl) as HTMLElement | null;
     const viewContent = (view?.contentEl || view?.containerEl?.querySelector('.view-content')) as HTMLElement | null;
-    if (!viewContent) return;
 
-    if (zoom !== 1.0) {
-      // 1. Native Chromium layout zoom - scales text, tables, codeblocks, properties, images
-      (viewContent.style as any).zoom = String(zoom);
-      viewContent.style.setProperty('--pakcli-zoom-scale', String(zoom));
+    // 1. Electron Webview handling (e.g. core webviewer, WhatsApp Web, web pages)
+    const webviews = container?.querySelectorAll?.('webview');
+    const hasWebviews = !!(webviews && webviews.length > 0);
 
-      // Clean up legacy fontSize to prevent double-scaling
-      viewContent.style.fontSize = '';
+    if (hasWebviews) {
+      webviews.forEach((wv: any) => {
+        this.attachWebview(wv, leaf);
+        try {
+          if (typeof wv.setZoomFactor === 'function') {
+            wv.setZoomFactor(zoom);
+          }
+        } catch {
+          wv.addEventListener?.('dom-ready', () => {
+            try { wv.setZoomFactor(zoom); } catch {}
+          }, { once: true });
+        }
+      });
+
+      // Clear container CSS zoom so the webview element's outer bounding box does not scale or clip
+      if (viewContent) {
+        (viewContent.style as any).zoom = '';
+        viewContent.style.removeProperty('--pakcli-zoom-scale');
+        viewContent.style.fontSize = '';
+      }
     } else {
-      (viewContent.style as any).zoom = '';
-      viewContent.style.removeProperty('--pakcli-zoom-scale');
-      viewContent.style.fontSize = '';
+      // 2. Native Chromium layout zoom for standard views (Markdown, Canvas, Kanban, Tables)
+      if (viewContent) {
+        if (zoom !== 1.0) {
+          (viewContent.style as any).zoom = String(zoom);
+          viewContent.style.setProperty('--pakcli-zoom-scale', String(zoom));
+          viewContent.style.fontSize = '';
+        } else {
+          (viewContent.style as any).zoom = '';
+          viewContent.style.removeProperty('--pakcli-zoom-scale');
+          viewContent.style.fontSize = '';
+        }
+      }
     }
 
-    // 2. Width Mode toggle class
-    if (mode === 'fill-width') {
-      viewContent.classList.add('pakcli-zoom-full-width');
-    } else {
-      viewContent.classList.remove('pakcli-zoom-full-width');
+    // 3. Embedded <iframe> zoom handling
+    const iframes = container?.querySelectorAll?.('iframe');
+    if (iframes && iframes.length > 0) {
+      iframes.forEach((iframe: HTMLIFrameElement) => {
+        try {
+          if (iframe.contentDocument?.body) {
+            (iframe.contentDocument.body.style as any).zoom = zoom === 1.0 ? '' : String(zoom);
+          }
+        } catch {}
+        (iframe.style as any).zoom = zoom === 1.0 ? '' : String(zoom);
+      });
     }
 
-    // 3. Refresh CodeMirror 6 editor layout if active
+    // 4. Width Mode toggle class
+    if (viewContent) {
+      if (mode === 'fill-width') {
+        viewContent.classList.add('pakcli-zoom-full-width');
+      } else {
+        viewContent.classList.remove('pakcli-zoom-full-width');
+      }
+    }
+
+    // 5. Refresh CodeMirror 6 editor layout if active
     if (typeof view?.editor?.refresh === 'function') {
       view.editor.refresh();
     }
@@ -280,16 +517,20 @@ export class ZoomManager {
 
     const currentScale = this.getLeafZoom(activeLeaf);
     const currentMode = this.getLeafMode(activeLeaf);
+    const isWebviewer =
+      (activeLeaf?.view as any)?.getViewType?.() === 'webviewer' ||
+      (activeLeaf as any)?.getViewState?.()?.type === 'webviewer';
 
-    menu.addItem((item) => {
-      item.setTitle(currentMode === 'fill-width' ? 'Switch to: Preserved Margins' : 'Switch to: Full Width')
-        .setIcon('expand')
-        .onClick(() => {
-          this.toggleWidthMode(activeLeaf);
-        });
-    });
-
-    menu.addSeparator();
+    if (!isWebviewer) {
+      menu.addItem((item) => {
+        item.setTitle(currentMode === 'fill-width' ? 'Switch to: Preserved Margins' : 'Switch to: Full Width')
+          .setIcon('expand')
+          .onClick(() => {
+            this.toggleWidthMode(activeLeaf);
+          });
+      });
+      menu.addSeparator();
+    }
 
     const presets = [0.5, 0.75, 0.9, 1.0, 1.1, 1.25, 1.5, 2.0];
     for (const p of presets) {
@@ -304,7 +545,7 @@ export class ZoomManager {
 
     menu.addSeparator();
     menu.addItem((item) => {
-      item.setTitle('Reset All Zooms to 100%')
+      item.setTitle('Reset Zoom to 100%')
         .setIcon('rotate-ccw')
         .onClick(() => {
           this.resetLeafZoom(activeLeaf);

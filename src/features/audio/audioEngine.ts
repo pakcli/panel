@@ -74,16 +74,14 @@ export class AudioEngine {
                 const effMusicGain = this.isMusicMuted ? 0 : this.musicVolume;
                 this.musicGain.gain.setValueAtTime(effMusicGain, this.ctx.currentTime);
 
-                // 4. SFX Gain Node
+                // 4. SFX Gain Node (Directly wired to destination for zero-latency, non-clipped output)
                 this.sfxGain = this.ctx.createGain();
-                const effSfxGain = this.isSfxMuted ? 0 : this.sfxVolume;
+                const effSfxGain = this.isSfxMuted ? 0 : Math.max(0.4, this.sfxVolume || 0.65);
                 this.sfxGain.gain.setValueAtTime(effSfxGain, this.ctx.currentTime);
+                this.sfxGain.connect(this.ctx.destination);
 
-                // Wire up SFX and Music to Master
-                this.sfxGain.connect(this.masterGain);
+                // Wire up Music to Master then to Compressor then Destination
                 this.musicGain.connect(this.masterGain);
-
-                // Wire Master to Compressor then to Destination
                 this.masterGain.connect(this.compressor);
                 this.compressor.connect(this.ctx.destination);
 
@@ -326,7 +324,11 @@ export class AudioEngine {
      * Sharp, tactile microswitch click (downward pitch sweep + leaf spring ping)
      */
     public playClickSnap(): void {
-        if (this.isMuted || this.isSfxMuted || this.sfxVolume <= 0 || !this.initContext() || !this.ctx || !this.sfxGain) return;
+        if (this.isSfxMuted) return;
+        if (!this.initContext() || !this.ctx || !this.sfxGain) return;
+        if (this.ctx.state === 'suspended') {
+            void this.ctx.resume();
+        }
         const now = performance.now();
         if (now - this.lastSnapTime < 25) return;
         this.lastSnapTime = now;
@@ -357,7 +359,11 @@ export class AudioEngine {
      * Ascending chime on switch turn on, descending chime on switch turn off
      */
     public playToggleChime(isAscending: boolean): void {
-        if (this.isMuted || this.isSfxMuted || this.sfxVolume <= 0 || !this.initContext() || !this.ctx || !this.sfxGain) return;
+        if (this.isSfxMuted) return;
+        if (!this.initContext() || !this.ctx || !this.sfxGain) return;
+        if (this.ctx.state === 'suspended') {
+            void this.ctx.resume();
+        }
         const now = performance.now();
         if (now - this.lastChimeTime < 40) return;
         this.lastChimeTime = now;

@@ -984,3 +984,351 @@ table{
 	color: var(--text-normal);
 }
 
+
+
+/* =========================================================================
+   BASE SPEC TREE OUTLINER VIEW & VAULT HISTORY STYLES
+   ========================================================================= */
+
+.bases-spec-tree-container {
+	display: flex;
+	flex-direction: column;
+	width: 100%;
+	height: 100%;
+	background: var(--background-primary);
+	overflow: hidden;
+}
+
+.bases-spec-tree-control-bar {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding: 6px 14px;
+	border-bottom: 1px solid var(--background-modifier-border);
+	background: var(--background-secondary-alt);
+	flex-wrap: wrap;
+}
+
+.spec-tree-badge {
+	font-size: 11px;
+	padding: 2px 8px;
+	border-radius: 4px;
+	background: var(--background-modifier-form-field);
+	color: var(--text-muted);
+	font-weight: 500;
+}
+
+.spec-tree-btn-group {
+	display: flex;
+	gap: 4px;
+	align-items: center;
+}
+
+.spec-tree-btn {
+	font-size: 11px;
+	padding: 3px 8px;
+	border-radius: 4px;
+	border: 1px solid var(--background-modifier-border);
+	background: var(--interactive-normal);
+	color: var(--text-normal);
+	cursor: pointer;
+	transition: background 0.15s ease, opacity 0.15s ease;
+}
+
+.spec-tree-btn:hover:not(:disabled) {
+	background: var(--interactive-hover);
+}
+
+.spec-tree-btn:disabled {
+	opacity: 0.4;
+	cursor: not-allowed;
+}
+
+.spec-tree-lock-btn.is-active {
+	background: var(--interactive-accent);
+	color: var(--text-on-accent);
+	border-color: var(--interactive-accent);
+}
+
+.bases-spec-tree-body {
+	flex: 1;
+	overflow-y: auto;
+	padding: 16px 20px;
+	font-family: var(--font-text);
+	line-height: 1.5;
+}
+
+.spec-tree-empty {
+	color: var(--text-muted);
+	font-style: italic;
+	font-size: 13px;
+	padding: 20px 0;
+}
+
+.spec-tree-group {
+	margin-bottom: 16px;
+}
+
+.spec-tree-group-header {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	font-weight: 600;
+	font-size: 13px;
+	cursor: pointer;
+	color: var(--text-normal);
+	user-select: none;
+	padding: 3px 0;
+}
+
+.spec-tree-group-header:hover {
+	color: var(--text-accent);
+}
+
+.spec-tree-fold-icon {
+	width: 14px;
+	display: inline-block;
+	text-align: center;
+	color: var(--text-muted);
+	font-size: 10px;
+}
+
+.spec-tree-files-container {
+	margin-left: 14px;
+	margin-top: 6px;
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+}
+
+.spec-tree-file-item {
+	margin-bottom: 6px;
+}
+
+.spec-tree-file-header {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	cursor: pointer;
+	font-size: 12.5px;
+	user-select: none;
+	padding: 2px 0;
+}
+
+.spec-tree-bullet {
+	color: var(--text-muted);
+}
+
+.spec-tree-file-link {
+	font-weight: 500;
+	color: var(--link-color);
+	text-decoration: underline;
+	cursor: pointer;
+}
+
+.spec-tree-file-meta {
+	font-size: 11px;
+	color: var(--text-muted);
+}
+
+.spec-tree-specs-container {
+	margin-left: 24px;
+	margin-top: 6px;
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+	border-left: 2px solid var(--background-modifier-border);
+	padding-left: 10px;
+}
+
+.spec-tree-row {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	font-size: 12px;
+}
+
+.spec-tree-add-btn {
+	font-size: 11px;
+	padding: 2px 8px;
+	border: 1px dashed var(--background-modifier-border);
+	background: transparent;
+	cursor: pointer;
+	color: var(--text-muted);
+	border-radius: 4px;
+	transition: all 0.15s ease;
+}
+
+.spec-tree-add-btn:hover {
+	border-color: var(--interactive-accent);
+	color: var(--text-normal);
+}
+
+.spec-tree-prop-row:hover .spec-tree-prop-actions {
+	opacity: 1;
+}
+
+.spec-tree-prop-key {
+	font-weight: 500;
+	min-width: 90px;
+	color: var(--text-muted);
+	user-select: none;
+}
+
+.spec-tree-input-wrapper {
+	flex: 1;
+	max-width: 340px;
+}
+
+.spec-tree-input {
+	width: 100%;
+	padding: 3px 8px;
+	font-size: 12px;
+	border-radius: 4px;
+	border: 1px solid var(--background-modifier-border);
+	background: var(--background-primary);
+	color: var(--text-normal);
+	box-sizing: border-box;
+}
+
+.spec-tree-input:focus {
+	border-color: var(--interactive-accent);
+	outline: none;
+}
+
+.spec-tree-prop-actions {
+	display: flex;
+	gap: 4px;
+	opacity: 0.3;
+	transition: opacity 0.15s ease;
+}
+
+.spec-tree-action-btn {
+	font-size: 11px;
+	padding: 2px 5px;
+	border: 1px solid transparent;
+	background: transparent;
+	cursor: pointer;
+	border-radius: 3px;
+	line-height: 1;
+}
+
+.spec-tree-action-btn:hover {
+	background: var(--background-modifier-hover);
+}
+
+.spec-tree-delete-btn:hover {
+	color: var(--text-error);
+}
+
+/* Sidebar Vault History View Styles */
+.vault-history-view-container {
+	padding: 12px;
+	display: flex;
+	flex-direction: column;
+	gap: 12px;
+	height: 100%;
+	overflow: hidden;
+}
+
+.vault-history-header {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	border-bottom: 1px solid var(--background-modifier-border);
+	padding-bottom: 8px;
+}
+
+.vault-history-title-row h4 {
+	margin: 0;
+	font-size: 14px;
+}
+
+.vault-history-controls-row {
+	display: flex;
+	gap: 6px;
+	align-items: center;
+	flex-wrap: wrap;
+}
+
+.vault-history-controls-row button {
+	font-size: 11px;
+	padding: 3px 8px;
+}
+
+.vault-history-filter-row input {
+	width: 100%;
+	font-size: 11px;
+	padding: 4px 8px;
+}
+
+.vault-history-list {
+	flex: 1;
+	overflow-y: auto;
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+}
+
+.vault-history-count-header {
+	font-size: 11px;
+	font-weight: 600;
+	color: var(--text-muted);
+	margin-top: 4px;
+}
+
+.vault-history-item {
+	padding: 8px 10px;
+	border-radius: 6px;
+	border: 1px solid var(--background-modifier-border);
+	background: var(--background-secondary);
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+	font-size: 11.5px;
+}
+
+.vault-history-item-top {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+}
+
+.vault-history-dot {
+	color: var(--interactive-accent);
+	font-size: 8px;
+}
+
+.vault-history-time {
+	font-weight: 600;
+	color: var(--text-normal);
+}
+
+.vault-history-file {
+	color: var(--text-muted);
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.vault-history-item-detail {
+	color: var(--text-normal);
+	font-family: var(--font-monospace);
+	font-size: 11px;
+	background: var(--background-primary);
+	padding: 3px 6px;
+	border-radius: 4px;
+}
+
+.vault-history-item-scope {
+	color: var(--text-muted);
+	font-size: 10px;
+}
+
+.spec-tree-revert-btn {
+	font-size: 10.5px;
+	padding: 2px 6px;
+	align-self: flex-start;
+	cursor: pointer;
+	margin-top: 2px;
+}

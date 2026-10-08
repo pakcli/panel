@@ -88,12 +88,18 @@ import { ZoomManager } from './features/zoom/ZoomManager';
 import { ScrollbackManager } from './features/scrollback/ScrollbackManager';
 import { AssetRouterQuickManageModal } from './features/tree/ui/AssetRouterQuickManageModal';
 
+// Spec Tree Base Adapter & Master History Imports
+import { MasterHistoryEngine } from './features/history/MasterHistoryEngine';
+import { TreeViewRegistrationBuilder } from './features/tree/bases/SpecTreeViewRegistration';
+import { VaultHistoryView, VAULT_HISTORY_VIEW_TYPE } from './features/history/VaultHistoryView';
+
 export default class PakCLITablePlugin extends Plugin {
 	declare settings: PakCLITableSettings;
 	ribbonManager!: RibbonManager;
 	router!: AssetRouter;
 	codeblockScaler!: CodeblockScaler;
 	leafletPlugin!: BasesLeafletViewPlugin;
+	historyEngine!: MasterHistoryEngine;
 	sqlsealTabInstance: SQLSealSettingsTab | null = null;
 	leafletTabInstance: unknown = null;
 	settingsTabInstance: MasterDetailSettingsTab | null = null;
@@ -108,6 +114,8 @@ export default class PakCLITablePlugin extends Plugin {
 	bubbleRibbonEl: HTMLElement | null = null;
 	audioRibbonEl: HTMLElement | null = null;
 	todoRibbonEl: HTMLElement | null = null;
+	undoRibbonEl: HTMLElement | null = null;
+	redoRibbonEl: HTMLElement | null = null;
 	audioEngine!: AudioEngine;
 	playlistManager!: PlaylistManager;
 	audioPlayerPopup: AudioPlayerPopup | null = null;
@@ -407,27 +415,177 @@ export default class PakCLITablePlugin extends Plugin {
 		// Status Bar item
 		this.audioStatusBar = new AudioStatusBar(this, this.audioEngine, this.playlistManager);
 
-		// Global Tactile Micro-SFX Listeners
-		this.registerDomEvent(document, 'click', (e: MouseEvent) => {
-			if (this.settings.sfxSnapEnabled === false) return;
-			if (this.settings.sfxSuppressWhileTyping !== false && this.audioEngine.isUserTyping()) return;
+		// Global Universal Tactile Micro-SFX Listeners (Capture Phase to bypass stopPropagation)
+		let lastSfxTimestamp = 0;
+
+		const handleUniversalClick = (e: MouseEvent) => {
+			if (this.settings.sfxSnapEnabled === false && this.settings.sfxChimeEnabled === false) return;
 			const target = (e.target instanceof Element ? e.target : (e.target as Node)?.parentElement) as HTMLElement | null;
 			if (!target || typeof target.closest !== 'function') return;
-			if (target.closest('.suggestion-container, .suggestion, .menu, .modal-container, .prompt')) return;
-			const btn = target.closest('button, .clickable-icon, .pakcli-btn, input[type="button"], input[type="submit"]');
-			if (btn) {
-				this.audioEngine.playClickSnap();
-			}
-		});
 
-		this.registerDomEvent(document, 'change', (e: Event) => {
-			if (this.settings.sfxChimeEnabled === false) return;
-			if (this.settings.sfxSuppressWhileTyping !== false && this.audioEngine.isUserTyping()) return;
-			const target = e.target as HTMLInputElement | null;
-			if (target && target.type === 'checkbox') {
-				this.audioEngine.playToggleChime(target.checked);
+			// Cooldown to prevent duplicate triggers
+			const now = performance.now();
+			if (now - lastSfxTimestamp < 35) return;
+
+			// ── EXCLUSION GUARDS ──────────────────────────────────────────────────────────
+			// A. Explorer tree navigation, folder expanding/collapsing, file clicks, outline, tags
+			const isExplorerTree = target.closest(
+				'.nav-files-container, ' +
+				'.nav-folder, ' +
+				'.nav-file, ' +
+				'.tree-item-self, ' +
+				'.tree-item-inner, ' +
+				'.tree-item-children, ' +
+				'.tree-item-icon, ' +
+				'.nav-folder-title, ' +
+				'.nav-folder-collapse-indicator, ' +
+				'.nav-file-title, ' +
+				'.collapse-icon, ' +
+				'.spec-tree-fold-icon, ' +
+				'.heading-collapse-indicator, ' +
+				'.callout-fold'
+			);
+			if (isExplorerTree) {
+				// Only allow header action buttons in the file explorer toolbar (e.g., "New note", "New folder", "Sort", "Collapse all")
+				const isHeaderActionButton = target.closest('.nav-buttons-container button, .nav-buttons-container .nav-action-button, .nav-buttons-container .clickable-icon');
+				if (!isHeaderActionButton) {
+					return; // Silence folder collapse/expand and file tree navigation!
+				}
 			}
-		});
+
+			// B. Editor & Note Content typing, selecting, internal links
+			if (target.closest('.cm-editor, .cm-content, .cm-line, .cm-scroller, .markdown-source-view, .markdown-preview-view, .markdown-rendered, .inline-title')) {
+				// Only allow if it's explicitly a button, toggle switch, dropdown, or radio button rendered inside the note
+				const isExplicitInteractive = target.closest('button, [role="button"], input[type="button"], input[type="submit"], .checkbox-container, input[type="checkbox"], select, input[type="radio"], [role="switch"]');
+				if (!isExplicitInteractive) {
+					return; // Silence normal note reading/editing/link clicking!
+				}
+			}
+
+			// C. Text inputs, search fields, textareas, contenteditable
+			if (target.closest('input[type="text"], input[type="search"], input[type="password"], input[type="email"], input[type="number"], textarea, [contenteditable="true"]')) {
+				return;
+			}
+
+			// D. Window/Workspace layout resizing and splitters
+			if (target.closest('.workspace-leaf-resize-handle, .workspace-split, .workspace-ribbon-collapse-btn, .workspace-drawer-backdrop')) {
+				return;
+			}
+			// ──────────────────────────────────────────────────────────────────────────────
+
+			// 1. Toggles & Switches (.checkbox-container, switch role, checkbox)
+			const toggleEl = target.closest('.checkbox-container, input[type="checkbox"], [role="switch"], [role="checkbox"]');
+			if (toggleEl) {
+				if (this.settings.sfxChimeEnabled !== false) {
+					lastSfxTimestamp = now;
+					const isChecked = toggleEl.classList.contains('is-enabled') || (toggleEl as HTMLInputElement).checked;
+					this.audioEngine.playToggleChime(!isChecked);
+				}
+				return;
+			}
+
+			// 2. Radio Buttons
+			const radioEl = target.closest('input[type="radio"], [role="radio"], .radio-container');
+			if (radioEl) {
+				if (this.settings.sfxSnapEnabled !== false) {
+					lastSfxTimestamp = now;
+					this.audioEngine.playClickSnap();
+				}
+				return;
+			}
+
+			// 3. Dropdowns, Selects & Menu Items
+			const selectEl = target.closest('select, option, .dropdown, .setting-item-dropdown, .menu-item, .suggestion-item');
+			if (selectEl) {
+				if (this.settings.sfxSnapEnabled !== false) {
+					lastSfxTimestamp = now;
+					this.audioEngine.playClickSnap();
+				}
+				return;
+			}
+
+			// 4. All Buttons, Ribbons & Interactive Elements across any UI framework
+			const btnEl = target.closest(
+				'button, ' +
+				'.side-dock-ribbon-action, ' +
+				'.workspace-ribbon-action, ' +
+				'.nav-action-button, ' +
+				'.view-action, ' +
+				'.tab-header, ' +
+				'.tab-header-tab, ' +
+				'.clickable-icon:not(.collapse-icon):not(.tree-item-icon), ' +
+				'[role="button"], ' +
+				'[role="tab"], ' +
+				'.mod-cta, ' +
+				'.mod-warning, ' +
+				'input[type="button"], ' +
+				'input[type="submit"], ' +
+				'input[type="reset"], ' +
+				'.pakcli-btn, ' +
+				'.spec-tree-btn, ' +
+				'.spec-tree-action-btn, ' +
+				'.spec-tree-add-btn, ' +
+				'.spec-tree-revert-btn, ' +
+				'[class*="pakcli-btn"], ' +
+				'[class*="modal-button"], ' +
+				'.setting-item-control button'
+			);
+
+			if (btnEl) {
+				if (this.settings.sfxSnapEnabled !== false) {
+					lastSfxTimestamp = now;
+					this.audioEngine.playClickSnap();
+				}
+				return;
+			}
+
+			// 5. Fallback for custom plugin buttons (has button/btn class or role, strictly non-tree)
+			const customBtn = target.closest('[class*="btn"], [class*="button"]');
+			if (customBtn && !customBtn.closest('.nav-folder-title, .nav-file-title, .tree-item, .collapse-icon')) {
+				if (this.settings.sfxSnapEnabled !== false) {
+					lastSfxTimestamp = now;
+					this.audioEngine.playClickSnap();
+				}
+				return;
+			}
+		};
+
+		// Register click listener in CAPTURE phase on window
+		this.registerDomEvent(window, 'click', handleUniversalClick, true);
+
+		// Register change listener in CAPTURE phase for native selects, checkboxes, radios (e.g. keyboard navigation)
+		this.registerDomEvent(window, 'change', (e: Event) => {
+			const now = performance.now();
+			if (now - lastSfxTimestamp < 120) return; // Prevent duplicate sound if click already fired!
+
+			const target = e.target as HTMLElement | null;
+			if (!target) return;
+
+			if (target instanceof HTMLInputElement) {
+				if (target.type === 'checkbox') {
+					if (this.settings.sfxChimeEnabled !== false) {
+						lastSfxTimestamp = now;
+						this.audioEngine.playToggleChime(target.checked);
+					}
+					return;
+				}
+				if (target.type === 'radio') {
+					if (this.settings.sfxSnapEnabled !== false) {
+						lastSfxTimestamp = now;
+						this.audioEngine.playClickSnap();
+					}
+					return;
+				}
+			}
+
+			if (target instanceof HTMLSelectElement || target.closest('.dropdown, select')) {
+				if (this.settings.sfxSnapEnabled !== false) {
+					lastSfxTimestamp = now;
+					this.audioEngine.playClickSnap();
+				}
+				return;
+			}
+		}, true);
 
 		this.registerEvent(
 			this.app.vault.on('create', () => {
@@ -506,6 +664,73 @@ export default class PakCLITablePlugin extends Plugin {
 
 		// 8. Initialize ASCII Draw & Motion Studio
 		registerAsciiDrawFeature(this);
+
+		// 8.1 Initialize Master History Engine & Base Tree View
+		try {
+			this.historyEngine = new MasterHistoryEngine(this.app);
+			const pluginAny = this as unknown as { registerBasesView?: (...args: unknown[]) => boolean };
+			if (typeof pluginAny.registerBasesView === 'function') {
+				pluginAny.registerBasesView(...TreeViewRegistrationBuilder(this.app, this.historyEngine));
+			}
+		} catch (err) {
+			console.warn('[PakCLI Table] Could not register Base Tree View:', err);
+		}
+
+		// Register Sidebar Vault History View
+		this.registerView(
+			VAULT_HISTORY_VIEW_TYPE,
+			(leaf) => new VaultHistoryView(leaf, this.historyEngine)
+		);
+
+		this.addCommand({
+			id: 'open-vault-history-audit',
+			name: 'Open Vault History & Audit Log (Global Time Machine)',
+			callback: async () => {
+				const leaves = this.app.workspace.getLeavesOfType(VAULT_HISTORY_VIEW_TYPE);
+				let targetLeaf = leaves.length > 0 ? leaves[0] : null;
+				if (!targetLeaf) {
+					targetLeaf = this.app.workspace.getRightLeaf(false);
+					if (targetLeaf) {
+						await targetLeaf.setViewState({ type: VAULT_HISTORY_VIEW_TYPE, active: true });
+					}
+				}
+				if (targetLeaf) {
+					this.app.workspace.revealLeaf(targetLeaf);
+				}
+			}
+		});
+
+		// Ribbon Icons: Global Vault Undo & Redo
+		this.undoRibbonEl = this.addRibbonIcon('undo-2', 'Global Undo (Entire Vault) - Right click for Audit Log', async () => {
+			const success = await this.historyEngine.undoGlobal();
+			if (!success && !this.historyEngine.canUndoGlobal()) {
+				new Notice('Tidak ada perubahan di vault untuk di-undo.');
+			}
+		});
+
+		this.undoRibbonEl.addEventListener('contextmenu', (e: MouseEvent) => {
+			e.preventDefault();
+			const menu = new Menu();
+			menu.addItem((item) => {
+				item.setTitle('Open Vault History & Audit Log')
+					.setIcon('history')
+					.onClick(async () => {
+						const leaf = this.app.workspace.getRightLeaf(false);
+						if (leaf) {
+							await leaf.setViewState({ type: VAULT_HISTORY_VIEW_TYPE, active: true });
+							this.app.workspace.revealLeaf(leaf);
+						}
+					});
+			});
+			menu.showAtMouseEvent(e);
+		});
+
+		this.redoRibbonEl = this.addRibbonIcon('redo-2', 'Global Redo (Entire Vault)', async () => {
+			const success = await this.historyEngine.redoGlobal();
+			if (!success && !this.historyEngine.canRedoGlobal()) {
+				new Notice('Tidak ada perubahan di vault untuk di-redo.');
+			}
+		});
 
 		// 9. Initialize Graph Topology & Bubble View (Spec v18)
 		this.registerView(BUBBLE_GRAPH_VIEW_TYPE, (leaf) => new BubbleGraphView(leaf, this));
@@ -1661,6 +1886,14 @@ export default class PakCLITablePlugin extends Plugin {
 			this.audioRibbonEl.remove();
 			this.audioRibbonEl = null;
 		}
+		if (this.undoRibbonEl) {
+			this.undoRibbonEl.remove();
+			this.undoRibbonEl = null;
+		}
+		if (this.redoRibbonEl) {
+			this.redoRibbonEl.remove();
+			this.redoRibbonEl = null;
+		}
 		if (this.audioPlayerPopup) {
 			this.audioPlayerPopup.hide();
 			this.audioPlayerPopup = null;
@@ -1706,6 +1939,9 @@ export default class PakCLITablePlugin extends Plugin {
 		}
 		if (this.scrollbackManager) {
 			this.scrollbackManager.destroy();
+		}
+		if (this.historyEngine) {
+			this.historyEngine.unload();
 		}
 		eventBus.emit('table:unloaded', { version: this.manifest.version });
 	}

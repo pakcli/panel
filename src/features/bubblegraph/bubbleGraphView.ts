@@ -248,9 +248,9 @@ export class BubbleGraphView extends ItemView {
         this.inspectorSide = this.plugin.settings.bubbleInspectorSide || 'right';
         this.isHeaderSettingsOpen = this.plugin.settings.bubbleHeaderSettingsOpen !== false;
         this.isFloatingToolsOpen = this.plugin.settings.bubbleFloatingToolsOpen !== false;
-        const savedAutoFit = this.plugin.settings.bubbleAutoFitMode;
-        this.autoFitMode = (savedAutoFit === 'center') ? 'center' : 'fit';
-        this.plugin.settings.bubbleAutoFitMode = this.autoFitMode;
+        // Ensure "Fit & Center" is strictly toggled on by default when opened
+        this.autoFitMode = 'fit';
+        this.plugin.settings.bubbleAutoFitMode = 'fit';
         this.plugin.settings.bubbleAlwaysFit = true;
         this.nodeImageBorder = this.plugin.settings.bubbleNodeImageBorder || 'thick';
         this.relationshipAllScopeState = Boolean(this.plugin.settings.bubbleRelationshipAllScopeState);
@@ -302,6 +302,9 @@ export class BubbleGraphView extends ItemView {
 
         // 4. Initialize Graph & Simulation
         this.reloadGraphData();
+        if (this.autoFitMode === 'fit') {
+            this.fitToView(true);
+        }
 
         // 5. Setup Event Listeners
         this.setupCanvasEvents();
@@ -1164,7 +1167,7 @@ export class BubbleGraphView extends ItemView {
             iconEl,
             titleEl,
             countEl,
-            spawnElapsedMs: isInstant ? totalLifetimeMs : 0,
+            spawnElapsedMs: 0,
             totalLifetimeMs
         };
     }
@@ -1195,13 +1198,6 @@ export class BubbleGraphView extends ItemView {
         }
         if (callout.overlayEl.style.display === 'none') {
             callout.overlayEl.style.display = '';
-        }
-
-        if (!this.isTimelapseRunning) {
-            const scale = 0.90 + 0.10 * ease;
-            callout.overlayEl.style.transform = `translate3d(${targetX.toFixed(1)}px, ${targetY.toFixed(1)}px, 0) translate(-50%, -100%) scale(${scale.toFixed(3)})`;
-            callout.overlayEl.style.opacity = '1.0';
-            return;
         }
 
         const scale = 0.85 + 0.15 * ease;
@@ -1246,7 +1242,7 @@ export class BubbleGraphView extends ItemView {
         const callout = this.createCalloutElement(node, currentCount, durationMs, isInstant);
         this.activeCallouts.set(node.id, callout);
 
-        this.positionCallout(callout, isInstant ? 1.0 : 0);
+        this.positionCallout(callout, 0);
     }
 
     private updateSpawningTextOverlay(dt: number): void {
@@ -1266,15 +1262,14 @@ export class BubbleGraphView extends ItemView {
         const expiredIds: string[] = [];
 
         for (const [nodeId, callout] of this.activeCallouts.entries()) {
-            if (this.isTimelapseRunning) {
-                callout.spawnElapsedMs += dt;
-            }
+            // Always advance callout elapsed lifetime so dying countdown continues even when paused or at timeline end
+            callout.spawnElapsedMs += dt;
 
             const totalLifetime = Math.max(50, callout.totalLifetimeMs);
             const elapsed = callout.spawnElapsedMs;
             const t = Math.max(0, Math.min(1.0, elapsed / totalLifetime));
 
-            if (this.isTimelapseRunning && elapsed >= totalLifetime) {
+            if (elapsed >= totalLifetime) {
                 expiredIds.push(nodeId);
                 continue;
             }
@@ -3298,12 +3293,19 @@ export class BubbleGraphView extends ItemView {
     }
 
     private setupResizeObserver(wrapEl: HTMLElement): void {
+        let isFirstResize = true;
         const resizeObserver = new ResizeObserver((entries) => {
             for (const entry of entries) {
                 const { width, height } = entry.contentRect;
                 if (width > 0 && height > 0) {
                     this.canvasEl.width = width;
                     this.canvasEl.height = height;
+                    if (isFirstResize) {
+                        isFirstResize = false;
+                        if (this.autoFitMode === 'fit') {
+                            this.fitToView(true);
+                        }
+                    }
                 }
             }
         });

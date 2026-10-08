@@ -139,7 +139,7 @@ export class CodeblockScaler {
 
 	init(): void {
 		// Clean up any stale/orphaned bars from previous reloads or hot module replacements
-		document.querySelectorAll('.pakcli-codeblock-flowclip-bar, .pakcli-cb-sticky-bar').forEach((el) => el.remove());
+		document.querySelectorAll('.pakcli-codeblock-flowclip-bar, .pakcli-cb-sticky-bar, .pakcli-codeblock-slider-bar').forEach((el) => el.remove());
 		// 0. Patch navigator.clipboard.writeText as safety net
 		this.patchClipboardWriteText();
 		// 1. Register CodeMirror 6 Live Preview Extension for real-time line tagging
@@ -156,13 +156,22 @@ export class CodeblockScaler {
 
 		// 3. Register Workspace & Editor events
 		this.plugin.registerEvent(
-			this.plugin.app.workspace.on('layout-change', () => this.scheduleRescale())
+			this.plugin.app.workspace.on('layout-change', () => {
+				this.hideOrCleanAllBars();
+				this.scheduleRescale();
+			})
 		);
 		this.plugin.registerEvent(
-			this.plugin.app.workspace.on('active-leaf-change', () => this.scheduleRescale())
+			this.plugin.app.workspace.on('active-leaf-change', () => {
+				this.hideOrCleanAllBars();
+				this.scheduleRescale();
+			})
 		);
 		this.plugin.registerEvent(
-			this.plugin.app.workspace.on('file-open', () => this.scheduleRescale())
+			this.plugin.app.workspace.on('file-open', () => {
+				this.hideOrCleanAllBars();
+				this.scheduleRescale();
+			})
 		);
 		this.plugin.registerEvent(
 			this.plugin.app.workspace.on('css-change', () => this.scheduleRescale())
@@ -344,51 +353,82 @@ export class CodeblockScaler {
 			return false;
 		}
 
-		// 3. Find the owning MarkdownView across all leaves
-		let ownerView: MarkdownView | null = null;
+		// 3. Find the owning leaf across all workspace leaves
+		let ownerLeaf: any = null;
 		this.plugin.app.workspace.iterateAllLeaves((leaf) => {
-			if (!ownerView && leaf.view instanceof MarkdownView) {
-				if (leaf.view.containerEl.contains(el)) {
-					ownerView = leaf.view;
-				}
+			if (!ownerLeaf && leaf.view?.containerEl?.contains(el)) {
+				ownerLeaf = leaf;
 			}
 		});
 
-		if (ownerView) {
-			// If the leaf container itself is hidden (e.g. background tab), reject
-			if ((ownerView as MarkdownView).containerEl.offsetParent === null) return false;
-			const csContainer = window.getComputedStyle((ownerView as MarkdownView).containerEl);
-			if (csContainer.display === 'none' || csContainer.visibility === 'hidden') return false;
-
-			// If view is explicitly in source mode (raw markdown):
-			if ((ownerView as any).currentMode?.sourceMode === true) {
-				return false; // EDITMODE SOURCEMODE = NO NEED SLIDER
+		if (ownerLeaf) {
+			// If this leaf has a tab header, it MUST be the active tab in its tab group
+			if (ownerLeaf.tabHeaderEl && !ownerLeaf.tabHeaderEl.classList.contains('is-active')) {
+				return false;
 			}
 
-			const mode = (ownerView as MarkdownView).getMode(); // 'source' or 'preview'
-			const isInsideSource = !!el.closest('.markdown-source-view');
-			const isInsideRendered = !!el.closest('.markdown-rendered');
-			const isInsideEmbed = !!el.closest('.cm-embed-block');
+			// If the leaf container itself is hidden (e.g. background tab), reject
+			const leafContainer = ownerLeaf.containerEl || ownerLeaf.view?.containerEl;
+			if (!leafContainer || leafContainer.offsetParent === null) return false;
+			const csContainer = window.getComputedStyle(leafContainer);
+			if (csContainer.display === 'none' || csContainer.visibility === 'hidden') return false;
 
-			if (mode === 'preview') {
-				// Reading View: ONLY elements inside .markdown-rendered are valid
-				if (isInsideSource) return false;
-				if (!isInsideRendered) return false;
-			} else if (mode === 'source') {
-				// Live Preview / Editing View: ONLY elements inside .markdown-source-view are valid
-				// Background .markdown-rendered is strictly rejected
-				if (isInsideRendered && !isInsideEmbed && !isInsideSource) return false;
-				if (!isInsideSource && !isInsideEmbed) return false;
+			const ownerView = ownerLeaf.view;
+			if (ownerView instanceof MarkdownView) {
+				// If view is explicitly in source mode (raw markdown):
+				if ((ownerView as any).currentMode?.sourceMode === true) {
+					return false; // EDITMODE SOURCEMODE = NO NEED SLIDER
+				}
+
+				const mode = (ownerView as MarkdownView).getMode(); // 'source' or 'preview'
+				const isInsideSource = !!el.closest('.markdown-source-view');
+				const isInsideRendered = !!el.closest('.markdown-rendered');
+				const isInsideEmbed = !!el.closest('.cm-embed-block');
+
+				if (mode === 'preview') {
+					// Reading View: ONLY elements inside .markdown-rendered are valid
+					if (isInsideSource) return false;
+					if (!isInsideRendered) return false;
+				} else if (mode === 'source') {
+					// Live Preview / Editing View: ONLY elements inside .markdown-source-view are valid
+					// Background .markdown-rendered is strictly rejected
+					if (isInsideRendered && !isInsideEmbed && !isInsideSource) return false;
+					if (!isInsideSource && !isInsideEmbed) return false;
+				}
 			}
 		} else {
 			// Fallback: Check standard DOM hierarchy (e.g. popover preview)
 			const popover = el.closest('.popover');
-			if (popover && (popover as HTMLElement).offsetParent === null) {
+			if (!popover || (popover as HTMLElement).offsetParent === null) {
 				return false;
 			}
 		}
 
 		return true;
+	}
+
+	/**
+	 * Immediately hides or cleans up all floating bars (both reading-view and live-preview)
+	 * whose anchor is detached, not visible, or belongs to an inactive tab.
+	 */
+	hideOrCleanAllBars(): void {
+		document.querySelectorAll<HTMLElement>('.pakcli-cb-sticky-bar').forEach((bar) => {
+			const anchor = (bar as any)._pakcliAnchor as HTMLElement | undefined;
+			if (!anchor || !anchor.isConnected) {
+				bar.remove();
+			} else if (!this.isElementVisibleInActiveView(anchor)) {
+				bar.style.setProperty('display', 'none', 'important');
+			}
+		});
+
+		document.querySelectorAll<HTMLElement>('.pakcli-codeblock-slider-bar').forEach((bar) => {
+			const anchor = (bar as any)._pakcliAnchorLine as HTMLElement | undefined;
+			if (!anchor || !anchor.isConnected) {
+				bar.remove();
+			} else if (!this.isElementVisibleInActiveView(anchor)) {
+				bar.style.setProperty('display', 'none', 'important');
+			}
+		});
 	}
 
 	rescaleAll(): void {
@@ -401,19 +441,10 @@ export class CodeblockScaler {
 		try {
 			if (this.flowclipMode === 'per-line') {
 				// In per-line mode, remove all floating sticky bars
-				document.querySelectorAll<HTMLElement>('.pakcli-cb-sticky-bar').forEach((bar) => bar.remove());
+				document.querySelectorAll<HTMLElement>('.pakcli-cb-sticky-bar, .pakcli-codeblock-slider-bar').forEach((bar) => bar.remove());
+				this.activeCmBars.clear();
 			} else {
-				// Clean up any sticky bars whose anchor element is no longer visible in active view
-				document.querySelectorAll<HTMLElement>('.pakcli-cb-sticky-bar').forEach((bar) => {
-					const anchor = (bar as any)._pakcliAnchor as HTMLElement | undefined;
-					if (!anchor || !anchor.isConnected) {
-						bar.remove();
-					} else if (!this.isElementVisibleInActiveView(anchor)) {
-						bar.style.setProperty('display', 'none', 'important');
-					} else {
-						(anchor as any)._pakcliStickyPositionBar?.();
-					}
-				});
+				this.hideOrCleanAllBars();
 			}
 
 			// 1. Process all open markdown views across all leaves
@@ -965,9 +996,11 @@ export class CodeblockScaler {
 	 */
 	private injectStickyBarForPre(pre: HTMLElement): void {
 		if (this.flowclipMode === 'per-line') return;
+		if (!pre || !pre.isConnected) return;
 
-		// Live Preview codeblocks are handled exclusively by injectStickyBarForCmBlock
-		if (pre.closest('.markdown-source-view, .cm-editor')) {
+		// ONLY connected Reading View (.markdown-rendered) codeblocks get sticky bars for <pre>.
+		// Live Preview codeblocks are handled exclusively by CodeMirror line logic.
+		if (pre.closest('.markdown-source-view, .cm-editor') || !pre.closest('.markdown-rendered')) {
 			if ((pre as any)._pakcliStickyBar) {
 				(pre as any)._pakcliStickyBar.remove();
 				(pre as any)._pakcliStickyBar = null;
@@ -1983,6 +2016,10 @@ export class CodeblockScaler {
 				}
 				b.remove();
 			});
+			document.querySelectorAll<HTMLElement>('.pakcli-codeblock-slider-bar').forEach((b) => {
+				if (validBars.has(b)) return;
+				b.remove();
+			});
 
 			// Process each codeblock
 			for (let i = 0; i < docBlocks.length; i++) {
@@ -2637,6 +2674,10 @@ export class CodeblockScaler {
 		}
 		const view = anchor.closest('.markdown-source-view');
 		if (view && !view.classList.contains('is-live-preview')) {
+			hide();
+			return;
+		}
+		if (!this.isElementVisibleInActiveView(anchor)) {
 			hide();
 			return;
 		}

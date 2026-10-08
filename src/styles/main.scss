@@ -3584,4 +3584,35 @@ pre:hover .pakcli-cb-copy-btn,
   text-align: center;
 }
 
+/* ========================================================================= */
+/* Pane Zoom Engine (v11) & Website / Webviewer Zoom Support                 */
+/* ========================================================================= */
+.pakcli-zoom-full-width {
+  --file-line-width: 100% !important;
+  --line-width: 100% !important;
+
+  .markdown-preview-sizer,
+  .cm-sizer,
+  .markdown-preview-view,
+  .cm-content,
+  .cm-line {
+    max-width: 100% !important;
+    width: 100% !important;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+    padding-left: 18px !important;
+    padding-right: 18px !important;
+  }
+}
+
+/* While Ctrl key is held down, pass mouse pointer events through webview/iframe
+   to allow host window wheel listener to capture Ctrl+Wheel for zoom */
+body.pakcli-ctrl-pressed {
+  webview,
+  iframe {
+    pointer-events: none !important;
+  }
+}
+
+
 
