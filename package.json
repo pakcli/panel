@@ -45,7 +45,8 @@
                             "ts-jest":  "^29.4.1",
                             "tslib":  "2.8.1",
                             "typescript":  "~5.8.3",
-                            "typescript-eslint":  "8.35.1"
+                            "typescript-eslint":  "8.35.1",
+                            "@types/sortablejs":  "^1.15.8"
                         },
     "dependencies":  {
                          "@ag-grid-community/theming":  "^32.3.9",
@@ -80,7 +81,8 @@
                          "unidecode":  "^1.1.0",
                          "util":  "^0.12.5",
                          "uuid":  "^11.1.0",
-                         "wa-sqlite":  "^1.0.0"
+                         "wa-sqlite":  "^1.0.0",
+                         "sortablejs":  "^1.15.2"
                      },
     "overrides":  {
                       "underscore":  "^1.13.8"

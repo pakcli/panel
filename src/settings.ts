@@ -27,6 +27,9 @@ export { DEFAULT_ZOOM_SETTINGS };
 import { ScrollbackSettings, DEFAULT_SCROLLBACK_SETTINGS } from './features/scrollback/types';
 export type { ScrollbackSettings };
 export { DEFAULT_SCROLLBACK_SETTINGS };
+import { TierListSettings, DEFAULT_SETTINGS as DEFAULT_TIERLIST_SETTINGS } from './features/tierlist/settings';
+export type { TierListSettings };
+export { DEFAULT_TIERLIST_SETTINGS };
 
 export type BubbleGraphIntegrationMode = 'deactivate' | 'replace' | 'second';
 export type BubbleNodeGlyphOption = 'no-dot' | 'dot' | 'plus' | 'minus' | 'i' | 'square' | 'ring' | 'star';
@@ -220,6 +223,7 @@ export interface PakCLITableSettings extends
     codeblockDebug?: boolean;
     asciiCanvasTheme?: string;
     enableAsciiRenderer?: boolean;
+    tierListSettings?: TierListSettings;
     enableAssetDrag: boolean;
     enableCsvEditor?: boolean;
     gridTheme?: string;
@@ -376,5 +380,6 @@ export const DEFAULT_TABLE_SETTINGS: PakCLITableSettings = {
     htmlSnapshotMode: 'html-only',
     todoListSettings: DEFAULT_TODOLIST_SETTINGS,
     stringSanitizerSettings: DEFAULT_STRING_SANITIZER_SETTINGS,
+    tierListSettings: DEFAULT_TIERLIST_SETTINGS,
 };
 

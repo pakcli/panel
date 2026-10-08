@@ -93,6 +93,9 @@ import { MasterHistoryEngine } from './features/history/MasterHistoryEngine';
 import { TreeViewRegistrationBuilder } from './features/tree/bases/SpecTreeViewRegistration';
 import { VaultHistoryView, VAULT_HISTORY_VIEW_TYPE } from './features/history/VaultHistoryView';
 
+// Tier List Engine (Score & Batch Compare) Imports
+import { TierListManager } from './features/tierlist/TierListManager';
+
 export default class PakCLITablePlugin extends Plugin {
 	declare settings: PakCLITableSettings;
 	ribbonManager!: RibbonManager;
@@ -100,6 +103,7 @@ export default class PakCLITablePlugin extends Plugin {
 	codeblockScaler!: CodeblockScaler;
 	leafletPlugin!: BasesLeafletViewPlugin;
 	historyEngine!: MasterHistoryEngine;
+	tierListManager!: TierListManager;
 	sqlsealTabInstance: SQLSealSettingsTab | null = null;
 	leafletTabInstance: unknown = null;
 	settingsTabInstance: MasterDetailSettingsTab | null = null;
@@ -1148,6 +1152,10 @@ export default class PakCLITablePlugin extends Plugin {
 		this.scrollbackManager = new ScrollbackManager(this);
 		this.scrollbackManager.init();
 
+		// Initialize Tier List Engine (Score & Batch Compare)
+		this.tierListManager = new TierListManager(this);
+		await this.tierListManager.init();
+
 		// Zoom Commands (Hotkeys Module)
 		this.addCommand({
 			id: 'pakcli-zoom-in',
@@ -1939,6 +1947,9 @@ export default class PakCLITablePlugin extends Plugin {
 		}
 		if (this.scrollbackManager) {
 			this.scrollbackManager.destroy();
+		}
+		if (this.tierListManager) {
+			this.tierListManager.destroy();
 		}
 		if (this.historyEngine) {
 			this.historyEngine.unload();
