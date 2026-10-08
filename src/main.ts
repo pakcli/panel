@@ -1147,7 +1147,7 @@ export default class PakCLITablePlugin extends Plugin {
 
 		// Initialize Pane Zoom Engine (v11) & Scrollback Explorer Helper (v14)
 		this.zoomManager = new ZoomManager(this);
-		this.zoomManager.init();
+		await this.zoomManager.init();
 
 		this.scrollbackManager = new ScrollbackManager(this);
 		this.scrollbackManager.init();

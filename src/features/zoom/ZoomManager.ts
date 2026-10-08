@@ -1,12 +1,13 @@
 import { App, Menu, Notice, WorkspaceLeaf } from 'obsidian';
 import type PakCLITablePlugin from '../../main';
-import { ZoomSettings, ZoomWidthMode } from './types';
+import { ZoomSettings, ZoomWidthMode, PersistentZoomRecord } from './types';
 
 export class ZoomManager {
   private app: App;
   private plugin: PakCLITablePlugin;
   private leafZoomMap: WeakMap<WorkspaceLeaf, number> = new WeakMap();
   private leafModeMap: WeakMap<WorkspaceLeaf, ZoomWidthMode> = new WeakMap();
+  private persistentZoomMap: Map<string, PersistentZoomRecord> = new Map();
   private statusBarEl: HTMLElement | null = null;
   private wheelListener: ((evt: WheelEvent) => void) | null = null;
   private ctrlDownListener: ((evt: KeyboardEvent) => void) | null = null;
@@ -14,6 +15,7 @@ export class ZoomManager {
   private windowBlurListener: (() => void) | null = null;
   private boundWebviews: WeakSet<HTMLElement> = new WeakSet();
   private webviewObserver: MutationObserver | null = null;
+  private saveDebounceTimer: any = null;
 
   // In-guest capture script to intercept Ctrl+Wheel when webview has focus
   private static readonly GUEST_ZOOM_SCRIPT = `
@@ -38,15 +40,28 @@ export class ZoomManager {
     this.app = plugin.app;
   }
 
-  public init(): void {
+  public async init(): Promise<void> {
+    await this.loadPersistentStates();
     this.registerWheelListener();
     this.registerCtrlKeyListeners();
     this.setupWebviewObserver();
     this.initStatusBar();
     this.registerActiveLeafListener();
+
+    // When layout is ready, restore zoom across every opened panel/leaf
+    this.app.workspace.onLayoutReady(() => {
+      this.restoreAllOpenLeaves();
+    });
   }
 
   public destroy(): void {
+    if (this.saveDebounceTimer) {
+      clearTimeout(this.saveDebounceTimer);
+      this.saveDebounceTimer = null;
+    }
+    // Flush pending save immediately on unload
+    this.flushPersistentStatesSync();
+
     if (this.wheelListener) {
       window.removeEventListener('wheel', this.wheelListener, { capture: true });
       this.wheelListener = null;
@@ -84,7 +99,160 @@ export class ZoomManager {
       maxZoom: typeof s.maxZoom === 'number' ? s.maxZoom : 2.5,
       defaultWidthMode: s.defaultWidthMode || 'keep-margins',
       showZoomInStatusBar: s.showZoomInStatusBar !== false,
+      leafZoomStates: s.leafZoomStates || {},
+      leafModeStates: s.leafModeStates || {},
     };
+  }
+
+  /**
+   * Loads saved zoom & mode states from the artifact file and plugin settings.
+   */
+  private async loadPersistentStates(): Promise<void> {
+    // 1. Load from plugin settings first (fast synchronous in-memory source)
+    const settingsZoom = this.settings.leafZoomStates || {};
+    const settingsMode = this.settings.leafModeStates || {};
+
+    for (const [key, zoom] of Object.entries(settingsZoom)) {
+      if (typeof zoom === 'number') {
+        const mode = settingsMode[key] || this.settings.defaultWidthMode;
+        this.persistentZoomMap.set(key, { zoom, mode, updatedAt: Date.now() });
+      }
+    }
+
+    // 2. Also load from dedicated artifact file: zoom-states.json
+    try {
+      const artifactPath = this.getArtifactPath();
+      if (await this.app.vault.adapter.exists(artifactPath)) {
+        const raw = await this.app.vault.adapter.read(artifactPath);
+        const data = JSON.parse(raw);
+        if (data && data.states && typeof data.states === 'object') {
+          for (const [key, record] of Object.entries<any>(data.states)) {
+            if (record && typeof record.zoom === 'number') {
+              this.persistentZoomMap.set(key, {
+                zoom: record.zoom,
+                mode: record.mode || this.settings.defaultWidthMode,
+                updatedAt: record.updatedAt || Date.now(),
+                label: record.label,
+              });
+            }
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('[ZoomManager] Could not read zoom-states.json artifact:', err);
+    }
+  }
+
+  /**
+   * Computes the artifact path inside the plugin config directory
+   */
+  private getArtifactPath(): string {
+    const configDir = this.app.vault.configDir || '.obsidian';
+    return `${configDir}/plugins/pakcli-panel/zoom-states.json`;
+  }
+
+  /**
+   * Generates identification keys for a leaf to ensure 100% resilient persistence across reloads.
+   * Keys are derived from:
+   * 1. File path (e.g. file:Notes/MyNote.md)
+   * 2. URL for webviewer/webpages (e.g. url:https://web.whatsapp.com/)
+   * 3. Obsidian's persistent WorkspaceLeaf ID from workspace.json (e.g. leaf:6f4e8ae1c4709925)
+   * 4. View type (e.g. type:pakcli-todolist-view, type:canvas, etc.)
+   */
+  private getLeafKeys(leaf: WorkspaceLeaf): string[] {
+    const keys: string[] = [];
+
+    // File path is the strongest persistent key for markdown/canvas/pdf notes
+    const filePath = (leaf.view as any)?.file?.path;
+    if (filePath) keys.push(`file:${filePath}`);
+
+    // URL is the strongest persistent key for webviewer / external pages
+    const url = (leaf as any)?.getViewState?.()?.state?.url;
+    if (url) keys.push(`url:${url}`);
+
+    // Obsidian persistent leaf ID (persisted in workspace.json)
+    const leafId = (leaf as any).id;
+    if (leafId) keys.push(`leaf:${leafId}`);
+
+    // View type as fallback
+    const viewType = leaf.view?.getViewType?.() || (leaf as any)?.getViewState?.()?.type;
+    if (viewType) keys.push(`type:${viewType}`);
+
+    return keys;
+  }
+
+  private getPrimaryLeafKey(leaf: WorkspaceLeaf): string {
+    const keys = this.getLeafKeys(leaf);
+    return keys[0] || 'default';
+  }
+
+  /**
+   * Queues a debounced persistent save to disk (settings & artifact file)
+   */
+  private queueSavePersistentStates(): void {
+    if (this.saveDebounceTimer) {
+      clearTimeout(this.saveDebounceTimer);
+    }
+    this.saveDebounceTimer = setTimeout(() => {
+      this.saveDebounceTimer = null;
+      this.writePersistentStates();
+    }, 300);
+  }
+
+  private async writePersistentStates(): Promise<void> {
+    try {
+      // 1. Sync to plugin settings
+      const zoomStates: Record<string, number> = {};
+      const modeStates: Record<string, ZoomWidthMode> = {};
+
+      for (const [key, record] of this.persistentZoomMap.entries()) {
+        zoomStates[key] = record.zoom;
+        modeStates[key] = record.mode;
+      }
+
+      (this.plugin.settings as any).leafZoomStates = zoomStates;
+      (this.plugin.settings as any).leafModeStates = modeStates;
+      await this.plugin.saveSettings();
+
+      // 2. Write dedicated artifact file: zoom-states.json
+      const artifactPath = this.getArtifactPath();
+      const payload = {
+        version: 1,
+        lastSaved: new Date().toISOString(),
+        totalPanels: this.persistentZoomMap.size,
+        states: Object.fromEntries(this.persistentZoomMap.entries()),
+      };
+
+      await this.app.vault.adapter.write(artifactPath, JSON.stringify(payload, null, 2));
+    } catch (err) {
+      console.warn('[ZoomManager] Failed to persist zoom states:', err);
+    }
+  }
+
+  private flushPersistentStatesSync(): void {
+    const zoomStates: Record<string, number> = {};
+    const modeStates: Record<string, ZoomWidthMode> = {};
+    for (const [key, record] of this.persistentZoomMap.entries()) {
+      zoomStates[key] = record.zoom;
+      modeStates[key] = record.mode;
+    }
+    (this.plugin.settings as any).leafZoomStates = zoomStates;
+    (this.plugin.settings as any).leafModeStates = modeStates;
+    this.plugin.saveData(this.plugin.settings);
+  }
+
+  /**
+   * Restores stored zoom and mode on every currently opened leaf/panel across the entire workspace.
+   */
+  public restoreAllOpenLeaves(): void {
+    this.app.workspace.iterateAllLeaves((leaf) => {
+      const storedZoom = this.getLeafZoom(leaf);
+      const storedMode = this.getLeafMode(leaf);
+      if (storedZoom !== 1.0 || storedMode === 'fill-width') {
+        this.applyZoomToLeafDOM(leaf, storedZoom, storedMode);
+      }
+    });
+    this.updateStatusBar();
   }
 
   /**
@@ -389,11 +557,63 @@ export class ZoomManager {
   }
 
   public getLeafZoom(leaf: WorkspaceLeaf): number {
-    return this.leafZoomMap.get(leaf) ?? 1.0;
+    // 1. Check in-memory WeakMap
+    const inMem = this.leafZoomMap.get(leaf);
+    if (typeof inMem === 'number') return inMem;
+
+    // 2. Check persistent state using all identifiers
+    const keys = this.getLeafKeys(leaf);
+    for (const key of keys) {
+      const record = this.persistentZoomMap.get(key);
+      if (record && typeof record.zoom === 'number') {
+        this.leafZoomMap.set(leaf, record.zoom);
+        return record.zoom;
+      }
+    }
+
+    // 3. Fallback to settings record
+    const settingsZoom = this.settings.leafZoomStates;
+    if (settingsZoom) {
+      for (const key of keys) {
+        if (typeof settingsZoom[key] === 'number') {
+          const z = settingsZoom[key];
+          this.leafZoomMap.set(leaf, z);
+          return z;
+        }
+      }
+    }
+
+    return 1.0;
   }
 
   public getLeafMode(leaf: WorkspaceLeaf): ZoomWidthMode {
-    return this.leafModeMap.get(leaf) ?? this.settings.defaultWidthMode;
+    // 1. Check in-memory WeakMap
+    const inMem = this.leafModeMap.get(leaf);
+    if (inMem) return inMem;
+
+    // 2. Check persistent state
+    const keys = this.getLeafKeys(leaf);
+    for (const key of keys) {
+      const record = this.persistentZoomMap.get(key);
+      if (record && record.mode) {
+        this.leafModeMap.set(leaf, record.mode);
+        return record.mode;
+      }
+    }
+
+    // 3. Fallback to settings record
+    const settingsMode = this.settings.leafModeStates;
+    if (settingsMode) {
+      for (const key of keys) {
+        if (settingsMode[key]) {
+          const m = settingsMode[key];
+          this.leafModeMap.set(leaf, m);
+          return m;
+        }
+      }
+    }
+
+    return this.settings.defaultWidthMode;
   }
 
   public adjustLeafZoom(leaf: WorkspaceLeaf, delta: number): void {
@@ -407,20 +627,51 @@ export class ZoomManager {
 
   public setLeafZoom(leaf: WorkspaceLeaf, zoom: number): void {
     this.leafZoomMap.set(leaf, zoom);
-    this.applyZoomToLeafDOM(leaf, zoom, this.getLeafMode(leaf));
+
+    // Save to persistent map under all leaf identifiers
+    const keys = this.getLeafKeys(leaf);
+    const mode = this.getLeafMode(leaf);
+    const now = Date.now();
+    for (const k of keys) {
+      this.persistentZoomMap.set(k, { zoom, mode, updatedAt: now });
+    }
+
+    this.queueSavePersistentStates();
+    this.applyZoomToLeafDOM(leaf, zoom, mode);
     this.updateStatusBar();
   }
 
   public resetLeafZoom(leaf: WorkspaceLeaf): void {
-    this.setLeafZoom(leaf, 1.0);
+    this.leafZoomMap.set(leaf, 1.0);
+
+    const keys = this.getLeafKeys(leaf);
+    const mode = this.getLeafMode(leaf);
+    const now = Date.now();
+    for (const k of keys) {
+      this.persistentZoomMap.set(k, { zoom: 1.0, mode, updatedAt: now });
+    }
+
+    this.queueSavePersistentStates();
+    this.applyZoomToLeafDOM(leaf, 1.0, mode);
+    this.updateStatusBar();
     new Notice('View Zoom reset to 100%');
   }
 
   public toggleWidthMode(leaf: WorkspaceLeaf): void {
     const currentMode = this.getLeafMode(leaf);
     const nextMode: ZoomWidthMode = currentMode === 'keep-margins' ? 'fill-width' : 'keep-margins';
+    const currentZoom = this.getLeafZoom(leaf);
+
     this.leafModeMap.set(leaf, nextMode);
-    this.applyZoomToLeafDOM(leaf, this.getLeafZoom(leaf), nextMode);
+
+    const keys = this.getLeafKeys(leaf);
+    const now = Date.now();
+    for (const k of keys) {
+      this.persistentZoomMap.set(k, { zoom: currentZoom, mode: nextMode, updatedAt: now });
+    }
+
+    this.queueSavePersistentStates();
+    this.applyZoomToLeafDOM(leaf, currentZoom, nextMode);
     this.updateStatusBar();
     new Notice(nextMode === 'fill-width' ? '↔ Full Width Mode: ON' : '↔ Preserved Margins Mode: ON');
   }
