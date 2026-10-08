@@ -24,7 +24,7 @@ export class AudioPlayerView extends ItemView {
     }
 
     getDisplayText(): string {
-        return 'PakCLI Audio & Ambient';
+        return 'Audio & SFX';
     }
 
     getIcon(): string {

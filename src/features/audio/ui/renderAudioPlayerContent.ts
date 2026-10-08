@@ -34,7 +34,7 @@ export function renderAudioPlayerContent(ctx: AudioPlayerRenderContext): () => v
         const headerEl = containerEl.createDiv({ cls: 'pakcli-audio-header' });
         const titleGroup = headerEl.createDiv({ cls: 'pakcli-audio-title-group' });
         titleGroup.createSpan({ cls: 'pakcli-audio-title-icon', text: '🎵' });
-        titleGroup.createSpan({ cls: 'pakcli-audio-title-text', text: 'PakCLI Audio & Ambient' });
+        titleGroup.createSpan({ cls: 'pakcli-audio-title-text', text: 'Audio & SFX' });
 
         const actionsEl = headerEl.createDiv({ cls: 'pakcli-audio-header-actions' });
 
