@@ -1934,11 +1934,55 @@ export class CodeblockScaler {
 		}
 
 		if (editorView && editorView.state?.doc) {
+			const filePath = this.plugin.app.workspace.getActiveFile()?.path || 'unknown';
 			const doc = editorView.state.doc;
 			const docBlocks = this.getDocCodeblocks(doc);
-			if (docBlocks.length === 0) return;
-
-			const filePath = this.plugin.app.workspace.getActiveFile()?.path || 'unknown';
+			if (docBlocks.length === 0) {
+				for (const el of cmLines) {
+					if ((el as any)._pakcliBlockKey) {
+						(el as any)._pakcliBlockKey = null;
+						(el as any)._pakcliNaturalScrollWidth = null;
+						const oldSyncedScroll = (el as any)._pakcliAllSyncedScroll;
+						if (oldSyncedScroll) {
+							el.removeEventListener('scroll', oldSyncedScroll);
+							(el as any)._pakcliAllSyncedScroll = null;
+						}
+						el.classList.remove(
+							'pakcli-codeblock-line-flowclip',
+							'pakcli-codeblock-line-all-synced',
+							'pakcli-codeblock-line-per-line',
+							'pakcli-codeblock-line-scalefit'
+						);
+						el.style.removeProperty('--codeblock-spacer-width');
+						el.style.removeProperty('overflow-x');
+						el.style.removeProperty('white-space');
+						el.style.removeProperty('max-width');
+						el.style.removeProperty('width');
+						el.style.removeProperty('box-sizing');
+						el.scrollLeft = 0;
+					}
+				}
+				for (const [key, b] of this.activeCmBars.entries()) {
+					if (key.startsWith(`${filePath}::cm::`)) {
+						b.remove();
+						this.activeCmBars.delete(key);
+					}
+				}
+				document.querySelectorAll<HTMLElement>('.pakcli-codeblock-slider-bar').forEach((b) => {
+					const anchor = (b as any)._pakcliAnchorLine as HTMLElement | undefined;
+					const key = (b as any)._pakcliBlockKey as string | undefined;
+					if (
+						!anchor ||
+						!anchor.isConnected ||
+						!this.isElementVisibleInActiveView(anchor) ||
+						anchor.closest('.cm-editor') === editorView?.dom ||
+						(key && key.startsWith(`${filePath}::cm::`))
+					) {
+						b.remove();
+					}
+				});
+				return;
+			}
 
 			// Group rendered DOM lines by docBlock index
 			const blockLinesMap = new Map<number, Array<{ el: HTMLElement; lineNo: number }>>();
@@ -2068,6 +2112,17 @@ export class CodeblockScaler {
 
 		const flushFallbackBlock = () => {
 			if (currentBlockLines.length === 0) return;
+			// Guard: Ensure currentBlockLines actually contains real codeblock elements
+			const hasCodeblockLine = currentBlockLines.some((l) =>
+				l.classList.contains('HyperMD-codeblock') ||
+				l.classList.contains('HyperMD-codeblock-begin') ||
+				l.classList.contains('HyperMD-codeblock-end')
+			);
+			if (!hasCodeblockLine) {
+				currentBlockLines = [];
+				currentLanguage = '';
+				return;
+			}
 			const behavior = this.getBehaviorForLanguage(currentLanguage);
 			const anchorLine = currentBlockLines[currentBlockLines.length - 1];
 			const blockKey = `${filePath}::cm::fb_block_${blockIndex++}`;
@@ -2104,8 +2159,11 @@ export class CodeblockScaler {
 			} else if (line.classList.contains('HyperMD-codeblock-end')) {
 				currentBlockLines.push(line);
 				flushFallbackBlock();
-			} else {
+			} else if (line.classList.contains('HyperMD-codeblock')) {
 				currentBlockLines.push(line);
+			} else {
+				// Normal text / task / paragraph line: NOT a codeblock!
+				flushFallbackBlock();
 			}
 		});
 
@@ -2124,6 +2182,21 @@ export class CodeblockScaler {
 		blockKey: string,
 		editorView?: EditorView
 	): void {
+		// Strict guard: ensure this block contains actual codeblock lines
+		const hasCodeblock = currentBlockLines.some((l) =>
+			l.classList.contains('HyperMD-codeblock') ||
+			l.classList.contains('HyperMD-codeblock-begin') ||
+			l.classList.contains('HyperMD-codeblock-end')
+		);
+		if (!hasCodeblock) {
+			const oldSticky = this.activeCmBars.get(blockKey);
+			if (oldSticky) {
+				oldSticky.remove();
+				this.activeCmBars.delete(blockKey);
+			}
+			return;
+		}
+
 		// Clean up any old injected bars from previous versions, including legacy in-flow slider bars
 		// (these were the cause of two sliders appearing for one codeblock).
 		currentBlockLines.forEach((line) => {
@@ -2485,6 +2558,21 @@ export class CodeblockScaler {
 			l.querySelectorAll(':scope > .pakcli-codeblock-slider-bar').forEach((b) => b.remove());
 		}
 
+		// Ensure block lines contain actual codeblocks
+		const hasCodeblock = blockLines.some((l) =>
+			l.classList.contains('HyperMD-codeblock') ||
+			l.classList.contains('HyperMD-codeblock-begin') ||
+			l.classList.contains('HyperMD-codeblock-end')
+		);
+		if (!hasCodeblock) {
+			const old = this.activeCmBars.get(blockKey);
+			if (old) {
+				old.remove();
+				this.activeCmBars.delete(blockKey);
+			}
+			return;
+		}
+
 		if (this.flowclipMode === 'per-line') {
 			const old = this.activeCmBars.get(blockKey);
 			if (old) {
@@ -2672,6 +2760,25 @@ export class CodeblockScaler {
 			hide();
 			return;
 		}
+
+		// Codeblock check: Anchor MUST be a codeblock element
+		const isCodeblock = anchor.matches('pre, .HyperMD-codeblock, .HyperMD-codeblock-begin, .HyperMD-codeblock-end') ||
+			anchor.classList.contains('HyperMD-codeblock') ||
+			anchor.closest('pre') !== null;
+		if (!isCodeblock) {
+			hide();
+			bar.remove();
+			return;
+		}
+
+		// Active file check: Bar must match the currently active markdown file
+		const activeFile = this.plugin.app.workspace.getActiveFile()?.path;
+		const blockKey = (bar as any)._pakcliBlockKey as string | undefined;
+		if (activeFile && blockKey && !blockKey.startsWith(`${activeFile}::`)) {
+			hide();
+			return;
+		}
+
 		// If any Obsidian modal is open, completely suppress codeblock slider bar
 		if (document.querySelector('.modal-container')) {
 			hide();
