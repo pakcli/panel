@@ -1,4 +1,4 @@
----
+﻿---
 id: bubblegraph-knowledge-cluster
 title: Bubble Graph Knowledge Cluster & Visual Timeline
 plugin: panel

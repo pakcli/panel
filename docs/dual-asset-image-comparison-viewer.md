@@ -1,4 +1,4 @@
----
+﻿---
 id: dual-asset-image-comparison-viewer
 title: Dual-Asset Image Comparison Viewer (Slider Split Compare)
 plugin: panel

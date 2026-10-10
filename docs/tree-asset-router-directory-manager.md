@@ -1,4 +1,4 @@
----
+﻿---
 id: tree-asset-router-directory-manager
 title: Tree Asset Router & Directory Manager
 plugin: panel

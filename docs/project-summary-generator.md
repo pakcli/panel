@@ -1,7 +1,7 @@
----
+﻿---
 id: project-summary-generator
 title: Project & Toko Summary Generator
-plugin: write
+plugin: panel
 status: -1
 tags:
   - pakcli

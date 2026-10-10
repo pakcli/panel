@@ -1,4 +1,4 @@
----
+﻿---
 id: pane-zoom-website-viewport-zoom
 title: Pane Zoom Engine & Website Viewport Zoom
 plugin: panel
@@ -21,7 +21,7 @@ Mesin penskalaan zoom per-panel (*pane-level zoom*) yang mendukung kanvas Markdo
 - **Per-Pane Independent Zoom**: Penskalaan zoom kustom (25% - 500%) yang hanya mempengaruhi panel yang sedang aktif tanpa merubah zoom global Obsidian.
 - **Embedded Webview & IFrame Guest Bridge**: Meneruskan pintasan `Ctrl + Wheel` ke dalam native Electron webview melalui IPC guest event capture script dan CSS pointer-events passthrough saat tombol Ctrl ditekan.
 - **Persistent Leaf Zoom States**: Menyimpan faktor zoom setiap panel ke artefak `zoom-states.json` dan memulihkannya secara otomatis saat layout Obsidian dimuat ulang.
-- **Status Bar Zoom Pill**: Menampilkan persentase zoom saat ini dan mode lebar layar (`↔ Full` vs `↔ Margins` vs `🌐 Web`) dengan tombol anti-layout jitter.
+- **Status Bar Zoom Pill**: Menampilkan persentase zoom saat ini dan mode lebar layar (`â†” Full` vs `â†” Margins` vs `ðŸŒ Web`) dengan tombol anti-layout jitter.
 
 ## 3. Integration Points
 - Terintegrasi di `src/features/zoom/ZoomManager.ts` dan status bar item Obsidian.

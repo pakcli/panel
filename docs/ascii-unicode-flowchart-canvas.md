@@ -1,7 +1,7 @@
----
+﻿---
 id: ascii-unicode-flowchart-canvas
 title: ASCII & Unicode Flowchart Canvas Engine
-plugin: write
+plugin: panel
 status: 0
 tags:
   - pakcli
@@ -18,7 +18,7 @@ created: 2026-10-09
 Kanvas gambar berbasis teks dan grid karakter ASCII/Unicode monospaced untuk merancang diagram alur, wireframe retro, kotak logika, dan panah koneksi langsung yang dapat disisipkan rapi ke dalam blok kode markdown.
 
 ## 2. Key Capabilities (Planned)
-- **Monospace Grid Canvas**: Alat gambar kotak, garis, panah, teks label, dan freehand menggunakan karakter ASCII (`+--+`, `|`, `-->`) atau Unicode Box-Drawing (`┌──┐`, `│`, `►`).
+- **Monospace Grid Canvas**: Alat gambar kotak, garis, panah, teks label, dan freehand menggunakan karakter ASCII (`+--+`, `|`, `-->`) atau Unicode Box-Drawing (`â”Œâ”€â”€â”`, `â”‚`, `â–º`).
 - **Layers & History**: Dukungan multi-layer kanvas dan riwayat undo/redo berbasis patch karakter.
 - **Embedded Codeblock Renderer**: Render langsung blok kode ````asciidraw ... ```` dengan tombol salin dan mode fullscreen imersif.
 

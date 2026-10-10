@@ -1,7 +1,7 @@
----
+﻿---
 id: stock-inventory-ledger-templates
 title: Stock & Inventory Ledger Templates
-plugin: write
+plugin: panel
 status: -1
 tags:
   - pakcli

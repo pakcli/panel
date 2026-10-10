@@ -1,4 +1,4 @@
----
+﻿---
 id: quick-add-invoice-modal
 title: Quick-Add Invoice Modal
 plugin: panel

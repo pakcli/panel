@@ -1,4 +1,4 @@
----
+﻿---
 id: persistent-audio-sfx-engine
 title: Persistent Global Audio Player Dock & Tactile SFX Engine
 plugin: panel

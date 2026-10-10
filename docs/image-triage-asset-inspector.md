@@ -1,4 +1,4 @@
----
+﻿---
 id: image-triage-asset-inspector
 title: Image Triage & Asset Inspector (Character Carousel)
 plugin: panel

@@ -1,4 +1,4 @@
----
+﻿---
 id: tierlist-matrix-radar-compare
 title: Tierlist Drag-and-Drop Matrix & Radar Comparison View
 plugin: panel

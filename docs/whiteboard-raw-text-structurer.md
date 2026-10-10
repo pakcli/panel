@@ -1,7 +1,7 @@
----
+﻿---
 id: whiteboard-raw-text-structurer
 title: Whiteboard & Raw Text Structurer
-plugin: write
+plugin: panel
 status: -1
 tags:
   - pakcli

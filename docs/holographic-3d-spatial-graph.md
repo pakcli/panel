@@ -1,4 +1,4 @@
----
+﻿---
 id: holographic-3d-spatial-graph
 title: Holographic 3D Spatial Knowledge Graph
 plugin: panel

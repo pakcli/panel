@@ -1,4 +1,4 @@
----
+﻿---
 id: frontmatter-property-scoper
 title: Frontmatter Property Scoper & Suggestion Filter
 plugin: panel

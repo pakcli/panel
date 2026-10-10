@@ -1,4 +1,4 @@
----
+﻿---
 id: interactive-table-matrix-editor
 title: Interactive Table & Matrix Editor (SQLSeal & Data Grid)
 plugin: panel

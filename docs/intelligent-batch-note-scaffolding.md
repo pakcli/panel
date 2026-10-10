@@ -1,7 +1,7 @@
----
+﻿---
 id: intelligent-batch-note-scaffolding
 title: Intelligent Batch Note Scaffolding & Folderize Converter
-plugin: write
+plugin: panel
 status: -1
 tags:
   - pakcli

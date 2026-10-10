@@ -1,4 +1,4 @@
----
+﻿---
 id: markdown-sanitizer-masker
 title: Markdown String Sanitizer & Virtual Masking Engine
 plugin: panel

@@ -1,7 +1,7 @@
----
+﻿---
 id: universal-scoped-undo-redo-engine
 title: Universal Scoped Undo/Redo Engine
-plugin: write
+plugin: panel
 status: -1
 tags:
   - pakcli

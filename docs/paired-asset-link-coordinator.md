@@ -1,7 +1,7 @@
----
+﻿---
 id: paired-asset-link-coordinator
 title: Paired Asset Link Coordinator
-plugin: write
+plugin: panel
 status: -1
 tags:
   - pakcli

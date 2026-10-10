@@ -1,4 +1,4 @@
----
+﻿---
 id: folderize-virtual-explorer-split
 title: Folderize Virtual Explorer Split
 plugin: panel

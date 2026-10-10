@@ -1,7 +1,7 @@
----
+﻿---
 id: invoice-frontmatter-compiler-validator
 title: Invoice Frontmatter Compiler & Validator
-plugin: write
+plugin: panel
 status: -1
 tags:
   - pakcli

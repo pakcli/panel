@@ -1,7 +1,7 @@
----
+﻿---
 id: folder-auto-assign-rules-engine
 title: Folder Auto-Assign Rules Engine
-plugin: write
+plugin: panel
 status: -1
 tags:
   - pakcli

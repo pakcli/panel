@@ -1,4 +1,4 @@
----
+﻿---
 id: rupiah-smart-parser-input
 title: Rupiah Smart Parser Input
 plugin: panel

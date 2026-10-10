@@ -1,7 +1,7 @@
----
+﻿---
 id: multi-format-exporter
 title: Multi-Format Exporter (Markdown, CSV, JSON)
-plugin: write
+plugin: panel
 status: -1
 tags:
   - pakcli

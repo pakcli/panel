@@ -1,7 +1,7 @@
----
+﻿---
 id: autonomous-ai-ghostwriter-synthesizer
 title: Autonomous AI Ghostwriter & Synthesizer
-plugin: write
+plugin: panel
 status: -3
 tags:
   - pakcli

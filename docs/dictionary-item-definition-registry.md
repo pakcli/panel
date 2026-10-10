@@ -1,7 +1,7 @@
----
+﻿---
 id: dictionary-item-definition-registry
 title: Dictionary & Item Definition Registry
-plugin: write
+plugin: panel
 status: -1
 tags:
   - pakcli

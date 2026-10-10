@@ -1,7 +1,7 @@
----
+﻿---
 id: premiere-pro-style-relink-engine
 title: Premiere Pro Style Relink Engine (.links.json)
-plugin: write
+plugin: panel
 status: -1
 tags:
   - pakcli

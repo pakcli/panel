@@ -1,7 +1,7 @@
----
+﻿---
 id: deep-writing-focus-typewriter
 title: Deep Writing Suite & Typewriter Scrolling
-plugin: write
+plugin: panel
 status: 0
 tags:
   - pakcli

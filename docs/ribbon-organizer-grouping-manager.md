@@ -1,4 +1,4 @@
----
+﻿---
 id: ribbon-organizer-grouping-manager
 title: Ribbon Organizer & Grouping Manager
 plugin: panel

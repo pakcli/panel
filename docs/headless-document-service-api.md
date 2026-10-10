@@ -1,7 +1,7 @@
----
+﻿---
 id: headless-document-service-api
 title: Headless Document Service API
-plugin: write
+plugin: panel
 status: -1
 tags:
   - pakcli
