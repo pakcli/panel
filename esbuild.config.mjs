@@ -26,15 +26,20 @@ const wasmPlugin = {
 
 		build.onLoad({ filter: /\.wasm$/, namespace: 'wasm-binary' }, async (args) => {
 			const contents = readFileSync(args.path);
-			const wasmBase64 = contents.toString('base64');
+			const zlib = await import('node:zlib');
+			const deflated = zlib.deflateSync(contents);
+			const deflatedBase64 = deflated.toString('base64');
 			
 			return {
 				contents: `
-					const wasmBase64 = "${wasmBase64}";
-					const wasmBinary = Uint8Array.from(atob(wasmBase64), c => c.charCodeAt(0));
+					import { inflate } from 'pako';
+					const deflatedBase64 = "${deflatedBase64}";
+					const deflatedBinary = Uint8Array.from(atob(deflatedBase64), c => c.charCodeAt(0));
+					const wasmBinary = inflate(deflatedBinary);
 					export default wasmBinary;
 				`,
 				loader: 'js',
+				resolveDir: process.cwd(),
 			};
 		});
 
@@ -123,15 +128,20 @@ const workerPlugin = {
 		build.onLoad({ filter: /.*/, namespace: 'wa-sqlite-wasm-url' }, async () => {
 			const wasmPath = join(process.cwd(), 'node_modules/wa-sqlite/dist/wa-sqlite-async.wasm');
 			const wasmContents = readFileSync(wasmPath);
-			const wasmBase64 = wasmContents.toString('base64');
+			const zlib = await import('node:zlib');
+			const deflated = zlib.deflateSync(wasmContents);
+			const deflatedBase64 = deflated.toString('base64');
 
 			return {
 				contents: `
-					const wasmBase64 = "${wasmBase64}";
-					const wasmBinary = Uint8Array.from(atob(wasmBase64), c => c.charCodeAt(0));
+					import { inflate } from 'pako';
+					const deflatedBase64 = "${deflatedBase64}";
+					const deflatedBinary = Uint8Array.from(atob(deflatedBase64), c => c.charCodeAt(0));
+					const wasmBinary = inflate(deflatedBinary);
 					export default wasmBinary;
 				`,
 				loader: 'js',
+				resolveDir: process.cwd(),
 			};
 		});
 	},
@@ -148,7 +158,14 @@ const rawPlugin = {
 			};
 		});
 		build.onLoad({ filter: /.*/, namespace: 'raw-file' }, async (args) => {
-			const contents = await fs.readFile(args.path, 'utf8');
+			let contents = await fs.readFile(args.path, 'utf8');
+			if (prod && args.path.endsWith('.html')) {
+				// Strip extraneous HTML comments & multiple consecutive indentations to shave bundle size
+				contents = contents
+					.replace(/<!--[\s\S]*?-->/g, '')
+					.replace(/^[ \t]+/gm, '')
+					.replace(/\r?\n+/g, '\n');
+			}
 			return {
 				contents: `export default ${JSON.stringify(contents)};`,
 				loader: 'js',
@@ -265,6 +282,11 @@ const context = await esbuild.context({
 	sourcemap: prod ? false : "inline",
 	treeShaking: true,
 	minify: prod,
+	minifyWhitespace: prod,
+	minifyIdentifiers: prod,
+	minifySyntax: prod,
+	legalComments: 'none',
+	drop: prod ? ['debugger'] : [],
 	metafile: true,
 	outfile: "dist/main.js",
 	loader: {
@@ -293,10 +315,11 @@ const stylesContext = await esbuild.context({
 	outfile: 'dist/styles.css',
 	bundle: true,
 	minify: true,
-	sourcemap: true,
+	legalComments: 'none',
+	sourcemap: prod ? false : true,
 	external: ['*.png', '*.gif', '*.svg', 'images/*'],
 	plugins: [sassPlugin({
-		sourceMap: true
+		sourceMap: !prod
 	})],
 	logLevel: 'info'
 });
@@ -312,7 +335,26 @@ if (prod) {
 		console.log(`${(v.bytesInOutput/1024/1024).toFixed(2)} MB -> ${k}`);
 	}
 	await stylesContext.rebuild();
+	// Run postBuild once after both JS and CSS are rebuilt
 	await postBuild();
+
+	// Enforce 5.0 MB bundle size cap (Obsidian Sync Standard Plan limit)
+	const stats = await fs.stat("main.js");
+	const sizeInBytes = stats.size;
+	const sizeInMB = (sizeInBytes / (1024 * 1024)).toFixed(2);
+	const MAX_ALLOWED_BYTES = 5 * 1024 * 1024; // 5,242,880 bytes
+
+	console.log(`\n========================================`);
+	console.log(`📦 main.js Bundle Size: ${sizeInMB} MB (${sizeInBytes.toLocaleString()} bytes)`);
+	console.log(`🎯 Obsidian Sync 5MB Cap: ${(MAX_ALLOWED_BYTES / (1024 * 1024)).toFixed(2)} MB (${MAX_ALLOWED_BYTES.toLocaleString()} bytes)`);
+	
+	if (sizeInBytes > MAX_ALLOWED_BYTES) {
+		const overflowMB = ((sizeInBytes - MAX_ALLOWED_BYTES) / (1024 * 1024)).toFixed(2);
+		throw new Error(`❌ Production build failed: main.js size (${sizeInMB} MB) exceeds Obsidian Sync limit by ${overflowMB} MB!`);
+	}
+	console.log(`✅ Bundle size check passed: strictly under 5.0 MB limit!`);
+	console.log(`========================================\n`);
+
 	process.exit(0);
 } else {
 	await Promise.all([

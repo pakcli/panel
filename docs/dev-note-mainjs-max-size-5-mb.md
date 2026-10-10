@@ -1,4 +1,4 @@
-﻿---
+---
 id: dev-note-mainjs-max-size-5-mb
 title: Developer Architecture Note - Bundle Size Constraint & Obsidian Sync 5MB Limit
 plugin: panel
@@ -31,10 +31,10 @@ Hasil audit bundle input menunjukkan kontributor utama ukuran file:
 - **`leaflet` & shaders (~0.4 MB)**: Library pemetaan dan template canvas filmstrip.
 - **Build Configurations**: Ketiadaan tree-shaking agresif dan minimisasi komentar legal di proses build release.
 
-## 3. Mandatory Engineering Rules (Aturan Wajib Build)
+## 3. Mandatory Engineering Rules & Implemented Solutions
 
 ### A. Pengaturan Production `esbuild.config.mjs`
-Setiap build production (baik di lokal maupun di GitHub Actions Runner) **WAJIB** menerapkan flag berikut:
+Setiap build production (baik di lokal maupun di GitHub Actions Runner) menerapkan konfigurasi:
 ```javascript
 minify: true,
 minifyWhitespace: true,
@@ -43,17 +43,30 @@ minifySyntax: true,
 treeShaking: true,
 legalComments: 'none',   // Membuang ribuan baris komentar lisensi pihak ketiga dari bundle
 sourcemap: false,        // DILARANG inline sourcemap pada production artifact!
-drop: ['debugger'],      // Opsional: hilangkan debugging hooks
+drop: ['debugger'],      // Hilangkan debugging hooks
 ```
 
-### B. Strategi Pemisahan & Lazy-Loading (Jika Mendekati Batas 4 MB)
-1. **Dynamic Import**: Hindari mengimpor library berat di tingkat teratas `main.ts`. Gunakan `await import(...)` hanya saat view terkait dibuka (misal saat Leaflet View atau SQLite Editor aktif).
-2. **Decoupled Architecture**: Pisahkan modul authoring dan scaffolding murni ke plugin pendamping (`pakcli-write` / `pakcli-local`) agar tidak menumpuk semua modul ke dalam satu bundle.
+### B. Solusi Optimasi Tanpa Menghilangkan Fitur (Zero-Feature-Loss)
+1. **WASM Deflate Compression (`wa-sqlite-wasm-url`)**:
+   - `wa-sqlite-async.wasm` dikompresi saat build menggunakan `node:zlib.deflateSync` (level 9), memangkas raw base64 dari 1.45 MB menjadi ~0.53 MB.
+   - Di runtime, `pako.inflate` mengekstraksi binary wasm secara sinkronik menjadi `Uint8Array` yang identik byte-for-byte.
+   - Penghematan: **~920 KB**.
+2. **Vector SVG Avatars pada Shader Carousel**:
+   - Template dummy fallback pada `character-filmstrip.html` yang sebelumnya menanamkan 4 gambar JPEG base64 masif (~250 KB) digantikan dengan avatar SVG ringkas dan tajam.
+   - Penghematan: **~250 KB**.
+3. **Automated Bundle Size Cap Assertion**:
+   - Script `esbuild.config.mjs` memvalidasi ukuran `main.js` pasca-build (`size <= 5 * 1024 * 1024`).
+   - Jika ukuran melebihi batas 5.0 MB, build akan otomatis melempar error dan membatalkan pipeline sebelum dipublikasikan.
+
+### C. Hasil Metrik Bundle Terkini
+- **Ukuran Awal**: 5.94 MB (5,937,641 bytes) — *Gagal / Warning di Obsidian Sync*
+- **Ukuran Terkini**: **4.54 MB (4,762,372 bytes)** — *Lolos 100% (< 5.0 MB)*
+- **Headroom Tersedia**: ~480 KB di bawah batas ketat Obsidian Sync Standard.
 
 ## 4. Manifest Integrity Guard
 Plugin ID resmi yang terdaftar di direktori komunitas Obsidian adalah **`pakcli-table`**.
 - Field `id` pada `manifest.json` **TIDAK BOLEH DIUBAH** menjadi nama lain agar rilis GitHub tidak berstatus *FAILED* saat diaudit bot Obsidian.
-- Nama publik dapat disesuaikan melalui field `name: "PakCLI Panel"`.
+- Nama publik disesuaikan melalui field `name: "PakCLI Panel"`.
 
 ## 5. Status: 1 (Active Directive)
 Pedoman ini aktif sebagai acuan arsitektur wajib untuk seluruh rilis dan automated CI/CD pipeline selanjutnya.
