@@ -1315,6 +1315,7 @@ export class CodeblockScaler {
 	}
 
 	private originalClipboardWriteText: ((text: string) => Promise<void>) | null = null;
+	private lastCodeblockCopyTimestamp = 0;
 
 	formatTemplateNoticeLabel(tpl: string): string {
 		const t = (tpl || '').trim();
@@ -1326,14 +1327,30 @@ export class CodeblockScaler {
 	}
 
 	/** Sanitizes clipboard text according to active String Sanitizer rules */
-	public applyClipboardSanitizer(text: string): { text: string; replacementsCount: number } {
+	public applyClipboardSanitizer(
+		text: string,
+		triggerSource: 'codeblock-btn' | 'global' = 'global'
+	): { text: string; replacementsCount: number } {
 		try {
 			const settings = this.plugin?.settings?.stringSanitizerSettings;
-			if (!settings?.masterEnabled || !settings?.enableClipboardSanitizer) {
+			if (!settings?.masterEnabled) {
 				return { text, replacementsCount: 0 };
 			}
+			const globalMode = settings.clipboardSanitizerMode || (settings.enableClipboardSanitizer === false ? 'none' : 'codeblock-btn-only');
+			if (globalMode === 'none') {
+				return { text, replacementsCount: 0 };
+			}
+			if (globalMode === 'codeblock-btn-only' && triggerSource !== 'codeblock-btn') {
+				return { text, replacementsCount: 0 };
+			}
+
 			const rules = settings.rules || [];
-			const res = SanitizerEngine.sanitizeText(text, rules, (r) => r.affectClipboard);
+			const res = SanitizerEngine.sanitizeText(text, rules, (r) => {
+				const ruleMode = r.clipboardTrigger || (r.affectClipboard === false ? 'none' : 'codeblock-btn-only');
+				if (ruleMode === 'none') return false;
+				if (ruleMode === 'codeblock-btn-only' && triggerSource !== 'codeblock-btn') return false;
+				return true;
+			});
 			return { text: res.text, replacementsCount: res.replacementsCount };
 		} catch (err) {
 			console.warn('[PakCLI] Error in applyClipboardSanitizer:', err);
@@ -1360,7 +1377,12 @@ export class CodeblockScaler {
 						finalText = this.transformClipboardContent(text, pending.template, pending.lang, pending.replaceExisting !== false);
 						new Notice(`[PakCLI] Copied with ${pending.lang} (${this.formatTemplateNoticeLabel(pending.template)}) template!`, 2500);
 					}
-					const sanitized = this.applyClipboardSanitizer(finalText);
+					const isCodeblockTrigger = (Date.now() - this.lastCodeblockCopyTimestamp) < 3000;
+					const triggerSource = isCodeblockTrigger ? 'codeblock-btn' : 'global';
+					const sanitized = this.applyClipboardSanitizer(finalText, triggerSource);
+					if (isCodeblockTrigger) {
+						this.lastCodeblockCopyTimestamp = 0;
+					}
 					if (sanitized.replacementsCount > 0) {
 						new Notice(`🛡️ Sanitized ${sanitized.replacementsCount} string(s) in clipboard!`, 2500);
 					}
@@ -1384,7 +1406,12 @@ export class CodeblockScaler {
 						finalText = this.transformClipboardContent(text, pending.template, pending.lang, pending.replaceExisting !== false);
 						new Notice(`[PakCLI] Copied with ${pending.lang} (${this.formatTemplateNoticeLabel(pending.template)}) template!`, 2500);
 					}
-					const sanitized = this.applyClipboardSanitizer(finalText);
+					const isCodeblockTrigger = (Date.now() - this.lastCodeblockCopyTimestamp) < 3000;
+					const triggerSource = isCodeblockTrigger ? 'codeblock-btn' : 'global';
+					const sanitized = this.applyClipboardSanitizer(finalText, triggerSource);
+					if (isCodeblockTrigger) {
+						this.lastCodeblockCopyTimestamp = 0;
+					}
 					if (sanitized.replacementsCount > 0) {
 						new Notice(`🛡️ Sanitized ${sanitized.replacementsCount} string(s) in clipboard!`, 2500);
 					}
@@ -1410,7 +1437,12 @@ export class CodeblockScaler {
 						finalText = this.transformClipboardContent(text, pending.template, pending.lang, pending.replaceExisting !== false);
 						new Notice(`[PakCLI] Copied with ${pending.lang} (${this.formatTemplateNoticeLabel(pending.template)}) template!`, 2500);
 					}
-					const sanitized = this.applyClipboardSanitizer(finalText);
+					const isCodeblockTrigger = (Date.now() - this.lastCodeblockCopyTimestamp) < 3000;
+					const triggerSource = isCodeblockTrigger ? 'codeblock-btn' : 'global';
+					const sanitized = this.applyClipboardSanitizer(finalText, triggerSource);
+					if (isCodeblockTrigger) {
+						this.lastCodeblockCopyTimestamp = 0;
+					}
 					if (sanitized.replacementsCount > 0) {
 						new Notice(`🛡️ Sanitized ${sanitized.replacementsCount} string(s) in clipboard!`, 2500);
 					}
@@ -1433,6 +1465,7 @@ export class CodeblockScaler {
 			'.code-block-flair, .copy-code-button, .pakcli-cb-copy-btn, button[aria-label*="Copy" i], button[aria-label*="copy" i], [aria-label*="Copy" i], [aria-label*="copy" i], [class*="code-block-flair"]'
 		) as HTMLElement | null;
 		if (!copyBtn) return;
+		this.lastCodeblockCopyTimestamp = Date.now();
 
 		const isIgnored = (l: string) => {
 			const s = (l || '').trim().toLowerCase();
@@ -1602,7 +1635,7 @@ export class CodeblockScaler {
 			evt.stopImmediatePropagation();
 
 			let transformed = this.transformClipboardContent(rawCode, tpl, detectedLang || 'powershell', replaceEx);
-			const sanitized = this.applyClipboardSanitizer(transformed);
+			const sanitized = this.applyClipboardSanitizer(transformed, 'codeblock-btn');
 			if (sanitized.replacementsCount > 0) {
 				transformed = sanitized.text;
 				new Notice(`🛡️ Sanitized ${sanitized.replacementsCount} string(s) in clipboard!`, 2500);

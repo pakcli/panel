@@ -231,6 +231,24 @@
                 color: var(--text-accent);
                 font-weight: bold;
             }
+
+            .sanitizer-clip-opt-label {
+                display: inline-flex;
+                align-items: center;
+                gap: 4px;
+            }
+
+            .sanitizer-clip-dropdown {
+                font-size: 11px;
+                padding: 1px 6px;
+                height: 22px;
+                line-height: 18px;
+                border-radius: var(--radius-s);
+                background: var(--background-modifier-form-field);
+                border: 1px solid var(--background-modifier-border);
+                color: var(--text-normal);
+                cursor: pointer;
+            }
         }
     }
 

@@ -1993,7 +1993,10 @@ export default class PakCLITablePlugin extends Plugin {
 		const s = this.settings.stringSanitizerSettings;
 		s.masterEnabled = true;
 		s.enableVirtualPreviewMasking = true;
-		s.enableClipboardSanitizer = true;
+		if (!s.clipboardSanitizerMode) {
+			s.clipboardSanitizerMode = s.enableClipboardSanitizer === false ? 'none' : 'codeblock-btn-only';
+		}
+		s.enableClipboardSanitizer = s.clipboardSanitizerMode !== 'none';
 
 		if (!s.rules || s.rules.length === 0) {
 			s.rules = [
@@ -2006,6 +2009,7 @@ export default class PakCLITablePlugin extends Plugin {
 					caseSensitive: false,
 					enabled: true,
 					affectClipboard: true,
+					clipboardTrigger: 'codeblock-btn-only',
 					affectVirtualEditor: true
 				}
 			];
@@ -2013,7 +2017,10 @@ export default class PakCLITablePlugin extends Plugin {
 			s.rules.forEach(r => {
 				r.enabled = true;
 				r.affectVirtualEditor = true;
-				r.affectClipboard = true;
+				if (!r.clipboardTrigger) {
+					r.clipboardTrigger = r.affectClipboard === false ? 'none' : 'codeblock-btn-only';
+				}
+				r.affectClipboard = r.clipboardTrigger !== 'none';
 			});
 		}
 
@@ -6721,17 +6728,22 @@ export default class PakCLITablePlugin extends Plugin {
 					});
 			});
 
-		// Clipboard Sanitizer Toggle
+		// Clipboard Sanitizer Dropdown
 		new Setting(containerEl)
 			.setName('Codeblock Clipboard Auto-Sanitizer')
-			.setDesc('Automatically sanitize sensitive strings (e.g. usernames, local paths, credentials) when copying codeblocks.')
-			.addToggle((t) => {
-				t.setValue(current.enableClipboardSanitizer !== false)
-					.onChange(async (val) => {
-						current.enableClipboardSanitizer = val;
-						this.settings.stringSanitizerSettings = current;
-						await this.saveSettings();
-					});
+			.setDesc('Choose when sensitive strings are sanitized in clipboard: never (none), only when clicking the codeblock copy button, or on all clipboard operations.')
+			.addDropdown((d) => {
+				d.addOption('none', 'none');
+				d.addOption('codeblock-btn-only', 'clipboard codeblock btn only');
+				d.addOption('all', 'all');
+				const curMode = current.clipboardSanitizerMode || (current.enableClipboardSanitizer === false ? 'none' : 'codeblock-btn-only');
+				d.setValue(curMode);
+				d.onChange(async (val) => {
+					current.clipboardSanitizerMode = val as any;
+					current.enableClipboardSanitizer = val !== 'none';
+					this.settings.stringSanitizerSettings = current;
+					await this.saveSettings();
+				});
 			});
 
 		// Virtual Live Preview Masker Toggle
@@ -6768,6 +6780,7 @@ export default class PakCLITablePlugin extends Plugin {
 						caseSensitive: false,
 						enabled: true,
 						affectClipboard: true,
+						clipboardTrigger: 'codeblock-btn-only',
 						affectVirtualEditor: true
 					});
 					this.settings.stringSanitizerSettings = current;
@@ -6863,16 +6876,21 @@ export default class PakCLITablePlugin extends Plugin {
 				};
 				caseLabel.createSpan({ text: ' Case Sensitive' });
 
-				// Affect Clipboard checkbox
-				const clipLabel = optRow.createEl('label', { cls: 'sanitizer-opt-label' });
-				const clipChk = clipLabel.createEl('input', { type: 'checkbox' });
-				clipChk.checked = rule.affectClipboard !== false;
-				clipChk.onchange = async () => {
-					rule.affectClipboard = clipChk.checked;
+				// Affect Clipboard dropdown
+				const clipLabel = optRow.createEl('label', { cls: 'sanitizer-opt-label sanitizer-clip-opt-label' });
+				clipLabel.createSpan({ text: 'Clipboard: ' });
+				const clipSelect = clipLabel.createEl('select', { cls: 'dropdown sanitizer-clip-dropdown' });
+				clipSelect.createEl('option', { value: 'none', text: 'none' });
+				clipSelect.createEl('option', { value: 'codeblock-btn-only', text: 'clipboard codeblock btn only' });
+				clipSelect.createEl('option', { value: 'all', text: 'all' });
+				const curRuleMode = rule.clipboardTrigger || (rule.affectClipboard === false ? 'none' : 'codeblock-btn-only');
+				clipSelect.value = curRuleMode;
+				clipSelect.onchange = async () => {
+					rule.clipboardTrigger = clipSelect.value as any;
+					rule.affectClipboard = clipSelect.value !== 'none';
 					this.settings.stringSanitizerSettings = current;
 					await this.saveSettings();
 				};
-				clipLabel.createSpan({ text: ' Affect Clipboard' });
 
 				// Mask in Editor checkbox
 				const virtLabel = optRow.createEl('label', { cls: 'sanitizer-opt-label' });

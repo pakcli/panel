@@ -1,5 +1,7 @@
 import { TFile } from 'obsidian';
 
+export type ClipboardSanitizerTriggerMode = 'none' | 'codeblock-btn-only' | 'all';
+
 export interface StringSanitizerRule {
     id: string;
     label: string;                 // e.g. "Mask Username fsl -> fulan"
@@ -8,13 +10,15 @@ export interface StringSanitizerRule {
     isRegex: boolean;              // true = regex, false = plain text
     caseSensitive: boolean;        // true / false
     enabled: boolean;              // toggle aktif/nonaktif per rule
-    affectClipboard: boolean;      // otomatis aktif saat copy codeblock
+    affectClipboard?: boolean;     // legacy boolean compatibility
+    clipboardTrigger?: ClipboardSanitizerTriggerMode; // 'none' | 'codeblock-btn-only' | 'all'
     affectVirtualEditor: boolean;  // menyamarkan tampilan di editor
 }
 
 export interface StringSanitizerSettings {
     masterEnabled: boolean;
-    enableClipboardSanitizer: boolean;
+    enableClipboardSanitizer?: boolean; // legacy boolean compatibility
+    clipboardSanitizerMode?: ClipboardSanitizerTriggerMode; // 'none' | 'codeblock-btn-only' | 'all'
     enableVirtualPreviewMasking: boolean;
     rules: StringSanitizerRule[];
 }
@@ -35,6 +39,7 @@ export interface ReplacementMatchItem {
 export const DEFAULT_STRING_SANITIZER_SETTINGS: StringSanitizerSettings = {
     masterEnabled: true,
     enableClipboardSanitizer: true,
+    clipboardSanitizerMode: 'codeblock-btn-only',
     enableVirtualPreviewMasking: true,
     rules: [
         {
@@ -46,6 +51,7 @@ export const DEFAULT_STRING_SANITIZER_SETTINGS: StringSanitizerSettings = {
             caseSensitive: false,
             enabled: true,
             affectClipboard: true,
+            clipboardTrigger: 'codeblock-btn-only',
             affectVirtualEditor: true
         }
     ]
