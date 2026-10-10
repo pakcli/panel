@@ -1,4 +1,3 @@
-import { getLanguage } from "obsidian";
 import { isNonEmptyObject } from "@plugin/util";
 import en from "./locales/en";
 
@@ -6,7 +5,15 @@ const localeMap: { [k: string]: Partial<typeof en> } = {
 	en,
 };
 
-const userLocale = { ...en, ...localeMap[getLanguage() || "en"] };
+const getObsidianLanguage = (): string => {
+	try {
+		return (window as any).moment?.locale?.() || (window as any).i18next?.language || (typeof navigator !== 'undefined' ? navigator.language : 'en') || 'en';
+	} catch {
+		return 'en';
+	}
+};
+
+const userLocale = { ...en, ...(localeMap[getObsidianLanguage()] || {}) };
 
 type KeyPath<T extends string, K extends string> = `${T}${"" extends T ? "" : "."}${K}`;
 type KeyPaths<T extends object, P extends string = ""> = {
