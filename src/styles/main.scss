@@ -30,27 +30,6 @@
 @import "leaflet.css";
 @import "ytcapture.css";
 
-/* ========================================================================= */
-/* Asset Draggable - Native Drag & Drop Styles                                */
-/* ========================================================================= */
-.internal-embed.image-embed img,
-.internal-embed img,
-.markdown-rendered img,
-.cm-embed-block img,
-.internal-embed.pdf-embed,
-.internal-embed.media-embed,
-.internal-embed[src],
-.cm-embed-block .internal-embed {
-    -webkit-user-drag: element;
-    user-drag: element;
-    cursor: grab;
-}
-
-.internal-embed.image-embed img:active,
-.markdown-rendered img:active,
-.cm-embed-block img:active {
-    cursor: grabbing;
-}
 
 /* ─── Protect Tier List Drag & Sorting (Prevent hijacking as attachment file drag) ─── */
 .tier-list,

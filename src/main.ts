@@ -5695,17 +5695,6 @@ export default class PakCLITablePlugin extends Plugin {
 					});
 
 				new Setting(containerEl)
-					.setName('Enable Native Asset Drag & Drop')
-					.setDesc('Allow dragging images, PDFs, and media directly out of rendered codeblocks.')
-					.addToggle((t) => {
-						t.setValue(this.settings.enableAssetDrag !== false)
-							.onChange(async (v) => {
-								this.settings.enableAssetDrag = v;
-								await this.saveSettings();
-							});
-					});
-
-				new Setting(containerEl)
 					.setName('Debug Diagnostics Mode')
 					.setDesc('Write detailed codeblock DOM & style dump to artifacts/debug_codeblock.json on rescale.')
 					.addToggle((t) => {

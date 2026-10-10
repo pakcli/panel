@@ -194,7 +194,6 @@ export const ECOSYSTEM_MODULES: BlueprintSection[] = [
       { key: "codeblockWrapMode", type: "dropdown", name: "Codeblock Wrap & Flow Mode", desc: "Choose how long code lines are handled in Live Preview and Reading views.", defaultVal: "flowclip", options: ["flowclip", "wrap", "scalefit"] },
       { key: "flowclipSliderMode", type: "dropdown", name: "Flowclip Slider Mode", desc: "How the horizontal scrollbar behaves in Flowclip mode.", defaultVal: "all-lines", options: ["all-lines", "current", "per-line"] },
       { key: "codeblockTheme", type: "dropdown", name: "Codeblock Theme", desc: "Color theme for codeblocks.", defaultVal: "obsidian", options: ["obsidian", "midnight", "paper", "terminal", "custom"] },
-      { key: "enableAssetDrag", type: "toggle", name: "Enable Native Asset Drag & Drop", desc: "Allow dragging images, PDFs, and media directly out of rendered codeblocks.", defaultVal: true },
     ],
   },
   {

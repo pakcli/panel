@@ -224,7 +224,6 @@ export interface PakCLITableSettings extends
     asciiCanvasTheme?: string;
     enableAsciiRenderer?: boolean;
     tierListSettings?: TierListSettings;
-    enableAssetDrag: boolean;
     enableCsvEditor?: boolean;
     gridTheme?: string;
     csvArtifactFolderPath: string;
@@ -368,7 +367,6 @@ export const DEFAULT_TABLE_SETTINGS: PakCLITableSettings = {
     codeblockDebug: false,
     asciiCanvasTheme: 'Monochrome Matrix',
     enableAsciiRenderer: true,
-    enableAssetDrag: true,
     carouselOrientation: 'horizontal',
     carouselVisibleSideCards: 5,
     carouselCursorFollow: false,
