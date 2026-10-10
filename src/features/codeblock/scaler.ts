@@ -1043,6 +1043,10 @@ export class CodeblockScaler {
 				bar.style.setProperty('display', 'none', 'important');
 				return;
 			}
+			if (document.querySelector('.modal-container')) {
+				bar.style.setProperty('display', 'none', 'important');
+				return;
+			}
 			if (!this.isElementVisibleInActiveView(pre)) {
 				bar.style.setProperty('display', 'none', 'important');
 				if (!pre.isConnected) {
@@ -2668,6 +2672,12 @@ export class CodeblockScaler {
 			hide();
 			return;
 		}
+		// If any Obsidian modal is open, completely suppress codeblock slider bar
+		if (document.querySelector('.modal-container')) {
+			hide();
+			return;
+		}
+
 		if (anchor.offsetParent === null) {
 			hide();
 			return;

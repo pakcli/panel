@@ -662,7 +662,7 @@ body pre.pakcli-codeblock-flowclip-native,
     height: 14px !important;
     min-height: 14px !important;
     max-height: 14px !important;
-    z-index: 9999 !important;
+    z-index: 15 !important;
     box-sizing: border-box !important;
     pointer-events: auto !important;
     background: var(--code-background, rgba(30,30,30,0.85)) !important;
@@ -702,7 +702,7 @@ body pre.pakcli-codeblock-flowclip-native,
 .pakcli-codeblock-slider-bar {
     display: none;
     position: fixed !important;
-    z-index: 9999 !important;
+    z-index: 15 !important;
     width: 100% !important;
     max-width: 100% !important;
     height: 12px !important;
