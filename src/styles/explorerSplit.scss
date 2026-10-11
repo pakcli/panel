@@ -204,8 +204,9 @@
   flex-direction: column;
   overflow: hidden;
   flex-shrink: 0;
-  min-height: 70px;
+  min-height: unset;
   max-height: 80vh;
+  height: auto;
   background: var(--background-secondary);
   border-bottom: 1px solid var(--background-modifier-border);
   position: relative;
@@ -357,10 +358,12 @@
   }
 
   .pakcli-recent-list {
-    flex: 1 1 auto;
+    flex: 0 1 auto;
     overflow-y: auto;
     overflow-x: hidden;
-    padding: 3px 6px 6px 6px;
+    padding: 3px 6px 3px 6px;
+    /* Exactly 3 rows of files on desktop: 3 * 26px + 6px padding = 84px */
+    max-height: calc(3 * 26px + 6px);
 
     &::-webkit-scrollbar {
       width: 4px;
@@ -381,6 +384,7 @@
 
   .pakcli-recent-item {
     margin: 1px 0;
+    box-sizing: border-box;
 
     .tree-item-self {
       position: relative;
@@ -388,6 +392,9 @@
       align-items: center;
       gap: 6px;
       padding: 3px 6px;
+      height: 24px;
+      min-height: 24px;
+      box-sizing: border-box;
       border-radius: var(--radius-s);
       font-size: 0.82rem;
       line-height: 1.35;
@@ -503,6 +510,27 @@
       .pakcli-splitter-grip {
         background: var(--interactive-accent);
         width: 42px;
+      }
+    }
+  }
+}
+
+/* Mobile Optimization: Exactly 3 rows with touch-friendly targets */
+body.is-mobile,
+.is-mobile {
+  .pakcli-explorer-recent-pane {
+    .pakcli-recent-list {
+      /* Exactly 3 rows on mobile: 3 * 32px + 6px padding = 102px */
+      max-height: calc(3 * 32px + 6px);
+    }
+
+    .pakcli-recent-item {
+      margin: 2px 0;
+
+      .tree-item-self {
+        height: 28px;
+        min-height: 28px;
+        padding: 4px 8px;
       }
     }
   }

@@ -4323,18 +4323,16 @@ export default class PakCLITablePlugin extends Plugin {
 
 				new Setting(containerEl)
 					.setName('Recent Files Pane Height')
-					.setDesc('Default height in pixels for the recent files section (also resizable by dragging the splitter bar).')
+					.setDesc('Height in pixels for recent files pane. Set to 0 (or leave empty) to automatically fit 3 rows of files on all devices.')
 					.addText((text) => {
-						text.setPlaceholder('180')
-							.setValue(String(this.settings.explorerSplitHeight || 180))
+						text.setPlaceholder('0 (auto 3 rows)')
+							.setValue(String(this.settings.explorerSplitHeight && this.settings.explorerSplitHeight !== 180 && this.settings.explorerSplitHeight !== 135 ? this.settings.explorerSplitHeight : ''))
 							.onChange(async (val) => {
 								const num = parseInt(val, 10);
-								if (!isNaN(num) && num >= 70 && num <= 600) {
-									this.settings.explorerSplitHeight = num;
-									await this.saveSettings();
-									if (this.splitViewManager) {
-										this.splitViewManager.applyLayout();
-									}
+								this.settings.explorerSplitHeight = !isNaN(num) && num >= 70 && num <= 600 ? num : 0;
+								await this.saveSettings();
+								if (this.splitViewManager) {
+									this.splitViewManager.applyLayout();
 								}
 							});
 					});

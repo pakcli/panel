@@ -662,8 +662,17 @@ export class SplitViewManager implements HoverParent {
 
     if (this.recentPaneEl) {
       this.recentPaneEl.style.display = 'flex';
-      const initialHeight = this.plugin.settings.explorerSplitHeight || 180;
-      this.recentPaneEl.style.height = `${initialHeight}px`;
+      const customHeight = this.plugin.settings.explorerSplitHeight;
+      // Default to auto (3 rows) unless user manually resized to a non-default custom value
+      if (customHeight && customHeight > 0 && customHeight !== 180 && customHeight !== 135) {
+        this.recentPaneEl.style.height = `${customHeight}px`;
+        const listEl = this.recentPaneEl.querySelector('.pakcli-recent-list') as HTMLElement;
+        if (listEl) listEl.style.maxHeight = 'none';
+      } else {
+        this.recentPaneEl.style.height = 'auto';
+        const listEl = this.recentPaneEl.querySelector('.pakcli-recent-list') as HTMLElement;
+        if (listEl) listEl.style.removeProperty('max-height');
+      }
     }
 
     // Configure Section Ordering based on explorerSectionOrder
@@ -897,6 +906,18 @@ export class SplitViewManager implements HoverParent {
   }
 
   private initSplitterDrag(splitter: HTMLElement, pane: HTMLElement) {
+    splitter.addEventListener('dblclick', async (e) => {
+      e.preventDefault();
+      pane.style.height = 'auto';
+      const listEl = pane.querySelector('.pakcli-recent-list') as HTMLElement;
+      if (listEl) {
+        listEl.style.removeProperty('max-height');
+      }
+      this.plugin.settings.explorerSplitHeight = 0;
+      await this.plugin.saveSettings();
+      new Notice('Recent panel reset to default 3 rows');
+    });
+
     splitter.addEventListener('pointerdown', (e: PointerEvent) => {
       e.preventDefault();
       this.isDragging = true;
@@ -911,6 +932,8 @@ export class SplitViewManager implements HoverParent {
         const delta = moveEvent.clientY - startY;
         const newHeight = Math.max(70, Math.min(600, Math.round(startHeight + delta)));
         pane.style.height = `${newHeight}px`;
+        const listEl = pane.querySelector('.pakcli-recent-list') as HTMLElement;
+        if (listEl) listEl.style.maxHeight = 'none';
       };
 
       const onPointerUp = async () => {

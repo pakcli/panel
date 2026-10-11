@@ -132,7 +132,7 @@ export interface DictionaryFolderEntry {
 export const DEFAULT_EXPLORER_SETTINGS: ExplorerSettings = {
   explorerSplitEnabled: false,
   explorerSectionOrder: [...DEFAULT_EXPLORER_SECTION_ORDER],
-  explorerSplitHeight: 180,
+  explorerSplitHeight: 0,
   explorerMaxRecentFiles: 20,
   explorerRecentShowIcons: false,
   explorerRecentTimeFilter: 'all',
