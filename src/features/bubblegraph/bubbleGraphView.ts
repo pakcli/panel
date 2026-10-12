@@ -6,6 +6,7 @@ import { buildVaultGraph, BuiltGraph, getFolderColor, matchFolderRule, getDefaul
 import { BubbleSimulation } from './simulation';
 import { CanvasRenderer, ViewportTransform, RenderState } from './canvasRenderer';
 import { SfxManager } from './sfxManager';
+import { detectObsidianThemePalette, BubbleThemePalette } from './themeColorDetector';
 import { PresetViewScopeModal, SavePresetPromptModal } from './presetModal';
 import { BezierCurveEditor } from './components/BezierCurveEditor';
 import { formatSecondsToHms, formatSecondsToHmsHyphen, evaluateCubicBezier } from './bezierUtils';
@@ -126,6 +127,9 @@ export class BubbleGraphView extends ItemView {
     private labelModeSelectEl: HTMLSelectElement | null = null;
     private customFormatInputEl: HTMLInputElement | null = null;
     private captainColorsBtnEl!: HTMLElement;
+    private themeColorBtnEl: HTMLElement | null = null;
+    private themeColorOverride: boolean = false;
+    private currentThemePalette: BubbleThemePalette | null = null;
     private sfxToggleBtnEl!: HTMLElement;
     private volumeSliderEl!: HTMLInputElement;
     private volumeDisplayEl!: HTMLElement;
@@ -255,6 +259,12 @@ export class BubbleGraphView extends ItemView {
         this.nodeImageBorder = this.plugin.settings.bubbleNodeImageBorder || 'thick';
         this.relationshipAllScopeState = Boolean(this.plugin.settings.bubbleRelationshipAllScopeState);
         this.useCaptainColors = Boolean(this.plugin.settings.bubbleUseCaptainColors);
+        this.themeColorOverride = Boolean(this.plugin.settings.bubbleThemeColorOverride);
+        if (this.themeColorOverride) {
+            this.currentThemePalette = detectObsidianThemePalette(this.app);
+        } else {
+            this.currentThemePalette = null;
+        }
         this.timelapseDurationMode = (this.plugin.settings.bubbleTimelapseDurationMode || 'default') as BubbleTimelapseDurationMode;
         this.timelapseCustomSeconds = this.plugin.settings.bubbleTimelapseCustomSeconds ?? 15;
         this.spawnTextEnabled = this.plugin.settings.bubbleSpawnTextEnabled !== false;
@@ -382,6 +392,9 @@ export class BubbleGraphView extends ItemView {
         // Listen for theme / css changes in Obsidian workspace to adjust adaptive accent colors
         this.registerEvent(
             this.app.workspace.on('css-change', () => {
+                if (this.themeColorOverride) {
+                    this.currentThemePalette = detectObsidianThemePalette(this.app);
+                }
                 this.applyCaptainFolderColors();
             })
         );
@@ -519,6 +532,12 @@ export class BubbleGraphView extends ItemView {
         this.updateLabelModeUI();
         if (this.captainColorsBtnEl) {
             this.setBtnActive(this.captainColorsBtnEl, this.useCaptainColors);
+        }
+        this.themeColorOverride = DEFAULT_BUBBLE_GRAPH_SETTINGS.bubbleThemeColorOverride ?? false;
+        this.plugin.settings.bubbleThemeColorOverride = this.themeColorOverride;
+        this.currentThemePalette = null;
+        if (this.themeColorBtnEl) {
+            this.setBtnActive(this.themeColorBtnEl, this.themeColorOverride);
         }
         if (this.imageCoverBtnEl) {
             this.setBtnActive(this.imageCoverBtnEl, this.enableNodeImageCover);
@@ -665,7 +684,8 @@ export class BubbleGraphView extends ItemView {
             this.scopedFolder,
             glyphSettings,
             relationshipSettings,
-            this.plugin.settings.fileConfigs as Record<string, any>
+            this.plugin.settings.fileConfigs as Record<string, any>,
+            this.themeColorOverride ? this.currentThemePalette : null
         );
 
         // Sort all nodes according to active timelapse mode (Vanilla, Time, Filename A-Z, File Title A-Z)
@@ -741,10 +761,14 @@ export class BubbleGraphView extends ItemView {
         const relRoot = this.plugin.settings.familyCirclesRootFolder || 'Relationships';
         const normRelRoot = normalizePath(relRoot).toLowerCase();
 
-        const defaultAccent = getDefaultNodeColor(this.app);
+        const defaultAccent = this.themeColorOverride && this.currentThemePalette
+            ? this.currentThemePalette.accent
+            : getDefaultNodeColor(this.app);
 
         for (const node of this.graphData.nodes) {
-            if (!this.useCaptainColors) {
+            if (this.themeColorOverride && this.currentThemePalette) {
+                node.color = this.currentThemePalette.accent;
+            } else if (!this.useCaptainColors) {
                 node.color = defaultAccent;
             } else if (node.relTierColor) {
                 // Relationship nodes keep their tier color from settings when anchor is enabled
@@ -760,7 +784,9 @@ export class BubbleGraphView extends ItemView {
             }
         }
         for (const cluster of this.graphData.clusters) {
-            if (!this.useCaptainColors) {
+            if (this.themeColorOverride && this.currentThemePalette) {
+                cluster.color = this.currentThemePalette.accent;
+            } else if (!this.useCaptainColors) {
                 cluster.color = defaultAccent;
             } else {
                 const isRootRel = cluster.id === relRoot || 
@@ -1632,6 +1658,35 @@ export class BubbleGraphView extends ItemView {
             this.plugin.settings.bubbleUseCaptainColors = this.useCaptainColors;
             await this.plugin.saveSettings();
             this.applyCaptainFolderColors();
+        };
+
+        // 2b. Theme Color Override (Detect active Obsidian theme and override bubble, node, text & button colors)
+        this.themeColorBtnEl = togglesCluster.createEl('button', {
+            cls: `clickable-icon pakcli-icon-btn pakcli-theme-color-btn ${this.themeColorOverride ? 'is-active mod-cta' : ''}`,
+            title: 'Toggle Theme Color Override: Synchronize bubbles, nodes & labels with active Obsidian theme'
+        });
+        this.themeColorBtnEl.setAttribute('aria-pressed', this.themeColorOverride ? 'true' : 'false');
+        setIcon(this.themeColorBtnEl, 'palette');
+        this.themeColorBtnEl.onclick = async () => {
+            this.themeColorOverride = !this.themeColorOverride;
+            if (this.themeColorBtnEl) {
+                this.setBtnActive(this.themeColorBtnEl, this.themeColorOverride);
+            }
+            this.plugin.settings.bubbleThemeColorOverride = this.themeColorOverride;
+            await this.plugin.saveSettings();
+
+            if (this.themeColorOverride) {
+                this.currentThemePalette = detectObsidianThemePalette(this.app);
+                new Notice(`🎨 Theme Color Override ACTIVE (Theme: "${this.currentThemePalette.themeName}")`);
+            } else {
+                this.currentThemePalette = null;
+                new Notice('🎨 Theme Color Override DISABLED (Default mechanics restored)');
+            }
+
+            this.applyCaptainFolderColors();
+            if (this.sfxManager?.isEnabled()) {
+                this.sfxManager.playLinkSwitch(this.themeColorOverride ? 1.0 : 0.6);
+            }
         };
 
         // 3. Node Image Cover (Show frontmatter image cover or glyph symbol)
@@ -3469,7 +3524,8 @@ export class BubbleGraphView extends ItemView {
                     timelapseCtimeCutoff: renderCutoff,
                     timelapseVisibleNodeIds: renderVisibleNodeIds,
                     enableNodeImageCover: this.enableNodeImageCover,
-                    nodeImageBorder: this.nodeImageBorder
+                    nodeImageBorder: this.nodeImageBorder,
+                    themePalette: this.themeColorOverride ? this.currentThemePalette : null
                 };
 
                 this.renderer.render(this.transform, renderState, time);
@@ -4256,6 +4312,7 @@ export class BubbleGraphView extends ItemView {
         // Update UI controls
         if (this.linesToggleBtnEl) this.setBtnActive(this.linesToggleBtnEl, this.showLines);
         if (this.captainColorsBtnEl) this.setBtnActive(this.captainColorsBtnEl, this.useCaptainColors);
+        if (this.themeColorBtnEl) this.setBtnActive(this.themeColorBtnEl, this.themeColorOverride);
         if (this.imageCoverBtnEl) this.setBtnActive(this.imageCoverBtnEl, this.enableNodeImageCover);
         if (this.relAllScopeBtnEl) this.setBtnActive(this.relAllScopeBtnEl, this.relationshipAllScopeState);
         this.updateLabelModeUI();

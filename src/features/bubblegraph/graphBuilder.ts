@@ -4,6 +4,8 @@ import { computeClusterRadius } from './simulation';
 import { FolderRule } from '../tree/types';
 import { BubbleNodeGlyphOption, RelationshipTierConfig, RelationshipFolderEntry, DEFAULT_RELATIONSHIP_TIERS } from '../../settings';
 
+import { BubbleThemePalette } from './themeColorDetector';
+
 export interface RelationshipGraphSettings {
     rootFolder?: string;
     mode?: '1dir' | 'subfolders';
@@ -523,7 +525,8 @@ export function buildVaultGraph(
     scopedFolder: string | null = null,
     glyphSettings?: NodeGlyphSettings,
     relationshipSettings?: RelationshipGraphSettings,
-    fileConfigs?: Record<string, any>
+    fileConfigs?: Record<string, any>,
+    themePalette?: BubbleThemePalette | null
 ): BuiltGraph {
     const relRoot = relationshipSettings?.rootFolder ? normalizePath(relationshipSettings.rootFolder) : 'Relationships';
     const relFolders = new Set<string>();
@@ -749,9 +752,12 @@ export function buildVaultGraph(
         }
 
         const relTierColor = matchedRelTier ? resolveTierColor(matchedRelTier) : undefined;
-        let color = getDefaultNodeColor(app);
+        let color = themePalette ? themePalette.accent : getDefaultNodeColor(app);
 
-        if (!useCaptainColors) {
+        if (themePalette) {
+            // Theme override active: bubbles and nodes synchronize with active theme accent
+            color = themePalette.accent;
+        } else if (!useCaptainColors) {
             color = getDefaultNodeColor(app);
         } else if (matchedRelTier) {
             // Relationship nodes strictly keep their tier color from settings
@@ -1296,6 +1302,10 @@ export function buildVaultGraph(
             ? computeClusterRadius(directIds.length, depth)
             : computeClusterRadius(allIds.length, depth);
 
+        const clusterColor = themePalette
+            ? themePalette.accent
+            : getFolderColor(folderPath, captainRules, useCaptainColors, fileConfigs, app);
+
         const cluster: BubbleCluster = {
             id: folderPath,
             name,
@@ -1305,7 +1315,7 @@ export function buildVaultGraph(
             directNodeIds: directIds,
             centroid: { x: 0, y: 0 },
             radius: initialRadius,
-            color: getFolderColor(folderPath, captainRules, useCaptainColors, fileConfigs, app),
+            color: clusterColor,
             hullPolygon: [],
             smoothedHull: [],
             boundingBox: { minX: 0, minY: 0, maxX: 0, maxY: 0 }

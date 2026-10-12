@@ -1,6 +1,6 @@
 # 📌 Master Brief: Bubble Graph Theme-Aware Dynamic Color Override (`pakcli-panel`)
 
-> **Feature Status**: `0` (Draft / Pending Implementation)  
+> **Feature Status**: `1` (Implemented & Verified)  
 > **Target Module**: `pakcli-panel` (`panel`)  
 > **Platform**: Obsidian Desktop & Mobile (`obsidian` API / CSSOM)  
 > **Date**: 2026-10-12  
@@ -63,21 +63,21 @@ Ketika `bubbleThemeColorOverride` = `true`:
 
 | File | Status | Keterangan |
 | :--- | :---: | :--- |
-| `panel/docs/bubble-theme-color-detection.md` | ⏳ Pending | Brief dokumentasi fitur (Status 0 -> 1) |
-| `panel/src/settings.ts` | ⏳ Pending | Menambahkan `bubbleThemeColorOverride: boolean` ke `BubbleGraphSettings` |
-| `panel/src/features/bubblegraph/themeColorDetector.ts` | ⏳ Pending | Helper ekstraksi palet CSS tema aktif dari DOM & Obsidian config |
-| `panel/src/features/bubblegraph/graphBuilder.ts` | ⏳ Pending | Integrasi `themePalette` override saat `bubbleThemeColorOverride` aktif |
-| `panel/src/features/bubblegraph/canvasRenderer.ts` | ⏳ Pending | Render label teks, badge folder tab, dan hull dengan warna tema |
-| `panel/src/features/bubblegraph/bubbleGraphView.ts` | ⏳ Pending | UI toggle button pada control bar & event listener pergantian tema |
+| `panel/docs/bubble-theme-color-detection.md` | ✅ Done | Brief dokumentasi fitur (Status 0 -> 1) |
+| `panel/src/settings.ts` | ✅ Done | Menambahkan `bubbleThemeColorOverride: boolean` ke `BubbleGraphSettings` |
+| `panel/src/features/bubblegraph/themeColorDetector.ts` | ✅ Done | Helper ekstraksi palet CSS tema aktif dari DOM & Obsidian config |
+| `panel/src/features/bubblegraph/graphBuilder.ts` | ✅ Done | Integrasi `themePalette` override saat `bubbleThemeColorOverride` aktif |
+| `panel/src/features/bubblegraph/canvasRenderer.ts` | ✅ Done | Render label teks, badge folder tab, dan hull dengan warna tema |
+| `panel/src/features/bubblegraph/bubbleGraphView.ts` | ✅ Done | UI toggle button pada control bar & event listener pergantian tema |
 
 ---
 
 ## 4. Acceptance Criteria Checklist
 
-- [ ] Status 0 brief dibuat dan di-commit ke Git repo.
-- [ ] Implementasi ekstraksi palet tema (`themeColorDetector.ts`).
-- [ ] Toggle `bubbleThemeColorOverride` tersedia di pengaturan dan toolbar view.
-- [ ] Teks dan node berubah warna sesuai tema saat opsi aktif.
-- [ ] Mekanik pewarnaan saat opsi mati tetap 100% normal seperti semula.
-- [ ] Build `npm run build` sukses, 0 error, bundle < 5.0 MB.
-- [ ] Status brief di-update ke 1 dan di-commit.
+- [x] Status 0 brief dibuat dan di-commit ke Git repo (`d257a54`).
+- [x] Implementasi ekstraksi palet tema (`themeColorDetector.ts`).
+- [x] Toggle `bubbleThemeColorOverride` tersedia di pengaturan dan toolbar view.
+- [x] Teks dan node berubah warna sesuai tema saat opsi aktif.
+- [x] Mekanik pewarnaan saat opsi mati tetap 100% normal seperti semula.
+- [x] Build `npm run build` sukses, 0 error, bundle 4.55 MB (< 5.0 MB limit).
+- [x] Status brief di-update ke 1 dan di-commit.

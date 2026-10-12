@@ -110,6 +110,7 @@ export interface BubbleGraphSettings {
     bubbleTimelapseVanillaSpeed: number;
     bubbleTimelapseDateFormat: string;
     bubbleUseCaptainColors: boolean;
+    bubbleThemeColorOverride?: boolean;
     bubbleMaxClusterDepth: number;
     bubbleShowBreadcrumbs: boolean;
     bubbleDenseScale: number;
@@ -284,6 +285,7 @@ export const DEFAULT_BUBBLE_GRAPH_SETTINGS: BubbleGraphSettings = {
     bubbleTimelapseVanillaSpeed: 0.025,
     bubbleTimelapseDateFormat: 'DD - MM - YYYY',
     bubbleUseCaptainColors: false,
+    bubbleThemeColorOverride: false,
     bubbleMaxClusterDepth: 3,
     bubbleShowBreadcrumbs: true,
     bubbleDenseScale: 1.15,

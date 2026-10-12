@@ -2,6 +2,7 @@ import { normalizePath } from 'obsidian';
 import { BubbleNode, BubbleEdge, BubbleCluster } from './types';
 import { createSmoothHullPath } from './hullGenerator';
 import { getNodeEffectiveTime, getDefaultNodeColor } from './graphBuilder';
+import { BubbleThemePalette } from './themeColorDetector';
 
 export interface ViewportTransform {
     panX: number;
@@ -42,6 +43,7 @@ export interface RenderState {
     timelapseVisibleNodeIds?: Set<string> | null;
     enableNodeImageCover?: boolean;
     nodeImageBorder?: 'noborder' | 'thin' | 'thick';
+    themePalette?: BubbleThemePalette | null;
 }
 
 export class CanvasRenderer {
@@ -313,7 +315,10 @@ export class CanvasRenderer {
         // Pill background
         ctx.beginPath();
         ctx.roundRect(tabX, tabY, tabWidth, tabHeight, Math.max(4, Math.round(fontSize * 0.45)));
-        ctx.fillStyle = isHovered ? 'rgba(15, 23, 42, 0.95)' : 'rgba(15, 23, 42, 0.82)';
+        const pillBg = state.themePalette
+            ? (state.themePalette.isDark ? (isHovered ? 'rgba(30, 41, 59, 0.96)' : 'rgba(15, 23, 42, 0.88)') : (isHovered ? 'rgba(241, 245, 249, 0.96)' : 'rgba(255, 255, 255, 0.90)'))
+            : (isHovered ? 'rgba(15, 23, 42, 0.95)' : 'rgba(15, 23, 42, 0.82)');
+        ctx.fillStyle = pillBg;
         ctx.fill();
 
         ctx.strokeStyle = isHovered ? color : this.hexToRgba(color, 0.55);
@@ -321,7 +326,10 @@ export class CanvasRenderer {
         ctx.stroke();
 
         // Label Text
-        ctx.fillStyle = isHovered ? '#ffffff' : '#cbd5e1';
+        const textColor = state.themePalette
+            ? (isHovered ? state.themePalette.textNormal : state.themePalette.textMuted)
+            : (isHovered ? '#ffffff' : '#cbd5e1');
+        ctx.fillStyle = textColor;
         ctx.textBaseline = 'middle';
         ctx.fillText(labelText, tabX + Math.round(fontSize * 0.65 + 2), tabY + tabHeight / 2);
 
@@ -360,7 +368,10 @@ export class CanvasRenderer {
         ctx.save();
         ctx.beginPath();
         ctx.roundRect(tabX, tabY, tabWidth, tabHeight, Math.max(3, Math.round(fontSize * 0.35)));
-        ctx.fillStyle = isHovered ? 'rgba(15, 23, 42, 0.95)' : 'rgba(15, 23, 42, 0.85)';
+        const pillBg = state.themePalette
+            ? (state.themePalette.isDark ? (isHovered ? 'rgba(30, 41, 59, 0.96)' : 'rgba(15, 23, 42, 0.88)') : (isHovered ? 'rgba(241, 245, 249, 0.96)' : 'rgba(255, 255, 255, 0.90)'))
+            : (isHovered ? 'rgba(15, 23, 42, 0.95)' : 'rgba(15, 23, 42, 0.85)');
+        ctx.fillStyle = pillBg;
         ctx.fill();
 
         ctx.strokeStyle = isHovered ? color : this.hexToRgba(color, 0.85);
@@ -373,7 +384,10 @@ export class CanvasRenderer {
         ctx.fillStyle = color;
         ctx.fill();
 
-        ctx.fillStyle = isHovered ? '#ffffff' : '#f1f5f9';
+        const textColor = state.themePalette
+            ? (isHovered ? state.themePalette.textNormal : state.themePalette.textMuted)
+            : (isHovered ? '#ffffff' : '#f1f5f9');
+        ctx.fillStyle = textColor;
         ctx.textBaseline = 'middle';
         ctx.fillText(labelText, tabX + Math.round(fontSize * 0.55 + dotRadius * 2 + 4), tabY + tabHeight / 2);
         ctx.restore();
@@ -535,7 +549,7 @@ export class CanvasRenderer {
             );
 
             if (shouldShowLabel) {
-                this.drawNodeLabel(node, isHovered || isSelected, state.labelFontSize || 11);
+                this.drawNodeLabel(node, isHovered || isSelected, state.labelFontSize || 11, state.themePalette);
             }
 
             ctx.restore();
@@ -737,7 +751,7 @@ export class CanvasRenderer {
         ctx.fill();
     }
 
-    private drawNodeLabel(node: BubbleNode, isProminent: boolean, baseFontSize: number = 11): void {
+    private drawNodeLabel(node: BubbleNode, isProminent: boolean, baseFontSize: number = 11, themePalette?: BubbleThemePalette | null): void {
         const ctx = this.ctx;
         const label = node.name;
         const fontSize = isProminent ? baseFontSize + 1 : baseFontSize;
@@ -746,12 +760,18 @@ export class CanvasRenderer {
         const textX = node.x + node.radius + 5;
         const textY = node.y + fontSize * 0.35;
 
-        // Dark background halo for high contrast
-        ctx.strokeStyle = 'rgba(15, 23, 42, 0.88)';
+        // Background halo for contrast
+        const haloColor = themePalette
+            ? (themePalette.isDark ? 'rgba(15, 23, 42, 0.88)' : 'rgba(255, 255, 255, 0.88)')
+            : 'rgba(15, 23, 42, 0.88)';
+        ctx.strokeStyle = haloColor;
         ctx.lineWidth = 3;
         ctx.strokeText(label, textX, textY);
 
-        ctx.fillStyle = isProminent ? '#ffffff' : '#e2e8f0';
+        const textColor = themePalette
+            ? (isProminent ? themePalette.textNormal : themePalette.textMuted)
+            : (isProminent ? '#ffffff' : '#e2e8f0');
+        ctx.fillStyle = textColor;
         ctx.fillText(label, textX, textY);
     }
 
