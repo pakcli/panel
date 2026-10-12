@@ -6677,6 +6677,87 @@ export default class PakCLITablePlugin extends Plugin {
 			}
 		});
 
+		// 10. Bubble Graph View Handler (table-bubble-graph)
+		settingsTab.registerLocalSection({
+			id: 'table-bubble-graph',
+			category: 'table',
+			title: 'Bubble Graph View',
+			icon: 'circle-dot',
+			isInstalled: true,
+			render: (containerEl) => {
+				containerEl.empty();
+
+				new Setting(containerEl)
+					.setName('Bubble Graph View')
+					.setDesc('Configure topology bubbles, node clustering, and theme-aware color synchronization.')
+					.setHeading();
+
+				// Theme Color Override Toggle
+				new Setting(containerEl)
+					.setName('Theme-Aware Color Override')
+					.setDesc('Automatically detect the active Obsidian theme and override all bubbles, nodes, labels, and folder tabs with the theme\'s accent and text colors. If disabled, default node color and captain folder colors are used.')
+					.addToggle((t) => {
+						t.setValue(this.settings.bubbleThemeColorOverride === true)
+							.onChange(async (val) => {
+								this.settings.bubbleThemeColorOverride = val;
+								await this.saveSettings();
+								// Notify open bubble graph leaves
+								const leaves = this.app.workspace.getLeavesOfType(BUBBLE_GRAPH_VIEW_TYPE);
+								for (const leaf of leaves) {
+									if (leaf.view instanceof BubbleGraphView) {
+										await leaf.view.setThemeColorOverride(val);
+									}
+								}
+								new Notice(`🎨 Theme Color Override ${val ? 'ENABLED' : 'DISABLED'}`);
+							});
+					});
+
+				// Captain Folder Colors Toggle
+				new Setting(containerEl)
+					.setName('Captain Folder Colors')
+					.setDesc('Show custom colors configured in Captain Folder Rules Table on matching folder bubbles.')
+					.addToggle((t) => {
+						t.setValue(this.settings.bubbleUseCaptainColors === true)
+							.onChange(async (val) => {
+								this.settings.bubbleUseCaptainColors = val;
+								await this.saveSettings();
+								const leaves = this.app.workspace.getLeavesOfType(BUBBLE_GRAPH_VIEW_TYPE);
+								for (const leaf of leaves) {
+									if (leaf.view instanceof BubbleGraphView) {
+										leaf.view.setUseCaptainColors(val);
+									}
+								}
+							});
+					});
+
+				// Default Layout Mode
+				new Setting(containerEl)
+					.setName('Default Layout Mode')
+					.setDesc('Default layout when opening Bubble Graph.')
+					.addDropdown((d) => {
+						d.addOption('bubble', 'Bubble Clusters (Venn diagram hulls)')
+							.addOption('default', 'Default Graph (Vanilla network)')
+							.setValue(this.settings.bubbleDefaultLayout || 'bubble')
+							.onChange(async (val: any) => {
+								this.settings.bubbleDefaultLayout = val;
+								await this.saveSettings();
+							});
+					});
+
+				// Quick Launch Button
+				new Setting(containerEl)
+					.setName('Open Bubble Graph View')
+					.setDesc('Launch the Bubble Graph View workspace leaf.')
+					.addButton((b) => {
+						b.setButtonText('Open View')
+							.setCta()
+							.onClick(() => {
+								void this.openBubbleGraphView();
+							});
+					});
+			}
+		});
+
 		this.addSettingTab(settingsTab);
 	}
 

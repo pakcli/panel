@@ -199,6 +199,33 @@ export class BubbleGraphView extends ItemView {
         this.plugin.settings.bubbleNodeImageBorder = border;
     }
 
+    public async setThemeColorOverride(enabled: boolean): Promise<void> {
+        this.themeColorOverride = enabled;
+        if (this.themeColorBtnEl) {
+            this.setBtnActive(this.themeColorBtnEl, this.themeColorOverride);
+        }
+        this.plugin.settings.bubbleThemeColorOverride = this.themeColorOverride;
+        await this.plugin.saveSettings();
+
+        if (this.themeColorOverride) {
+            this.currentThemePalette = detectObsidianThemePalette(this.app);
+        } else {
+            this.currentThemePalette = null;
+        }
+
+        this.applyCaptainFolderColors();
+    }
+
+    public async setUseCaptainColors(enabled: boolean): Promise<void> {
+        this.useCaptainColors = enabled;
+        if (this.captainColorsBtnEl) {
+            this.setBtnActive(this.captainColorsBtnEl, this.useCaptainColors);
+        }
+        this.plugin.settings.bubbleUseCaptainColors = this.useCaptainColors;
+        await this.plugin.saveSettings();
+        this.applyCaptainFolderColors();
+    }
+
     constructor(leaf: WorkspaceLeaf, plugin: PakCLITablePlugin) {
         super(leaf);
         this.plugin = plugin;
@@ -1668,22 +1695,7 @@ export class BubbleGraphView extends ItemView {
         this.themeColorBtnEl.setAttribute('aria-pressed', this.themeColorOverride ? 'true' : 'false');
         setIcon(this.themeColorBtnEl, 'palette');
         this.themeColorBtnEl.onclick = async () => {
-            this.themeColorOverride = !this.themeColorOverride;
-            if (this.themeColorBtnEl) {
-                this.setBtnActive(this.themeColorBtnEl, this.themeColorOverride);
-            }
-            this.plugin.settings.bubbleThemeColorOverride = this.themeColorOverride;
-            await this.plugin.saveSettings();
-
-            if (this.themeColorOverride) {
-                this.currentThemePalette = detectObsidianThemePalette(this.app);
-                new Notice(`🎨 Theme Color Override ACTIVE (Theme: "${this.currentThemePalette.themeName}")`);
-            } else {
-                this.currentThemePalette = null;
-                new Notice('🎨 Theme Color Override DISABLED (Default mechanics restored)');
-            }
-
-            this.applyCaptainFolderColors();
+            await this.setThemeColorOverride(!this.themeColorOverride);
             if (this.sfxManager?.isEnabled()) {
                 this.sfxManager.playLinkSwitch(this.themeColorOverride ? 1.0 : 0.6);
             }
