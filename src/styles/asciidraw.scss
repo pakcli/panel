@@ -455,20 +455,190 @@
 	.asciidraw-canvas-viewport {
 		flex: 1;
 		background-color: var(--background-primary-alt, #121214);
+		position: relative;
+		overflow: hidden;
 		display: flex;
 		flex-direction: column;
-		align-items: center;
-		justify-content: center;
-		overflow: auto;
-		position: relative;
-		padding: 24px;
 
-		.asciidraw-canvas-wrapper {
-			display: inline-block;
+		.asciidraw-viewport-container {
+			display: grid;
+			grid-template-columns: 24px 1fr;
+			grid-template-rows: 24px 1fr;
+			width: 100%;
+			height: 100%;
 			position: relative;
-			box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35);
-			border-radius: 6px;
 			overflow: hidden;
+
+			&.hide-rulers {
+				grid-template-columns: 0px 1fr;
+				grid-template-rows: 0px 1fr;
+
+				.asciidraw-ruler-corner,
+				.asciidraw-ruler-top,
+				.asciidraw-ruler-left {
+					display: none !important;
+				}
+			}
+		}
+
+		.asciidraw-ruler-corner {
+			grid-column: 1;
+			grid-row: 1;
+			background: var(--background-secondary, #18181b);
+			border-right: 1px solid var(--background-modifier-border, #333);
+			border-bottom: 1px solid var(--background-modifier-border, #333);
+			display: flex;
+			align-items: center;
+			justify-content: center;
+			font-size: 11px;
+			color: var(--text-muted);
+			user-select: none;
+			z-index: 10;
+		}
+
+		.asciidraw-ruler-top {
+			grid-column: 2;
+			grid-row: 1;
+			background: var(--background-secondary, #18181b);
+			border-bottom: 1px solid var(--background-modifier-border, #333);
+			position: relative;
+			overflow: hidden;
+			height: 24px;
+			user-select: none;
+			z-index: 9;
+
+			.asciidraw-ruler-track-x {
+				position: absolute;
+				top: 0;
+				left: 0;
+				height: 100%;
+				transform-origin: 0 0;
+				pointer-events: none;
+				will-change: transform;
+			}
+
+			.asciidraw-ruler-tick-major-x {
+				position: absolute;
+				top: 0;
+				height: 100%;
+				border-left: 1px solid rgba(255, 255, 255, 0.28);
+				font-size: 9px;
+				color: var(--text-muted);
+				padding-left: 2px;
+				line-height: 12px;
+				white-space: nowrap;
+			}
+
+			.asciidraw-ruler-tick-minor-x {
+				position: absolute;
+				top: 14px;
+				height: 10px;
+				border-left: 1px solid rgba(255, 255, 255, 0.12);
+			}
+
+			.asciidraw-ruler-marker-x {
+				position: absolute;
+				top: 0;
+				left: 0;
+				height: 100%;
+				background-color: var(--interactive-accent, #6366f1);
+				opacity: 0.35;
+				pointer-events: none;
+				will-change: transform, width;
+			}
+		}
+
+		.asciidraw-ruler-left {
+			grid-column: 1;
+			grid-row: 2;
+			background: var(--background-secondary, #18181b);
+			border-right: 1px solid var(--background-modifier-border, #333);
+			position: relative;
+			overflow: hidden;
+			width: 24px;
+			user-select: none;
+			z-index: 9;
+
+			.asciidraw-ruler-track-y {
+				position: absolute;
+				top: 0;
+				left: 0;
+				width: 100%;
+				transform-origin: 0 0;
+				pointer-events: none;
+				will-change: transform;
+			}
+
+			.asciidraw-ruler-tick-major-y {
+				position: absolute;
+				left: 0;
+				width: 100%;
+				border-top: 1px solid rgba(255, 255, 255, 0.28);
+				font-size: 9px;
+				color: var(--text-muted);
+				padding-top: 1px;
+				padding-left: 2px;
+				line-height: 10px;
+				white-space: nowrap;
+			}
+
+			.asciidraw-ruler-tick-minor-y {
+				position: absolute;
+				left: 14px;
+				width: 10px;
+				border-top: 1px solid rgba(255, 255, 255, 0.12);
+			}
+
+			.asciidraw-ruler-marker-y {
+				position: absolute;
+				top: 0;
+				left: 0;
+				width: 100%;
+				background-color: var(--interactive-accent, #6366f1);
+				opacity: 0.35;
+				pointer-events: none;
+				will-change: transform, height;
+			}
+		}
+
+		.asciidraw-inner-viewport {
+			grid-column: 2;
+			grid-row: 2;
+			position: relative;
+			overflow: hidden;
+			width: 100%;
+			height: 100%;
+			cursor: crosshair;
+			touch-action: none;
+
+			&.is-space-panning {
+				cursor: grab !important;
+			}
+
+			&.is-grabbing {
+				cursor: grabbing !important;
+			}
+		}
+
+		.asciidraw-hidden-text-input {
+			position: absolute;
+			opacity: 0;
+			pointer-events: none;
+			width: 1px;
+			height: 1px;
+			left: -9999px;
+			top: -9999px;
+			border: none;
+			outline: none;
+		}
+
+		.asciidraw-canvas-transform-layer {
+			position: absolute;
+			top: 0;
+			left: 0;
+			transform-origin: 0 0;
+			will-change: transform;
+			backface-visibility: hidden;
 		}
 
 		.asciidraw-grid-surface {
@@ -476,10 +646,12 @@
 			background-color: #1e1e1e;
 			border: 2px solid #333;
 			font-family: ui-monospace, 'Cascadia Code', 'Fira Code', Menlo, Consolas, monospace;
-			cursor: crosshair;
+			cursor: inherit;
 			padding: 8px;
 			user-select: none;
 			-webkit-user-select: none;
+			box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45);
+			border-radius: 4px;
 
 			.ascii-row {
 				display: flex;
@@ -501,19 +673,37 @@
 					outline: 1px solid rgba(255, 255, 255, 0.25);
 					background-color: rgba(255, 255, 255, 0.08);
 				}
+
+				&.is-typing-caret {
+					outline: 2px solid var(--interactive-accent, #6366f1) !important;
+					background: rgba(99, 102, 241, 0.35) !important;
+					animation: asciidrawCaretBlink 0.9s infinite;
+				}
 			}
 		}
 
 		.asciidraw-status-bar {
 			position: absolute;
 			bottom: 8px;
-			left: 12px;
+			left: 36px;
 			font-size: 11px;
 			color: var(--text-muted);
-			background: rgba(0, 0, 0, 0.6);
+			background: rgba(0, 0, 0, 0.65);
 			padding: 3px 8px;
 			border-radius: 4px;
 			pointer-events: none;
+			z-index: 20;
+		}
+	}
+
+	@keyframes asciidrawCaretBlink {
+		0%, 49% {
+			outline-color: var(--interactive-accent, #6366f1);
+			background-color: rgba(99, 102, 241, 0.45);
+		}
+		50%, 100% {
+			outline-color: transparent;
+			background-color: transparent;
 		}
 	}
 
@@ -758,6 +948,78 @@
 
 		&:hover {
 			background: var(--background-modifier-hover);
+		}
+	}
+}
+
+/* ========================================================================= */
+/* Mobile Responsiveness & Touch Optimization                              */
+/* ========================================================================= */
+@media (max-width: 768px) {
+	.asciidraw-modal-window {
+		width: 100vw !important;
+		height: 100vh !important;
+		max-width: 100vw !important;
+		max-height: 100vh !important;
+		border-radius: 0 !important;
+	}
+
+	.asciidraw-studio-container {
+		.asciidraw-topnav {
+			padding: 6px 8px;
+			gap: 6px;
+			overflow-x: auto;
+			flex-wrap: nowrap;
+
+			.asciidraw-nav-title {
+				font-size: 13px;
+			}
+
+			.asciidraw-custom-size-box {
+				display: none;
+			}
+		}
+
+		.asciidraw-workspace {
+			flex-direction: column;
+		}
+
+		.asciidraw-left-toolbar {
+			width: 100%;
+			height: auto;
+			max-height: 48px;
+			flex-direction: row;
+			overflow-x: auto;
+			overflow-y: hidden;
+			padding: 4px 6px;
+			border-right: none;
+			border-bottom: 1px solid var(--background-modifier-border);
+
+			.asciidraw-toolrack {
+				flex-direction: row;
+				gap: 4px;
+			}
+
+			.asciidraw-tool-btn {
+				padding: 4px 8px;
+
+				.tool-label {
+					display: none;
+				}
+			}
+
+			.asciidraw-tool-suboptions {
+				display: none;
+			}
+		}
+
+		.asciidraw-right-sidebar {
+			width: 100%;
+			max-height: 160px;
+			border-left: none;
+			border-top: 1px solid var(--background-modifier-border);
+			padding: 6px 8px;
+			gap: 8px;
 		}
 	}
 }

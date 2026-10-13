@@ -166,6 +166,43 @@ export class LayerManager {
 		}
 	}
 
+	/**
+	 * Replaces every non-empty character in the specified layer with the target char.
+	 */
+	public applyCharToLayer(index: number, char: string): void {
+		if (index < 0 || index >= this.layers.length) return;
+		const layer = this.layers[index];
+		const ch = char && char.length > 0 ? char[0] : '#';
+		for (let r = 0; r < this.rows; r++) {
+			for (let c = 0; c < this.cols; c++) {
+				const cell = layer.buffer.getCell(c, r);
+				if (cell && cell.char !== ' ' && cell.char !== '') {
+					layer.buffer.setCell(c, r, { ...cell, char: ch });
+				}
+			}
+		}
+	}
+
+	/**
+	 * Inverts the drawn mask of the specified layer:
+	 * Non-empty characters become space ' ', and empty cells become the default char.
+	 */
+	public invertLayerMask(index: number, defaultChar: string = '#'): void {
+		if (index < 0 || index >= this.layers.length) return;
+		const layer = this.layers[index];
+		const ch = defaultChar && defaultChar.length > 0 ? defaultChar[0] : '#';
+		for (let r = 0; r < this.rows; r++) {
+			for (let c = 0; c < this.cols; c++) {
+				const cell = layer.buffer.getCell(c, r);
+				if (cell && cell.char !== ' ' && cell.char !== '') {
+					layer.buffer.setCell(c, r, { char: ' ' });
+				} else {
+					layer.buffer.setCell(c, r, { char: ch });
+				}
+			}
+		}
+	}
+
 	public resizeAll(newCols: number, newRows: number): void {
 		this.cols = Math.max(1, newCols);
 		this.rows = Math.max(1, newRows);

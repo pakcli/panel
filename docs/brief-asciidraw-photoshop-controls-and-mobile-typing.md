@@ -1,6 +1,6 @@
 # 📌 Master Brief: Photoshop-Grade Controls, Mobile Gestures & Direct Typing for ASCII Studio (`pakcli-panel`)
 
-> **Feature Status**: `0` (Draft / Pending Implementation)  
+> **Feature Status**: `1` (Completed & Production Verified)  
 > **Target Module**: `pakcli-panel` (`src/features/asciidraw`)  
 > **Platform**: Obsidian Desktop & Mobile (`obsidian` API / CSSOM / Pointer Events / Touch Gestures)  
 > **Date**: 2026-10-13  
@@ -134,15 +134,15 @@ flowchart TD
 ## 5. Acceptance Criteria Checklist
 
 - [x] Status 0 brief dibuat dan di-commit ke git.
-- [ ] `Alt + Wheel` / `Ctrl + Wheel` melakukan zoom tepat ke arah posisi kursor mouse.
-- [ ] Tahan `Spacebar` + Drag Kiri atau Klik Tengah Mouse dapat menggeser (*pan*) kanvas bebas.
-- [ ] Zoom dan Pan menggunakan GPU CSS transform tanpa re-render DOM cell (60 FPS).
-- [ ] Pintasan `Ctrl + 0` (Fit Viewport) dan `Ctrl + 1` (100% Actual Size) aktif.
-- [ ] Penggaris (Rulers) Top & Left dengan koordinat kolom/baris dan tracking marker kursor.
-- [ ] Dukungan mobile pinch-to-zoom (2 jari) dan two-finger pan berfungsi mulus.
-- [ ] Text Tool (`T`) memungkinkan klik cell dan ketik teks berurutan di grid.
-- [ ] Tekan `Enter` / `Escape` / klik luar meng-commit teks dan menutup virtual keyboard mobile.
-- [ ] Toggle eye visibility per layer langsung meng-update kanvas secara instan.
-- [ ] Right-click context menu pada layer: Hide/Show, Duplicate, Apply active character to all drawn cells, Invert mask, Delete.
-- [ ] Build `npm run build` sukses, 0 error, bundle tetap $< 5.0\text{ MB}$.
-- [ ] Update brief ke Status 1 dan commit.
+- [x] `Alt + Wheel` / `Ctrl + Wheel` melakukan zoom tepat ke arah posisi kursor mouse.
+- [x] Tahan `Spacebar` + Drag Kiri atau Klik Tengah Mouse dapat menggeser (*pan*) kanvas bebas.
+- [x] Zoom dan Pan menggunakan GPU CSS transform tanpa re-render DOM cell (60 FPS).
+- [x] Pintasan `Ctrl + 0` (Fit Viewport) dan `Ctrl + 1` (100% Actual Size) aktif.
+- [x] Penggaris (Rulers) Top & Left dengan koordinat kolom/baris dan tracking marker kursor.
+- [x] Dukungan mobile pinch-to-zoom (2 jari) dan two-finger pan berfungsi mulus.
+- [x] Text Tool (`T`) memungkinkan klik cell dan ketik teks berurutan di grid.
+- [x] Tekan `Enter` / `Escape` / klik luar meng-commit teks dan menutup virtual keyboard mobile.
+- [x] Toggle eye visibility per layer langsung meng-update kanvas secara instan.
+- [x] Right-click context menu pada layer: Hide/Show, Duplicate, Apply active character to all drawn cells, Invert mask, Delete.
+- [x] Build `npm run build` sukses, 0 error, bundle tetap $< 5.0\text{ MB}$ (Bundle: 4.58 MB).
+- [x] Update brief ke Status 1 dan commit.

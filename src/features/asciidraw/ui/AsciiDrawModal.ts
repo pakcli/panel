@@ -1,5 +1,5 @@
 import { AsciiPromptModal } from './AsciiModals';
-import { App, Modal, Notice } from 'obsidian';
+import { App, Modal, Notice, Menu } from 'obsidian';
 import {
 	AsciiTool,
 	AsciiTheme,
@@ -31,12 +31,37 @@ export class AsciiDrawModal extends Modal {
 	private arrowStyle: ArrowStyle = 'right';
 	private fillBox = false;
 
-	// Viewport & Zoom
+	// Viewport Pan & Photoshop Zoom
 	private zoomScale = 1.0;
+	private panX = 0;
+	private panY = 0;
+	private isPanning = false;
+	private panStartClientX = 0;
+	private panStartClientY = 0;
+	private isSpacePressed = false;
 	private isFullscreen = false;
 	private isDrawing = false;
 	private lastPointerPos: Point | null = null;
 	private dragStartPos: Point | null = null;
+
+	// Precision Rulers & Snapping
+	private showRulers = true;
+	private topRulerEl!: HTMLElement;
+	private topRulerTrackEl!: HTMLElement;
+	private topRulerMarkerEl!: HTMLElement;
+	private leftRulerEl!: HTMLElement;
+	private leftRulerTrackEl!: HTMLElement;
+	private leftRulerMarkerEl!: HTMLElement;
+	private canvasViewportContainerEl!: HTMLElement;
+	private canvasInnerViewportEl!: HTMLElement;
+	private canvasTransformEl!: HTMLElement;
+
+	// Inline Text Typing
+	private typingActive = false;
+	private typingCol = 0;
+	private typingRow = 0;
+	private typingStartCol = 0;
+	private hiddenTextInput!: HTMLInputElement;
 
 	// Selection & Clipboard
 	private selectionRect: SelectionRect | null = null;
@@ -80,6 +105,7 @@ export class AsciiDrawModal extends Modal {
 		this.buildUI();
 		this.renderCanvas();
 		this.renderLayersList();
+		window.setTimeout(() => this.fitToScreen(), 60);
 
 		// Keyboard Shortcuts
 		this.scope.register(['Mod'], 'z', (evt) => {
@@ -98,8 +124,23 @@ export class AsciiDrawModal extends Modal {
 			evt.preventDefault();
 			this.handleSave();
 		});
+		this.scope.register(['Mod'], '0', (evt) => {
+			evt.preventDefault();
+			this.fitToScreen();
+		});
+		this.scope.register(['Mod'], '1', (evt) => {
+			evt.preventDefault();
+			this.resetZoom100();
+		});
+		this.scope.register(['Mod'], 'r', (evt) => {
+			evt.preventDefault();
+			this.showRulers = !this.showRulers;
+			this.updateRulerVisibility();
+		});
 		this.scope.register([], 'Escape', () => {
-			if (this.selectionRect) {
+			if (this.typingActive) {
+				this.finishTyping();
+			} else if (this.selectionRect) {
 				this.selectionRect = null;
 				this.renderCanvas();
 			} else {
@@ -186,7 +227,7 @@ export class AsciiDrawModal extends Modal {
 			const w = Math.max(5, parseInt(inputCols.value, 10) || 60);
 			const h = Math.max(3, parseInt(inputRows.value, 10) || 20);
 			this.layerManager.resizeAll(w, h);
-	
+			this.renderRulerTicks();
 			this.renderCanvas();
 			this.pushHistory();
 		};
@@ -199,7 +240,7 @@ export class AsciiDrawModal extends Modal {
 				inputCols.value = String(w);
 				inputRows.value = String(h);
 				this.layerManager.resizeAll(w, h);
-
+				this.renderRulerTicks();
 				this.renderCanvas();
 				this.pushHistory();
 			}
@@ -228,6 +269,24 @@ export class AsciiDrawModal extends Modal {
 
 		const btnZoomIn = centerGroup.createEl('button', { text: '+', cls: 'asciidraw-btn-icon', title: 'Zoom In' });
 		btnZoomIn.onclick = () => this.adjustZoom(0.15);
+
+		const btnFit = centerGroup.createEl('button', { text: '⊡ Fit', cls: 'asciidraw-btn-sm', title: 'Fit Viewport (Ctrl+0)' });
+		btnFit.onclick = () => this.fitToScreen();
+
+		const btn100 = centerGroup.createEl('button', { text: '1:1', cls: 'asciidraw-btn-sm', title: 'Actual Size 100% (Ctrl+1)' });
+		btn100.onclick = () => this.resetZoom100();
+
+		const btnRulers = centerGroup.createEl('button', {
+			text: this.showRulers ? '📐 Rulers' : '📐',
+			cls: 'asciidraw-btn-sm' + (this.showRulers ? ' is-active' : ''),
+			title: 'Toggle Precision Rulers (Ctrl+R)'
+		});
+		btnRulers.onclick = () => {
+			this.showRulers = !this.showRulers;
+			btnRulers.toggleClass('is-active', this.showRulers);
+			btnRulers.setText(this.showRulers ? '📐 Rulers' : '📐');
+			this.updateRulerVisibility();
+		};
 
 		const btnUndo = centerGroup.createEl('button', { text: '↩ Undo', cls: 'asciidraw-btn-sm', title: 'Undo (Ctrl+Z)' });
 		btnUndo.onclick = () => this.undo();
@@ -310,17 +369,441 @@ export class AsciiDrawModal extends Modal {
 	}
 
 	private buildCanvasViewport(parent: HTMLElement): void {
-		const wrapper = parent.createDiv({ cls: 'asciidraw-canvas-wrapper' });
+		// 2x2 grid container for precision rulers + inner viewport
+		this.canvasViewportContainerEl = parent.createDiv({
+			cls: `asciidraw-viewport-container ${this.showRulers ? '' : 'hide-rulers'}`
+		});
 
-		this.canvasGridEl = wrapper.createDiv({ cls: 'asciidraw-grid-surface' });
-		// touch-action handled in CSS class asciidraw-grid-surface
+		// 1. Top-Left Corner Origin
+		const corner = this.canvasViewportContainerEl.createDiv({ cls: 'asciidraw-ruler-corner', text: '⌗' });
+		corner.title = 'Ruler Origin (0, 0)';
 
-		this.canvasGridEl.addEventListener('pointerdown', (e) => this.handlePointerDown(e));
-		window.addEventListener('pointermove', (e) => this.handlePointerMove(e));
-		window.addEventListener('pointerup', (e) => this.handlePointerUp(e));
+		// 2. Top Ruler
+		this.topRulerEl = this.canvasViewportContainerEl.createDiv({ cls: 'asciidraw-ruler-top' });
+		this.topRulerTrackEl = this.topRulerEl.createDiv({ cls: 'asciidraw-ruler-track-x' });
+		this.topRulerMarkerEl = this.topRulerEl.createDiv({ cls: 'asciidraw-ruler-marker-x' });
+
+		// 3. Left Ruler
+		this.leftRulerEl = this.canvasViewportContainerEl.createDiv({ cls: 'asciidraw-ruler-left' });
+		this.leftRulerTrackEl = this.leftRulerEl.createDiv({ cls: 'asciidraw-ruler-track-y' });
+		this.leftRulerMarkerEl = this.leftRulerEl.createDiv({ cls: 'asciidraw-ruler-marker-y' });
+
+		// 4. Center Inner Viewport
+		this.canvasInnerViewportEl = this.canvasViewportContainerEl.createDiv({ cls: 'asciidraw-inner-viewport' });
+
+		// Hidden input for direct typing & mobile keyboard handling
+		this.hiddenTextInput = this.canvasInnerViewportEl.createEl('input', {
+			cls: 'asciidraw-hidden-text-input',
+			type: 'text',
+			attr: { autocomplete: 'off', autocorrect: 'off', autocapitalize: 'off', spellcheck: 'false' }
+		});
+
+		// GPU Transform layer (runs at 60 FPS without DOM re-render)
+		this.canvasTransformEl = this.canvasInnerViewportEl.createDiv({ cls: 'asciidraw-canvas-transform-layer' });
+
+		this.canvasGridEl = this.canvasTransformEl.createDiv({ cls: 'asciidraw-grid-surface' });
+
+		// Setup navigation events (Photoshop zoom & pan)
+		this.setupViewportNavigationEvents();
+
+		// Setup direct typing events
+		this.setupDirectTypingEvents();
 
 		this.statusEl = parent.createDiv({ cls: 'asciidraw-status-bar' });
 		this.updateStatus('Ready • Select a tool and start drawing');
+
+		this.renderRulerTicks();
+		this.updateCanvasTransform();
+	}
+
+	private setupViewportNavigationEvents(): void {
+		const viewport = this.canvasInnerViewportEl;
+
+		// 1. Wheel: Zoom to cursor on Ctrl/Alt+Wheel or smooth pan
+		viewport.addEventListener('wheel', (e: WheelEvent) => {
+			e.preventDefault();
+
+			if (e.ctrlKey || e.altKey || e.metaKey) {
+				// Zoom anchored at cursor position
+				const rect = viewport.getBoundingClientRect();
+				const mouseX = e.clientX - rect.left;
+				const mouseY = e.clientY - rect.top;
+
+				const oldScale = this.zoomScale;
+				const factor = e.deltaY < 0 ? 1.15 : 0.85;
+				const newScale = Math.min(3.5, Math.max(0.3, oldScale * factor));
+
+				if (newScale !== oldScale) {
+					// Anchor focal point:
+					this.panX = mouseX - ((mouseX - this.panX) / oldScale) * newScale;
+					this.panY = mouseY - ((mouseY - this.panY) / oldScale) * newScale;
+					this.zoomScale = newScale;
+					this.updateCanvasTransform();
+					this.updateZoomDisplay();
+				}
+			} else {
+				// Pan via trackpad / regular wheel
+				this.panX -= e.deltaX;
+				this.panY -= e.deltaY;
+				this.updateCanvasTransform();
+			}
+		}, { passive: false });
+
+		// 2. Spacebar key events for Hand tool panning
+		window.addEventListener('keydown', (e: KeyboardEvent) => {
+			if (e.code === 'Space' && !this.isSpacePressed && !this.typingActive && !(e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement)) {
+				this.isSpacePressed = true;
+				viewport.addClass('is-space-panning');
+				e.preventDefault();
+			}
+		});
+
+		window.addEventListener('keyup', (e: KeyboardEvent) => {
+			if (e.code === 'Space') {
+				this.isSpacePressed = false;
+				viewport.removeClass('is-space-panning');
+			}
+		});
+
+		// 3. Pointer navigation (Space+Drag or Middle-Click drag)
+		viewport.addEventListener('pointerdown', (e: PointerEvent) => {
+			if (e.button === 1 || (e.button === 0 && this.isSpacePressed)) {
+				this.isPanning = true;
+				this.panStartClientX = e.clientX;
+				this.panStartClientY = e.clientY;
+				viewport.addClass('is-grabbing');
+				e.preventDefault();
+				e.stopPropagation();
+				return;
+			}
+
+			// Drawing / typing if left click and not hand tool
+			if (e.button === 0 && !this.isSpacePressed) {
+				this.handlePointerDown(e);
+			}
+		});
+
+		window.addEventListener('pointermove', (e: PointerEvent) => {
+			if (this.isPanning) {
+				const dx = e.clientX - this.panStartClientX;
+				const dy = e.clientY - this.panStartClientY;
+				this.panX += dx;
+				this.panY += dy;
+				this.panStartClientX = e.clientX;
+				this.panStartClientY = e.clientY;
+				this.updateCanvasTransform();
+				e.preventDefault();
+				return;
+			}
+
+			this.handlePointerMove(e);
+		});
+
+		window.addEventListener('pointerup', (e: PointerEvent) => {
+			if (this.isPanning) {
+				this.isPanning = false;
+				viewport.removeClass('is-grabbing');
+				return;
+			}
+
+			this.handlePointerUp(e);
+		});
+
+		// 4. Touch Gestures: 2-finger pinch zoom and 2-finger pan
+		let initialPinchDistance = 0;
+		let initialPinchScale = 1;
+		let initialMidpoint = { x: 0, y: 0 };
+		let initialPan = { x: 0, y: 0 };
+
+		viewport.addEventListener('touchstart', (e: TouchEvent) => {
+			if (e.touches.length === 2) {
+				const t1 = e.touches[0];
+				const t2 = e.touches[1];
+				initialPinchDistance = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
+				initialPinchScale = this.zoomScale;
+				initialMidpoint = {
+					x: (t1.clientX + t2.clientX) / 2,
+					y: (t1.clientY + t2.clientY) / 2
+				};
+				initialPan = { x: this.panX, y: this.panY };
+			}
+		}, { passive: true });
+
+		viewport.addEventListener('touchmove', (e: TouchEvent) => {
+			if (e.touches.length === 2 && initialPinchDistance > 0) {
+				const t1 = e.touches[0];
+				const t2 = e.touches[1];
+				const currentDist = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
+				const currentMid = {
+					x: (t1.clientX + t2.clientX) / 2,
+					y: (t1.clientY + t2.clientY) / 2
+				};
+
+				const scaleDelta = currentDist / initialPinchDistance;
+				const newScale = Math.min(3.5, Math.max(0.3, initialPinchScale * scaleDelta));
+
+				const rect = viewport.getBoundingClientRect();
+				const midX = initialMidpoint.x - rect.left;
+				const midY = initialMidpoint.y - rect.top;
+
+				this.zoomScale = newScale;
+				this.panX = initialPan.x + (currentMid.x - initialMidpoint.x);
+				this.panY = initialPan.y + (currentMid.y - initialMidpoint.y);
+
+				this.updateCanvasTransform();
+				this.updateZoomDisplay();
+			}
+		}, { passive: true });
+
+		viewport.addEventListener('touchend', (e: TouchEvent) => {
+			if (e.touches.length < 2) {
+				initialPinchDistance = 0;
+			}
+		}, { passive: true });
+	}
+
+	private setupDirectTypingEvents(): void {
+		if (!this.hiddenTextInput) return;
+
+		this.hiddenTextInput.addEventListener('keydown', (e: KeyboardEvent) => {
+			if (!this.typingActive) return;
+
+			if (e.key === 'Enter') {
+				e.preventDefault();
+				this.finishTyping();
+			} else if (e.key === 'Escape') {
+				e.preventDefault();
+				this.finishTyping();
+			} else if (e.key === 'Backspace') {
+				e.preventDefault();
+				const activeBuffer = this.layerManager.getActiveBuffer();
+				if (this.typingCol > this.typingStartCol) {
+					this.typingCol--;
+					activeBuffer.setCell(this.typingCol, this.typingRow, { char: ' ' });
+					this.renderCanvas();
+					this.updateTypingCaret();
+				}
+			} else if (e.key === 'ArrowLeft') {
+				e.preventDefault();
+				if (this.typingCol > 0) {
+					this.typingCol--;
+					this.updateTypingCaret();
+				}
+			} else if (e.key === 'ArrowRight') {
+				e.preventDefault();
+				if (this.typingCol < this.layerManager.cols - 1) {
+					this.typingCol++;
+					this.updateTypingCaret();
+				}
+			} else if (e.key === 'ArrowUp') {
+				e.preventDefault();
+				if (this.typingRow > 0) {
+					this.typingRow--;
+					this.updateTypingCaret();
+				}
+			} else if (e.key === 'ArrowDown') {
+				e.preventDefault();
+				if (this.typingRow < this.layerManager.rows - 1) {
+					this.typingRow++;
+					this.updateTypingCaret();
+				}
+			}
+		});
+
+		this.hiddenTextInput.addEventListener('input', () => {
+			if (!this.typingActive) return;
+			const text = this.hiddenTextInput.value;
+			this.hiddenTextInput.value = '';
+			if (!text) return;
+
+			const activeBuffer = this.layerManager.getActiveBuffer();
+			for (let i = 0; i < text.length; i++) {
+				const char = text[i];
+				if (this.typingCol < this.layerManager.cols) {
+					activeBuffer.setCell(this.typingCol, this.typingRow, {
+						char,
+						fg: this.activeFg || undefined,
+						bg: this.activeBg || undefined
+					});
+					this.typingCol++;
+				}
+			}
+			this.renderCanvas();
+			this.updateTypingCaret();
+		});
+
+		this.hiddenTextInput.addEventListener('blur', () => {
+			window.setTimeout(() => {
+				if (this.typingActive) {
+					this.finishTyping();
+				}
+			}, 150);
+		});
+	}
+
+	private startTyping(col: number, row: number): void {
+		if (this.typingActive) {
+			this.finishTyping();
+		}
+		this.typingActive = true;
+		this.typingCol = col;
+		this.typingRow = row;
+		this.typingStartCol = col;
+		this.updateTypingCaret();
+		this.updateStatus(`Typing at (${col}, ${row}) • Type text, press Enter to commit`);
+
+		if (this.hiddenTextInput) {
+			this.hiddenTextInput.value = '';
+			this.hiddenTextInput.focus();
+		}
+	}
+
+	private finishTyping(): void {
+		if (!this.typingActive) return;
+		this.typingActive = false;
+		this.clearTypingCaret();
+		if (this.hiddenTextInput) {
+			this.hiddenTextInput.blur(); // Dismiss mobile keyboard!
+		}
+		this.renderCanvas();
+		this.pushHistory();
+		this.updateStatus('Text committed');
+	}
+
+	private updateTypingCaret(): void {
+		this.clearTypingCaret();
+		if (!this.typingActive) return;
+		const cell = this.canvasGridEl?.querySelector(`.ascii-cell[data-col="${this.typingCol}"][data-row="${this.typingRow}"]`);
+		if (cell) {
+			cell.addClass('is-typing-caret');
+		}
+	}
+
+	private clearTypingCaret(): void {
+		if (this.canvasGridEl) {
+			this.canvasGridEl.querySelectorAll('.ascii-cell.is-typing-caret').forEach(c => c.removeClass('is-typing-caret'));
+		}
+	}
+
+	private renderRulerTicks(): void {
+		if (!this.topRulerTrackEl || !this.leftRulerTrackEl) return;
+		this.topRulerTrackEl.empty();
+		this.leftRulerTrackEl.empty();
+
+		const cols = this.layerManager.cols;
+		const rows = this.layerManager.rows;
+		const cellW = 10;
+		const cellH = 17;
+		const pad = 8;
+
+		// Top ruler (horizontal columns)
+		for (let c = 0; c <= cols; c += 5) {
+			const tick = this.topRulerTrackEl.createDiv({ cls: 'asciidraw-ruler-tick-major-x' });
+			tick.style.left = `${pad + c * cellW}px`;
+			tick.createSpan({ cls: 'asciidraw-ruler-num', text: String(c) });
+		}
+		for (let c = 0; c <= cols; c++) {
+			if (c % 5 !== 0) {
+				const tick = this.topRulerTrackEl.createDiv({ cls: 'asciidraw-ruler-tick-minor-x' });
+				tick.style.left = `${pad + c * cellW}px`;
+			}
+		}
+
+		// Left ruler (vertical rows)
+		for (let r = 0; r <= rows; r += 5) {
+			const tick = this.leftRulerTrackEl.createDiv({ cls: 'asciidraw-ruler-tick-major-y' });
+			tick.style.top = `${pad + r * cellH}px`;
+			tick.createSpan({ cls: 'asciidraw-ruler-num', text: String(r) });
+		}
+		for (let r = 0; r <= rows; r++) {
+			if (r % 5 !== 0) {
+				const tick = this.leftRulerTrackEl.createDiv({ cls: 'asciidraw-ruler-tick-minor-y' });
+				tick.style.top = `${pad + r * cellH}px`;
+			}
+		}
+	}
+
+	private updateCanvasTransform(): void {
+		if (this.canvasTransformEl) {
+			this.canvasTransformEl.style.transform = `translate3d(${this.panX}px, ${this.panY}px, 0px) scale(${this.zoomScale})`;
+		}
+		this.updateRulers();
+	}
+
+	private updateRulers(): void {
+		if (this.topRulerTrackEl) {
+			this.topRulerTrackEl.style.transform = `translate3d(${this.panX}px, 0px, 0px) scaleX(${this.zoomScale})`;
+		}
+		if (this.leftRulerTrackEl) {
+			this.leftRulerTrackEl.style.transform = `translate3d(0px, ${this.panY}px, 0px) scaleY(${this.zoomScale})`;
+		}
+	}
+
+	private updateRulerCursorTracking(col: number, row: number): void {
+		if (!this.showRulers) return;
+		const cellW = 10;
+		const cellH = 17;
+		const pad = 8;
+		if (this.topRulerMarkerEl) {
+			const x = this.panX + (pad + col * cellW) * this.zoomScale;
+			const w = cellW * this.zoomScale;
+			this.topRulerMarkerEl.style.transform = `translate3d(${x}px, 0px, 0px)`;
+			this.topRulerMarkerEl.style.width = `${w}px`;
+		}
+		if (this.leftRulerMarkerEl) {
+			const y = this.panY + (pad + row * cellH) * this.zoomScale;
+			const h = cellH * this.zoomScale;
+			this.leftRulerMarkerEl.style.transform = `translate3d(0px, ${y}px, 0px)`;
+			this.leftRulerMarkerEl.style.height = `${h}px`;
+		}
+	}
+
+	private updateRulerVisibility(): void {
+		if (this.canvasViewportContainerEl) {
+			this.canvasViewportContainerEl.toggleClass('hide-rulers', !this.showRulers);
+		}
+	}
+
+	private updateZoomDisplay(): void {
+		const zoomLabel = this.containerElModal?.querySelector('.asciidraw-zoom-label');
+		if (zoomLabel) zoomLabel.textContent = `${Math.round(this.zoomScale * 100)}%`;
+	}
+
+	private fitToScreen(): void {
+		if (!this.canvasInnerViewportEl) return;
+		const rect = this.canvasInnerViewportEl.getBoundingClientRect();
+		const cols = this.layerManager.cols;
+		const rows = this.layerManager.rows;
+		const contentW = 16 + cols * 10; // 8px pad each side
+		const contentH = 16 + rows * 17;
+
+		const scaleX = (rect.width - 40) / contentW;
+		const scaleY = (rect.height - 40) / contentH;
+		this.zoomScale = Math.min(2.5, Math.max(0.3, Math.min(scaleX, scaleY)));
+
+		this.panX = Math.round((rect.width - contentW * this.zoomScale) / 2);
+		this.panY = Math.round((rect.height - contentH * this.zoomScale) / 2);
+
+		this.updateCanvasTransform();
+		this.updateZoomDisplay();
+		new Notice(`Fitted to viewport (${Math.round(this.zoomScale * 100)}%)`);
+	}
+
+	private resetZoom100(): void {
+		if (!this.canvasInnerViewportEl) return;
+		const rect = this.canvasInnerViewportEl.getBoundingClientRect();
+		const cols = this.layerManager.cols;
+		const rows = this.layerManager.rows;
+		const contentW = 16 + cols * 10;
+		const contentH = 16 + rows * 17;
+
+		this.zoomScale = 1.0;
+		this.panX = Math.round((rect.width - contentW) / 2);
+		this.panY = Math.round((rect.height - contentH) / 2);
+
+		this.updateCanvasTransform();
+		this.updateZoomDisplay();
+		new Notice('Reset zoom to 100%');
 	}
 
 	private buildRightSidebar(parent: HTMLElement): void {
@@ -520,6 +1003,118 @@ export class AsciiDrawModal extends Modal {
 				this.updateStatus(`Active Layer: ${layer.name}`);
 			};
 
+			// Right-click context menu (Photoshop style)
+			item.addEventListener('contextmenu', (e: MouseEvent) => {
+				e.preventDefault();
+				e.stopPropagation();
+
+				const menu = new Menu();
+
+				menu.addItem((mi) => {
+					mi.setTitle(layer.visible ? 'Hide Layer' : 'Show Layer');
+					mi.setIcon(layer.visible ? 'eye-off' : 'eye');
+					mi.onClick(() => {
+						lm.toggleVisibility(layerIndex);
+						this.renderLayersList();
+						this.renderCanvas();
+						this.pushHistory();
+					});
+				});
+
+				menu.addItem((mi) => {
+					mi.setTitle(layer.locked ? 'Unlock Layer' : 'Lock Layer');
+					mi.setIcon(layer.locked ? 'unlock' : 'lock');
+					mi.onClick(() => {
+						lm.toggleLock(layerIndex);
+						this.renderLayersList();
+						this.pushHistory();
+					});
+				});
+
+				menu.addSeparator();
+
+				menu.addItem((mi) => {
+					mi.setTitle('Duplicate Layer');
+					mi.setIcon('copy');
+					mi.onClick(() => {
+						lm.setActiveLayer(layerIndex);
+						lm.duplicateLayer();
+						this.renderLayersList();
+						this.renderCanvas();
+						this.pushHistory();
+					});
+				});
+
+				menu.addItem((mi) => {
+					mi.setTitle(`Apply Character "${this.activeChar}" to Layer`);
+					mi.setIcon('type');
+					mi.onClick(() => {
+						lm.applyCharToLayer(layerIndex, this.activeChar);
+						this.renderCanvas();
+						this.pushHistory();
+						new Notice(`Applied "${this.activeChar}" to all drawn cells in ${layer.name}`);
+					});
+				});
+
+				menu.addItem((mi) => {
+					mi.setTitle('Invert Layer Mask');
+					mi.setIcon('contrast');
+					mi.onClick(() => {
+						lm.invertLayerMask(layerIndex, this.activeChar);
+						this.renderCanvas();
+						this.pushHistory();
+						new Notice(`Inverted layer mask for ${layer.name}`);
+					});
+				});
+
+				if (layerIndex > 0) {
+					menu.addItem((mi) => {
+						mi.setTitle('Merge Down');
+						mi.setIcon('arrow-down');
+						mi.onClick(() => {
+							lm.setActiveLayer(layerIndex);
+							lm.mergeDown();
+							this.renderLayersList();
+							this.renderCanvas();
+							this.pushHistory();
+						});
+					});
+				}
+
+				menu.addSeparator();
+
+				menu.addItem((mi) => {
+					mi.setTitle('Rename Layer');
+					mi.setIcon('edit');
+					mi.onClick(() => {
+						new AsciiPromptModal(this.app, 'Rename Layer', layer.name, (newName) => {
+							if (newName && newName.trim()) {
+								lm.renameLayer(layerIndex, newName.trim());
+								this.renderLayersList();
+								this.pushHistory();
+							}
+						}).open();
+					});
+				});
+
+				if (lm.layers.length > 1) {
+					menu.addItem((mi) => {
+						mi.setTitle('Delete Layer');
+						mi.setIcon('trash');
+						mi.setWarning(true);
+						mi.onClick(() => {
+							lm.setActiveLayer(layerIndex);
+							lm.deleteLayer();
+							this.renderLayersList();
+							this.renderCanvas();
+							this.pushHistory();
+						});
+					});
+				}
+
+				menu.showAtMouseEvent(e);
+			});
+
 			// HTML5 Drag and Drop Handlers for drag-sorting
 			item.addEventListener('dragstart', (e) => {
 				e.dataTransfer?.setData('text/plain', String(layerIndex));
@@ -567,8 +1162,6 @@ export class AsciiDrawModal extends Modal {
 		const palette = THEME_PALETTES[this.activeTheme] || THEME_PALETTES.default;
 
 		this.canvasGridEl.setCssStyles({
-			transform: `scale(${this.zoomScale})`,
-			transformOrigin: 'top left',
 			backgroundColor: palette.bg,
 			borderColor: palette.border
 		});
@@ -592,6 +1185,10 @@ export class AsciiDrawModal extends Modal {
 
 		this.canvasGridEl.empty();
 		this.canvasGridEl.appendChild(frag);
+
+		if (this.typingActive) {
+			this.updateTypingCaret();
+		}
 	}
 
 
@@ -612,26 +1209,31 @@ export class AsciiDrawModal extends Modal {
 
 	private getCellFromPointer(e: PointerEvent): Point | null {
 		const target = e.target as HTMLElement;
-		if (!target || !target.classList.contains('ascii-cell')) {
-			const rect = this.canvasGridEl.getBoundingClientRect();
-			const relX = (e.clientX - rect.left) / this.zoomScale;
-			const relY = (e.clientY - rect.top) / this.zoomScale;
-
-			const cur = this.layerManager.getActiveBuffer();
-			const cellW = rect.width / (cur.cols * this.zoomScale);
-			const cellH = rect.height / (cur.rows * this.zoomScale);
-
-			const col = Math.floor(relX / cellW);
-			const row = Math.floor(relY / cellH);
-
-			if (cur.inBounds(col, row)) return { x: col, y: row };
-			return null;
+		if (target && target.classList.contains('ascii-cell')) {
+			const col = parseInt(target.getAttribute('data-col') || '-1', 10);
+			const row = parseInt(target.getAttribute('data-row') || '-1', 10);
+			if (col >= 0 && row >= 0) {
+				this.updateRulerCursorTracking(col, row);
+				return { x: col, y: row };
+			}
 		}
 
-		const col = parseInt(target.getAttribute('data-col') || '-1', 10);
-		const row = parseInt(target.getAttribute('data-row') || '-1', 10);
+		if (!this.canvasGridEl) return null;
+		const rect = this.canvasGridEl.getBoundingClientRect();
+		const relX = e.clientX - rect.left;
+		const relY = e.clientY - rect.top;
 
-		if (col >= 0 && row >= 0) return { x: col, y: row };
+		const cur = this.layerManager.getActiveBuffer();
+		const cellW = rect.width / cur.cols;
+		const cellH = rect.height / cur.rows;
+
+		const col = Math.floor(relX / cellW);
+		const row = Math.floor(relY / cellH);
+
+		if (cur.inBounds(col, row)) {
+			this.updateRulerCursorTracking(col, row);
+			return { x: col, y: row };
+		}
 		return null;
 	}
 
@@ -649,7 +1251,19 @@ export class AsciiDrawModal extends Modal {
 		}
 
 		const pt = this.getCellFromPointer(e);
-		if (!pt) return;
+		if (!pt) {
+			if (this.typingActive) this.finishTyping();
+			return;
+		}
+
+		if (this.typingActive && this.activeTool !== 'text') {
+			this.finishTyping();
+		}
+
+		if (this.activeTool === 'text') {
+			this.startTyping(pt.x, pt.y);
+			return;
+		}
 
 		this.isDrawing = true;
 		this.dragStartPos = pt;
@@ -667,14 +1281,6 @@ export class AsciiDrawModal extends Modal {
 			frame.floodFill(pt.x, pt.y, this.activeChar, this.activeFg, this.activeBg);
 			this.renderCanvas();
 			this.pushHistory();
-		} else if (this.activeTool === 'text') {
-			new AsciiPromptModal(this.app, 'Insert Text', '', (promptText) => {
-				if (promptText) {
-					frame.drawText(pt.x, pt.y, promptText, this.activeFg, this.activeBg);
-					this.renderCanvas();
-					this.pushHistory();
-				}
-			}).open();
 		} else if (this.activeTool === 'select') {
 			this.selectionRect = { startX: pt.x, startY: pt.y, endX: pt.x, endY: pt.y };
 		}
@@ -762,10 +1368,20 @@ export class AsciiDrawModal extends Modal {
 	}
 
 	private adjustZoom(delta: number): void {
-		this.zoomScale = Math.min(3.0, Math.max(0.4, this.zoomScale + delta));
-		this.renderCanvas();
-		const zoomLabel = this.containerElModal.querySelector('.asciidraw-zoom-label');
-		if (zoomLabel) zoomLabel.textContent = `${Math.round(this.zoomScale * 100)}%`;
+		if (!this.canvasInnerViewportEl) return;
+		const rect = this.canvasInnerViewportEl.getBoundingClientRect();
+		const centerX = rect.width / 2;
+		const centerY = rect.height / 2;
+
+		const oldScale = this.zoomScale;
+		const newScale = Math.min(3.5, Math.max(0.3, oldScale + delta));
+		if (newScale !== oldScale) {
+			this.panX = centerX - ((centerX - this.panX) / oldScale) * newScale;
+			this.panY = centerY - ((centerY - this.panY) / oldScale) * newScale;
+			this.zoomScale = newScale;
+			this.updateCanvasTransform();
+			this.updateZoomDisplay();
+		}
 	}
 
 	private toggleFullscreen(): void {
@@ -868,6 +1484,7 @@ export class AsciiDrawModal extends Modal {
 			}
 		}
 
+		this.renderRulerTicks();
 		this.renderLayersList();
 		this.renderCanvas();
 	}
