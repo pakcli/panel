@@ -30,6 +30,11 @@ export interface BubbleNode {
     subClusterId: string;
     relTierColor?: string;
     isRelTier?: boolean;
+    // Simulated Text Label Position & Dimension (Position-Based Dynamics Anti-Overlap)
+    labelX?: number;
+    labelY?: number;
+    labelWidth?: number;
+    labelHeight?: number;
 }
 
 export interface BubbleEdge {

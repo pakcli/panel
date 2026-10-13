@@ -1,6 +1,6 @@
 # 📌 Master Brief: Advanced Compare Hub & Dual Physics Text Simulation (`pakcli-panel`)
 
-> **Feature Status**: `0` (Draft / Pending Implementation)  
+> **Feature Status**: `1` (Implemented & Verified)  
 > **Target Module**: `pakcli-panel` (`panel`)  
 > **Platform**: Obsidian Desktop & Mobile (`obsidian` API / HTML5 Canvas / PBD Physics)  
 > **Date**: 2026-10-13  
@@ -37,25 +37,26 @@
 
 | File | Status | Keterangan |
 | :--- | :---: | :--- |
-| `panel/docs/brief-compare-hub-text-simulation.md` | ⏳ / ✅ | Brief Master Feature Lifecycle (Status 0 -> 1) |
-| `panel/src/settings.ts` | ⏳ | Menambahkan settings toggle `bubbleTextCollisionSimulation: boolean` (Default: false) |
-| `panel/src/features/bubblegraph/simulation.ts` | ⏳ | Implementasi PBD text bounding box collision saat toggle aktif |
-| `panel/src/features/bubblegraph/canvasRenderer.ts` | ⏳ | Sinkronisasi posisi label terelaksasi di kanvas |
-| `panel/src/features/bubblegraph/bubbleGraphView.ts` | ⏳ | Quick toggle button di toolbar Bubble Graph (`💬 Text Collision`) |
-| `panel/src/features/tierlist/utils/venn-utils.ts` | ⏳ | Perhitungan multi-way sets (2 s.d. $N$ items) & adaptive radius |
-| `panel/src/features/tierlist/views/comparison-view.ts` | ⏳ | Frontmatter Scoper Presets, Embedded Bubble Venn, dan toggle modal |
-| `panel/src/styles/tierlist.scss` | ⏳ | Styling untuk preset scoper, aligned matrix, dan embedded bubble canvas |
+| `panel/docs/brief-compare-hub-text-simulation.md` | ✅ | Brief Master Feature Lifecycle (Status 0 -> 1) |
+| `panel/src/settings.ts` | ✅ | Menambahkan settings toggle `bubbleTextCollisionSimulation: boolean` (Default: false) |
+| `panel/src/features/bubblegraph/simulation.ts` | ✅ | Implementasi PBD text bounding box collision saat toggle aktif |
+| `panel/src/features/bubblegraph/canvasRenderer.ts` | ✅ | Sinkronisasi posisi label terelaksasi di kanvas |
+| `panel/src/features/bubblegraph/bubbleGraphView.ts` | ✅ | Quick toggle button di toolbar Bubble Graph (`💬 Text Collision`) |
+| `panel/src/features/tierlist/utils/venn-utils.ts` | ✅ | Perhitungan multi-way sets (2 s.d. $N$ items) & adaptive radius |
+| `panel/src/features/tierlist/views/comparison-view.ts` | ✅ | Frontmatter Scoper Presets, Embedded Bubble Venn, dan toggle modal |
+| `panel/src/features/tierlist/views/venn-bubble-canvas.ts` | ✅ | Embedded HTML5 Canvas simulator dengan auto-fit radius & PBD anti-overlap |
+| `panel/src/styles/tierlist.scss` | ✅ | Styling untuk preset scoper, aligned matrix, dan embedded bubble canvas |
 
 ---
 
 ## 4. Acceptance Criteria Checklist
 
-- [ ] Status 0 brief dibuat di `panel/docs/brief-compare-hub-text-simulation.md` dan di-commit.
-- [ ] Frontmatter Scoped Presets (Gadget, Book, Tasks, Custom) di Compare Modal.
-- [ ] Multi-Way Venn ($2$ s.d. $N$ notes) terintegrasi.
-- [ ] Embedded mini Bubble Graph di dalam diagram Venn dengan auto-fit size.
-- [ ] Pemisahan tegas: Text File Node (Canvas) vs Text Callout Node (DOM).
-- [ ] 2 Toggle independen: Main Graph Toolbar & Compare Modal Header (keduanya default OFF).
-- [ ] Build `npm run build` sukses, 0 error, bundle $< 5.0\text{ MB}$.
-- [ ] Auto-deployed ke kedua vault (`MAIN-DIGITAL-LIBRARY` & `SAMPLE-DEMO-THEME-PLUGIN`).
-- [ ] Status brief di-update ke 1 dan di-commit.
+- [x] Status 0 brief dibuat di `panel/docs/brief-compare-hub-text-simulation.md` dan di-commit.
+- [x] Frontmatter Scoped Presets (Gadget, Book, Tasks, Custom) di Compare Modal.
+- [x] Multi-Way Venn ($2$ s.d. $N$ notes) terintegrasi.
+- [x] Embedded mini Bubble Graph di dalam diagram Venn dengan auto-fit size.
+- [x] Pemisahan tegas: Text File Node (Canvas) vs Text Callout Node (DOM).
+- [x] 2 Toggle independen: Main Graph Toolbar & Compare Modal Header (keduanya default OFF).
+- [x] Build `npm run build` sukses, 0 error, bundle $< 5.0\text{ MB}$.
+- [x] Auto-deployed ke kedua vault (`MAIN-DIGITAL-LIBRARY` & `SAMPLE-DEMO-THEME-PLUGIN`).
+- [x] Status brief di-update ke 1 dan di-commit.

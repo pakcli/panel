@@ -2,7 +2,8 @@ import { App, TFile, Notice } from 'obsidian';
 import { TierListSettings } from '../settings';
 import { resolveFrontmatterThumbnail } from '../utils/render-utils';
 import Sortable from 'sortablejs';
-import { computeVennSets, buildVennSVG, saveVennToFile, VennPage } from '../utils/venn-utils';
+import { computeVennSets, buildVennSVG, saveVennToFile, VennPage, DEFAULT_COMPARE_PRESETS, computeMultiWayVenn, VennPartition } from '../utils/venn-utils';
+import { VennBubbleCanvas } from './venn-bubble-canvas';
 
 export interface TierListItem {
     id: string;
@@ -173,9 +174,18 @@ function getDependencies(frontmatter?: Record<string, any>): string[] {
     return toArray(frontmatter.dependencies || frontmatter.dependency || frontmatter.deps || frontmatter.requires);
 }
 
-function getSpecs(frontmatter?: Record<string, any>): Record<string, string> {
+function getSpecs(frontmatter?: Record<string, any>, allowedKeys?: string[]): Record<string, string> {
     if (!frontmatter) return {};
     const specs: Record<string, string> = {};
+    if (allowedKeys && allowedKeys.length > 0) {
+        allowedKeys.forEach((k) => {
+            const val = frontmatter[k] ?? frontmatter[k.toLowerCase()];
+            if (val !== undefined && val !== null) {
+                specs[k] = Array.isArray(val) ? val.join(', ') : String(val);
+            }
+        });
+        return specs;
+    }
     if (typeof frontmatter.specs === 'object' && !Array.isArray(frontmatter.specs)) {
         Object.entries(frontmatter.specs).forEach(([k, v]) => {
             specs[k] = String(v);
@@ -270,12 +280,28 @@ export function renderCompareView(
     // Sub-view State
     let currentSubView: 'card' | 'venn' | 'multipage' = initialSubView;
 
-    // Venn Diagram State
+    // Scoped Frontmatter Presets (default: 'all')
+    let activePresetId: string = 'all';
+    const getActiveAllowedKeys = (): string[] | undefined => {
+        const found = DEFAULT_COMPARE_PRESETS.find((p) => p.id === activePresetId);
+        return found && found.priorityKeys.length > 0 ? found.priorityKeys : undefined;
+    };
+
+    // Text Collision Physics Simulation State (Dual Toggle 2, default: false)
+    let simulateTextCollision: boolean = false;
+
+    // Venn Canvas Instance
+    let vennCanvasInstance: VennBubbleCanvas | null = null;
+
+    // Venn Diagram State (supports 2 to N items)
+    let selectedVennItemIndices: number[] = [...selectedIndices];
+    let activeVennZone: string = 'all';
+
+    // Venn Pair State (for backward compatibility in multipage and 2-way switcher)
     const activeVennPair = {
         leftIdx: selectedIndices[0] ?? 0,
         rightIdx: selectedIndices[1] ?? 1
     };
-    let activeVennZone: 'all' | 'left' | 'center' | 'right' = 'all';
 
     // Multipage Split State
     let vennPages: VennPage[] = [];
@@ -301,6 +327,10 @@ export function renderCompareView(
         });
         backBtn.type = 'button';
         backBtn.addEventListener('click', () => {
+            if (vennCanvasInstance) {
+                vennCanvasInstance.destroy();
+                vennCanvasInstance = null;
+            }
             onBackToTier();
         });
     }
@@ -328,10 +358,12 @@ export function renderCompareView(
             const idx = parseInt(val, 10);
             if (!selectedIndices.includes(idx)) {
                 selectedIndices.push(idx);
+                if (!selectedVennItemIndices.includes(idx)) {
+                    selectedVennItemIndices.push(idx);
+                }
                 if (currentSubView === 'card') {
                     renderCardColumns();
                 } else if (currentSubView === 'venn') {
-                    activeVennPair.rightIdx = idx;
                     renderVennSubView();
                 } else {
                     const last = selectedIndices[selectedIndices.length - 2];
@@ -340,6 +372,26 @@ export function renderCompareView(
                 }
                 refreshAddSelect();
             }
+        }
+    });
+
+    // Preset Selector in Top Bar Left
+    const presetWrap = topBarLeft.createEl('div', { cls: 'compare-preset-wrap' });
+    presetWrap.createEl('span', { text: '🎯 Scope:', cls: 'compare-preset-label' });
+    const presetSelect = presetWrap.createEl('select', { cls: 'compare-preset-select' });
+    DEFAULT_COMPARE_PRESETS.forEach((preset) => {
+        const opt = presetSelect.createEl('option', { text: preset.name });
+        opt.value = preset.id;
+    });
+    presetSelect.value = activePresetId;
+    presetSelect.addEventListener('change', () => {
+        activePresetId = presetSelect.value;
+        if (currentSubView === 'card') {
+            renderCardColumns();
+        } else if (currentSubView === 'venn') {
+            renderVennSubView();
+        } else {
+            renderMultipageSubView();
         }
     });
 
@@ -378,6 +430,22 @@ export function renderCompareView(
         tabBtn.addEventListener('click', () => {
             switchSubView(m.id as 'card' | 'venn' | 'multipage');
         });
+    });
+
+    // Dual Toggle 2: Text Collision Toggle (Default: OFF)
+    const textCollisionBtn = topBarRight.createEl('button', {
+        cls: 'compare-text-collision-btn' + (simulateTextCollision ? ' active' : ''),
+        text: simulateTextCollision ? '💬 Text Physics: ON' : '💬 Text Physics: OFF'
+    });
+    textCollisionBtn.type = 'button';
+    textCollisionBtn.title = 'Toggle position-based text collision relaxation (prevents overlapping labels)';
+    textCollisionBtn.addEventListener('click', () => {
+        simulateTextCollision = !simulateTextCollision;
+        textCollisionBtn.classList.toggle('active', simulateTextCollision);
+        textCollisionBtn.setText(simulateTextCollision ? '💬 Text Physics: ON' : '💬 Text Physics: OFF');
+        if (vennCanvasInstance) {
+            vennCanvasInstance.setSimulateTextCollision(simulateTextCollision);
+        }
     });
 
     // ── Save to File Button in Top Bar Right ──
@@ -429,6 +497,10 @@ export function renderCompareView(
         });
 
         if (mode === 'card') {
+            if (vennCanvasInstance) {
+                vennCanvasInstance.destroy();
+                vennCanvasInstance = null;
+            }
             cardViewEl.style.display = 'block';
             vennViewEl.style.display = 'none';
             multipageViewEl.style.display = 'none';
@@ -439,6 +511,10 @@ export function renderCompareView(
             multipageViewEl.style.display = 'none';
             renderVennSubView();
         } else {
+            if (vennCanvasInstance) {
+                vennCanvasInstance.destroy();
+                vennCanvasInstance = null;
+            }
             cardViewEl.style.display = 'none';
             vennViewEl.style.display = 'none';
             multipageViewEl.style.display = 'block';
@@ -587,7 +663,7 @@ export function renderCompareView(
                 depSection.createEl('div', { text: 'No dependencies listed', cls: 'chip-muted' });
             }
 
-            const specs = getSpecs(item.frontmatter);
+            const specs = getSpecs(item.frontmatter, getActiveAllowedKeys());
             const specEntries = Object.entries(specs);
             if (specEntries.length > 0) {
                 const specSection = card.createEl('div', { cls: 'card-section' });
@@ -649,155 +725,167 @@ export function renderCompareView(
     // Sub-View 2: 🌀 Diagram Venn (Interactive SVG with Selectable Zones)
     // ─────────────────────────────────────────────────────────────
     function renderVennSubView() {
+        if (vennCanvasInstance) {
+            vennCanvasInstance.destroy();
+            vennCanvasInstance = null;
+        }
+
         vennViewEl.empty();
 
-        const itemA = items[activeVennPair.leftIdx] || items[0];
-        const itemB = items[activeVennPair.rightIdx] || items[1] || items[0];
-        if (!itemA || !itemB) return;
+        if (selectedVennItemIndices.length < 2) {
+            selectedVennItemIndices = selectedIndices.length >= 2 ? [...selectedIndices] : [0, 1];
+        }
 
-        const { onlyA, shared, onlyB } = computeVennSets(itemA, itemB);
+        const activeVennItems = selectedVennItemIndices.map((i) => items[i]).filter(Boolean);
+        if (activeVennItems.length < 2) return;
 
-        // Control header: Item A selector vs Item B selector + Swap
+        const activePresetKeys = getActiveAllowedKeys();
+        const partitions = computeMultiWayVenn(activeVennItems, activePresetKeys);
+
+        // 1. Controls Bar: Note selector chips + Physics toggle
         const controls = vennViewEl.createEl('div', { cls: 'venn-subview-controls' });
 
-        const leftSelect = controls.createEl('select', { cls: 'venn-item-select' });
-        items.forEach((it, idx) => {
-            const opt = leftSelect.createEl('option', { text: '[' + it.tier + '] ' + it.name });
-            opt.value = String(idx);
-        });
-        leftSelect.value = String(activeVennPair.leftIdx);
-        leftSelect.addEventListener('change', () => {
-            activeVennPair.leftIdx = parseInt(leftSelect.value, 10);
-            renderVennSubView();
-        });
+        const notesSelectorWrap = controls.createEl('div', { cls: 'venn-notes-selector-wrap' });
+        notesSelectorWrap.createEl('span', { text: 'Comparing in Venn:', cls: 'venn-controls-label' });
 
-        const swapBtn = controls.createEl('button', { cls: 'venn-swap-btn', text: '⇄ Swap' });
-        swapBtn.type = 'button';
-        swapBtn.title = 'Swap items';
-        swapBtn.addEventListener('click', () => {
-            const temp = activeVennPair.leftIdx;
-            activeVennPair.leftIdx = activeVennPair.rightIdx;
-            activeVennPair.rightIdx = temp;
-            renderVennSubView();
-        });
-
-        const rightSelect = controls.createEl('select', { cls: 'venn-item-select' });
-        items.forEach((it, idx) => {
-            const opt = rightSelect.createEl('option', { text: '[' + it.tier + '] ' + it.name });
-            opt.value = String(idx);
-        });
-        rightSelect.value = String(activeVennPair.rightIdx);
-        rightSelect.addEventListener('change', () => {
-            activeVennPair.rightIdx = parseInt(rightSelect.value, 10);
-            renderVennSubView();
-        });
-
-        // Interactive SVG Diagram Box
-        const svgBox = vennViewEl.createEl('div', { cls: 'venn-svg-container' });
-        svgBox.innerHTML = buildVennSVG({
-            width: 520,
-            height: 220,
-            labelA: itemA.name,
-            labelB: itemB.name,
-            onlyACount: onlyA.length,
-            sharedCount: shared.length,
-            onlyBCount: onlyB.length,
-            highlightLeft: activeVennZone === 'left',
-            highlightCenter: activeVennZone === 'center',
-            highlightRight: activeVennZone === 'right'
-        });
-
-        // Zone Click Listeners
-        const svgEl = svgBox.querySelector('svg');
-        if (svgEl) {
-            const leftZone = svgEl.querySelector('.venn-zone-left');
-            const centerZone = svgEl.querySelector('.venn-zone-center');
-            const rightZone = svgEl.querySelector('.venn-zone-right');
-
-            leftZone?.addEventListener('click', () => {
-                activeVennZone = activeVennZone === 'left' ? 'all' : 'left';
+        selectedIndices.forEach((itemIdx) => {
+            const it = items[itemIdx];
+            if (!it) return;
+            const isIncluded = selectedVennItemIndices.includes(itemIdx);
+            const chip = notesSelectorWrap.createEl('button', {
+                cls: 'venn-note-chip' + (isIncluded ? ' active' : ''),
+                text: `${isIncluded ? '✓' : '+'} ${it.name}`
+            });
+            chip.type = 'button';
+            chip.addEventListener('click', () => {
+                if (isIncluded) {
+                    if (selectedVennItemIndices.length <= 2) {
+                        new Notice('Venn diagram needs at least 2 items.');
+                        return;
+                    }
+                    selectedVennItemIndices = selectedVennItemIndices.filter((idx) => idx !== itemIdx);
+                } else {
+                    selectedVennItemIndices.push(itemIdx);
+                }
                 renderVennSubView();
             });
-            centerZone?.addEventListener('click', () => {
-                activeVennZone = activeVennZone === 'center' ? 'all' : 'center';
-                renderVennSubView();
-            });
-            rightZone?.addEventListener('click', () => {
-                activeVennZone = activeVennZone === 'right' ? 'all' : 'right';
-                renderVennSubView();
-            });
-        }
+        });
 
-        // Zone Filter Chips
+        const actionsRight = controls.createEl('div', { cls: 'venn-controls-right' });
+        const vennCollisionToggle = actionsRight.createEl('button', {
+            cls: 'venn-collision-toggle' + (simulateTextCollision ? ' active' : ''),
+            text: simulateTextCollision ? '💬 Text Physics: ON' : '💬 Text Physics: OFF'
+        });
+        vennCollisionToggle.type = 'button';
+        vennCollisionToggle.title = 'Simulate text bounding-box collision so node bubbles and labels never overlap';
+        vennCollisionToggle.addEventListener('click', () => {
+            simulateTextCollision = !simulateTextCollision;
+            vennCollisionToggle.classList.toggle('active', simulateTextCollision);
+            vennCollisionToggle.setText(simulateTextCollision ? '💬 Text Physics: ON' : '💬 Text Physics: OFF');
+            textCollisionBtn.classList.toggle('active', simulateTextCollision);
+            textCollisionBtn.setText(simulateTextCollision ? '💬 Text Physics: ON' : '💬 Text Physics: OFF');
+            if (vennCanvasInstance) {
+                vennCanvasInstance.setSimulateTextCollision(simulateTextCollision);
+            }
+        });
+
+        // 2. Embedded Bubble Graph Canvas Box
+        const canvasContainer = vennViewEl.createEl('div', { cls: 'venn-bubble-canvas-wrapper' });
+
+        vennCanvasInstance = new VennBubbleCanvas(
+            canvasContainer,
+            activeVennItems,
+            partitions,
+            simulateTextCollision,
+            activeVennZone,
+            {
+                onSelectAttribute: (attr, partition) => {
+                    new Notice(`📌 ${attr} (${partition.label})`);
+                },
+                onSelectZone: (zoneId) => {
+                    activeVennZone = zoneId;
+                    renderZoneChips();
+                    renderDetailSections();
+                }
+            }
+        );
+
+        // 3. Zone Filter Chips Bar
         const chipsBar = vennViewEl.createEl('div', { cls: 'venn-filter-chips-bar' });
 
-        const chipA = chipsBar.createEl('button', {
-            cls: 'venn-filter-chip chip-left' + (activeVennZone === 'left' ? ' active' : ''),
-            text: `🟣 Only ${itemA.name} (${onlyA.length})`
-        });
-        chipA.addEventListener('click', () => {
-            activeVennZone = activeVennZone === 'left' ? 'all' : 'left';
-            renderVennSubView();
-        });
+        function renderZoneChips() {
+            chipsBar.empty();
 
-        const chipShared = chipsBar.createEl('button', {
-            cls: 'venn-filter-chip chip-center' + (activeVennZone === 'center' ? ' active' : ''),
-            text: `🔵 Shared (${shared.length})`
-        });
-        chipShared.addEventListener('click', () => {
-            activeVennZone = activeVennZone === 'center' ? 'all' : 'center';
-            renderVennSubView();
-        });
+            const showAllChip = chipsBar.createEl('button', {
+                cls: 'venn-filter-chip chip-all' + (activeVennZone === 'all' ? ' active' : ''),
+                text: '👁️ Show All'
+            });
+            showAllChip.addEventListener('click', () => {
+                activeVennZone = 'all';
+                vennCanvasInstance?.setActiveZone('all');
+                renderZoneChips();
+                renderDetailSections();
+            });
 
-        const chipB = chipsBar.createEl('button', {
-            cls: 'venn-filter-chip chip-right' + (activeVennZone === 'right' ? ' active' : ''),
-            text: `🌸 Only ${itemB.name} (${onlyB.length})`
-        });
-        chipB.addEventListener('click', () => {
-            activeVennZone = activeVennZone === 'right' ? 'all' : 'right';
-            renderVennSubView();
-        });
+            partitions.forEach((p, idx) => {
+                const isActive = activeVennZone === p.id;
+                const icon = p.isCenterAll ? '🔵' : (idx === 0 ? '🟣' : (idx === 1 ? '🌸' : '🟢'));
+                const chip = chipsBar.createEl('button', {
+                    cls: 'venn-filter-chip' + (isActive ? ' active' : ''),
+                    text: `${icon} ${p.label} (${p.attributes.length})`
+                });
+                chip.addEventListener('click', () => {
+                    activeVennZone = activeVennZone === p.id ? 'all' : p.id;
+                    vennCanvasInstance?.setActiveZone(activeVennZone);
+                    renderZoneChips();
+                    renderDetailSections();
+                });
+            });
+        }
 
-        const chipAll = chipsBar.createEl('button', {
-            cls: 'venn-filter-chip chip-all' + (activeVennZone === 'all' ? ' active' : ''),
-            text: `👁️ Show All`
-        });
-        chipAll.addEventListener('click', () => {
-            activeVennZone = 'all';
-            renderVennSubView();
-        });
+        renderZoneChips();
 
-        // Detail Panel
+        // 4. Detail Panel Below Canvas
         const detailPanel = vennViewEl.createEl('div', { cls: 'venn-detail-panel' });
 
-        function renderZoneSection(title: string, list: string[], zoneCls: string, linkPath?: string) {
-            const sec = detailPanel.createEl('div', { cls: 'venn-zone-section ' + zoneCls });
-            const secHeader = sec.createEl('div', { cls: 'venn-section-title' });
-            secHeader.createEl('span', { text: title });
-            secHeader.createEl('span', { cls: 'venn-section-count', text: `${list.length} item(s)` });
+        function renderDetailSections() {
+            detailPanel.empty();
 
-            if (list.length === 0) {
-                sec.createEl('div', { cls: 'venn-empty-list', text: 'No unique or shared attributes found.' });
-            } else {
-                const listEl = sec.createEl('div', { cls: 'venn-pills-wrap' });
-                list.forEach((attr) => {
-                    const pill = listEl.createEl('span', { cls: 'venn-attr-pill ' + zoneCls, text: attr });
-                    pill.addEventListener('click', () => {
-                        app.workspace.openLinkText(attr, sourcePath, false);
-                    });
-                });
+            const targetPartitions = activeVennZone === 'all'
+                ? partitions
+                : partitions.filter((p) => p.id === activeVennZone);
+
+            if (targetPartitions.length === 0) {
+                detailPanel.createEl('div', { cls: 'venn-empty-list', text: 'No attributes in this zone.' });
+                return;
             }
+
+            targetPartitions.forEach((p) => {
+                const sec = detailPanel.createEl('div', { cls: 'venn-zone-section' });
+                const secHeader = sec.createEl('div', { cls: 'venn-section-title' });
+                secHeader.createEl('span', { text: p.label });
+                secHeader.createEl('span', { cls: 'venn-section-count', text: `${p.attributes.length} item(s)` });
+
+                if (p.attributes.length === 0) {
+                    sec.createEl('div', { cls: 'venn-empty-list', text: 'No attributes found in this scope.' });
+                } else {
+                    const listEl = sec.createEl('div', { cls: 'venn-pills-wrap' });
+                    p.attributes.forEach((attr) => {
+                        const pill = listEl.createEl('span', { cls: 'venn-attr-pill', text: attr });
+                        pill.addEventListener('click', () => {
+                            if (attr.includes('[[')) {
+                                const clean = attr.replace(/^[!\[\]]+/g, '').replace(/[\]]+$/g, '').trim();
+                                app.workspace.openLinkText(clean, sourcePath, false);
+                            } else {
+                                new Notice(`Selected: ${attr}`);
+                            }
+                        });
+                    });
+                }
+            });
         }
 
-        if (activeVennZone === 'all' || activeVennZone === 'left') {
-            renderZoneSection(`Only in [[${itemA.name}]]`, onlyA, 'zone-left', itemA.linkPath);
-        }
-        if (activeVennZone === 'all' || activeVennZone === 'center') {
-            renderZoneSection(`Shared Attributes`, shared, 'zone-center');
-        }
-        if (activeVennZone === 'all' || activeVennZone === 'right') {
-            renderZoneSection(`Only in [[${itemB.name}]]`, onlyB, 'zone-right', itemB.linkPath);
-        }
+        renderDetailSections();
     }
 
     // ─────────────────────────────────────────────────────────────
@@ -873,7 +961,7 @@ export function renderCompareView(
             const itB = items[page.rightIdx];
             if (!itA || !itB) return;
 
-            const { onlyA, shared, onlyB } = computeVennSets(itA, itB);
+            const { onlyA, shared, onlyB } = computeVennSets(itA, itB, getActiveAllowedKeys());
 
             // Mini Venn SVG Preview
             const miniSvgWrap = card.createEl('div', { cls: 'multipage-mini-svg' });

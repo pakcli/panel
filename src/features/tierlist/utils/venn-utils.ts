@@ -12,29 +12,166 @@ function normalizeList(val: any): string[] {
     return [String(val).trim()].filter(Boolean);
 }
 
+export interface ComparePresetDef {
+    id: string;
+    name: string;
+    icon: string;
+    priorityKeys: string[];
+}
+
+export const DEFAULT_COMPARE_PRESETS: ComparePresetDef[] = [
+    {
+        id: 'all',
+        name: 'All Frontmatter',
+        icon: 'list',
+        priorityKeys: []
+    },
+    {
+        id: 'gadget',
+        name: '📱 Gadget & Tech',
+        icon: 'smartphone',
+        priorityKeys: ['price', 'chipset', 'soc', 'processor', 'ram', 'storage', 'battery', 'display', 'screen', 'weight', 'camera', 'os']
+    },
+    {
+        id: 'books',
+        name: '📚 Books & Papers',
+        icon: 'book-open',
+        priorityKeys: ['author', 'rating', 'score', 'genre', 'pages', 'published', 'year', 'status', 'isbn', 'publisher']
+    },
+    {
+        id: 'tasks',
+        name: '💼 Tasks & Projects',
+        icon: 'check-square',
+        priorityKeys: ['status', 'priority', 'assignee', 'due', 'deadline', 'tags', 'estimate', 'milestone']
+    }
+];
+
 /** Pull the comparable attribute set for a TierListItem.
- *  Merges `dependencies` + `functions` from frontmatter. */
-export function getVennAttributes(item: TierListItem): string[] {
+ *  Supports preset scoping and frontmatter key filtering. */
+export function getVennAttributes(item: TierListItem, allowedKeys?: string[]): string[] {
     const fm = item.frontmatter;
     if (!fm) return [];
-    const deps = normalizeList(fm.dependencies ?? fm.dependency ?? fm.deps ?? fm.requires);
-    const funcs = normalizeList(fm.functions ?? fm.function ?? fm.techniques ?? fm.uses);
-    // Deduplicate, lowercase-compare
+
     const seen = new Set<string>();
     const result: string[] = [];
-    [...deps, ...funcs].forEach((v) => {
-        const key = v.toLowerCase();
+
+    const addAttr = (v: string) => {
+        const clean = String(v).trim();
+        if (!clean) return;
+        const key = clean.toLowerCase();
         if (!seen.has(key)) {
             seen.add(key);
-            result.push(v);
+            result.push(clean);
         }
-    });
+    };
+
+    // If allowedKeys specified, extract only those frontmatter properties
+    if (allowedKeys && allowedKeys.length > 0) {
+        for (const k of allowedKeys) {
+            const val = fm[k] ?? fm[k.toLowerCase()];
+            if (val !== undefined && val !== null) {
+                const list = normalizeList(val);
+                if (list.length > 1) {
+                    list.forEach(item => addAttr(`${k}: ${item}`));
+                } else if (list.length === 1) {
+                    addAttr(`${k}: ${list[0]}`);
+                }
+            }
+        }
+    } else {
+        // Default mode: dependencies, functions, specs, plus standard scalar properties
+        const deps = normalizeList(fm.dependencies ?? fm.dependency ?? fm.deps ?? fm.requires);
+        const funcs = normalizeList(fm.functions ?? fm.function ?? fm.techniques ?? fm.uses);
+        [...deps, ...funcs].forEach(addAttr);
+
+        if (typeof fm.specs === 'object' && fm.specs !== null && !Array.isArray(fm.specs)) {
+            Object.entries(fm.specs).forEach(([k, v]) => addAttr(`${k}: ${v}`));
+        }
+
+        const skipKeys = new Set(['position', 'title', 'tags', 'tag', 'image', 'cover', 'thumbnail', 'dependencies', 'functions', 'specs']);
+        for (const [k, v] of Object.entries(fm)) {
+            if (skipKeys.has(k.toLowerCase())) continue;
+            if (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean') {
+                addAttr(`${k}: ${v}`);
+            }
+        }
+    }
+
     return result;
 }
 
 // ────────────────────────────────────────────────────────────────
-//  Venn set computation
+//  Multi-Way Venn Computation (2 to N Items)
 // ────────────────────────────────────────────────────────────────
+
+export interface VennPartition {
+    id: string; // e.g. "A", "B", "A_B", "A_B_C", etc.
+    label: string;
+    itemIndices: number[]; // Indices of items that share these attributes
+    attributes: string[];
+    isCenterAll: boolean;
+}
+
+export function computeMultiWayVenn(items: TierListItem[], allowedKeys?: string[]): VennPartition[] {
+    if (!items || items.length === 0) return [];
+
+    const itemAttrs: Array<{ item: TierListItem; attrs: Set<string> }> = items.map((it) => ({
+        item: it,
+        attrs: new Set(getVennAttributes(it, allowedKeys).map((s) => s.toLowerCase()))
+    }));
+
+    // Map each normalized attribute to the set of items that possess it
+    const attrOwners = new Map<string, { original: string; owners: number[] }>();
+
+    items.forEach((it, idx) => {
+        const rawList = getVennAttributes(it, allowedKeys);
+        rawList.forEach((raw) => {
+            const key = raw.toLowerCase();
+            if (!attrOwners.has(key)) {
+                attrOwners.set(key, { original: raw, owners: [] });
+            }
+            const entry = attrOwners.get(key)!;
+            if (!entry.owners.includes(idx)) {
+                entry.owners.push(idx);
+            }
+        });
+    });
+
+    // Group attributes by owner signature (e.g. [0], [0,1], [0,1,2])
+    const partitionMap = new Map<string, { itemIndices: number[]; attributes: string[] }>();
+
+    attrOwners.forEach(({ original, owners }) => {
+        owners.sort((a, b) => a - b);
+        const sig = owners.join('_');
+        if (!partitionMap.has(sig)) {
+            partitionMap.set(sig, { itemIndices: [...owners], attributes: [] });
+        }
+        partitionMap.get(sig)!.attributes.push(original);
+    });
+
+    const partitions: VennPartition[] = [];
+    partitionMap.forEach(({ itemIndices, attributes }, sig) => {
+        const isCenterAll = itemIndices.length === items.length && items.length > 1;
+        let label = '';
+        if (isCenterAll) {
+            label = 'Shared by All';
+        } else if (itemIndices.length === 1) {
+            label = `Only ${items[itemIndices[0]]?.name || 'Item'}`;
+        } else {
+            label = itemIndices.map((i) => items[i]?.name).join(' ∩ ');
+        }
+
+        partitions.push({
+            id: sig,
+            label,
+            itemIndices,
+            attributes,
+            isCenterAll
+        });
+    });
+
+    return partitions;
+}
 
 export interface VennSets {
     onlyA: string[];
@@ -42,9 +179,9 @@ export interface VennSets {
     onlyB: string[];
 }
 
-export function computeVennSets(itemA: TierListItem, itemB: TierListItem): VennSets {
-    const attrsA = getVennAttributes(itemA);
-    const attrsB = getVennAttributes(itemB);
+export function computeVennSets(itemA: TierListItem, itemB: TierListItem, allowedKeys?: string[]): VennSets {
+    const attrsA = getVennAttributes(itemA, allowedKeys);
+    const attrsB = getVennAttributes(itemB, allowedKeys);
     const setB = new Set(attrsB.map((v) => v.toLowerCase()));
     const setA = new Set(attrsA.map((v) => v.toLowerCase()));
 

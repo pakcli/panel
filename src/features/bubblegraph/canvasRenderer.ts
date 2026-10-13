@@ -772,8 +772,13 @@ export class CanvasRenderer {
         const fontSize = isProminent ? baseFontSize + 1 : baseFontSize;
         ctx.font = `${isProminent ? '600' : '400'} ${fontSize}px Inter, system-ui, sans-serif`;
 
-        const textX = node.x + node.radius + 5;
-        const textY = node.y + fontSize * 0.35;
+        // If relaxed label position from simulation is available, use it; otherwise fallback to default offset
+        const textX = (node.labelX !== undefined && !isNaN(node.labelX) && node.labelWidth)
+            ? node.labelX - (node.labelWidth / 2) + 4
+            : (node.x + node.radius + 5);
+        const textY = (node.labelY !== undefined && !isNaN(node.labelY))
+            ? node.labelY + fontSize * 0.35
+            : (node.y + fontSize * 0.35);
 
         // Background halo for contrast
         const haloColor = themePalette

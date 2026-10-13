@@ -177,6 +177,10 @@ export class BubbleGraphView extends ItemView {
     private curveEditorPanelEl: HTMLElement | null = null;
     private curveEditorInstance: BezierCurveEditor | null = null;
 
+    // Text Collision Simulation toggle (PBD anti-overlap relaxation for text file node labels)
+    private textCollisionSimulation: boolean = false;
+    private textCollisionToggleBtnEl: HTMLElement | null = null;
+
     // Captain Folder Colors toggle
     private useCaptainColors: boolean = false;
 
@@ -748,7 +752,8 @@ export class BubbleGraphView extends ItemView {
                 scopedFolder: this.scopedFolder,
                 denseScale: this.plugin.settings.bubbleDenseScale ?? 1.15,
                 sfx: this.sfxManager,
-                sfxThreshold: this.plugin.settings.bubbleSfxThreshold ?? DEFAULT_BUBBLE_GRAPH_SETTINGS.bubbleSfxThreshold
+                sfxThreshold: this.plugin.settings.bubbleSfxThreshold ?? DEFAULT_BUBBLE_GRAPH_SETTINGS.bubbleSfxThreshold,
+                simulateTextCollision: this.textCollisionSimulation
             }
         );
 
@@ -1814,6 +1819,29 @@ export class BubbleGraphView extends ItemView {
         setIcon(this.forceTextGlobalHiderBtnEl, 'type');
         this.forceTextGlobalHiderBtnEl.onclick = async () => {
             await this.cycleTextDisplayMode();
+        };
+
+        // 6. Simulate Text Collision (Toggle PBD anti-overlap relaxation for text file node labels, default: OFF)
+        this.textCollisionToggleBtnEl = togglesCluster.createEl('button', {
+            cls: `clickable-icon pakcli-icon-btn pakcli-text-collision-btn ${this.textCollisionSimulation ? 'is-active mod-cta' : ''}`,
+            title: `Simulate Text Collision: ${this.textCollisionSimulation ? 'ON (Labels anti-overlap relaxation active)' : 'OFF (Fast render, click to simulate)'}`
+        });
+        this.textCollisionToggleBtnEl.setAttribute('aria-pressed', this.textCollisionSimulation ? 'true' : 'false');
+        setIcon(this.textCollisionToggleBtnEl, 'message-square');
+        this.textCollisionToggleBtnEl.onclick = async () => {
+            this.textCollisionSimulation = !this.textCollisionSimulation;
+            this.setBtnActive(this.textCollisionToggleBtnEl, this.textCollisionSimulation);
+            this.textCollisionToggleBtnEl.setAttribute('title', `Simulate Text Collision: ${this.textCollisionSimulation ? 'ON (Labels anti-overlap relaxation active)' : 'OFF (Fast render, click to simulate)'}`);
+            this.plugin.settings.bubbleTextCollisionSimulation = this.textCollisionSimulation;
+            await this.plugin.saveSettings();
+            if (this.simulation) {
+                this.simulation.setSimulateTextCollision(this.textCollisionSimulation);
+                this.simulation.reheat(0.3);
+            }
+            if (this.sfxManager?.isEnabled()) {
+                this.sfxManager.playLinkSwitch(this.textCollisionSimulation ? 1.0 : 0.6);
+            }
+            new Notice(`Text Collision Simulation: ${this.textCollisionSimulation ? 'ON' : 'OFF'}`);
         };
 
         // Preset View × Scope Selector Cluster (Beside the 5 toggles)

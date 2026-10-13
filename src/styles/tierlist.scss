@@ -2987,3 +2987,296 @@
     width: 100% !important;
 }
 
+/* ==========================================================================
+   13. ADVANCED COMPARE HUB & EMBEDDED VENN BUBBLE GRAPH
+   ========================================================================== */
+
+.compare-preset-wrap {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin-left: 10px;
+    background: var(--background-secondary);
+    padding: 3px 8px;
+    border-radius: 6px;
+    border: 1px solid var(--background-modifier-border);
+}
+
+.compare-preset-label {
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--text-faint);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    user-select: none;
+}
+
+.compare-preset-select {
+    background: transparent;
+    border: none;
+    color: var(--text-normal);
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    outline: none;
+    padding: 2px 4px;
+}
+
+.compare-text-collision-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 4px 10px;
+    font-size: 11.5px;
+    font-weight: 600;
+    border-radius: 6px;
+    background: var(--background-secondary);
+    color: var(--text-muted);
+    border: 1px solid var(--background-modifier-border);
+    cursor: pointer;
+    transition: all 0.15s ease;
+    user-select: none;
+}
+
+.compare-text-collision-btn:hover {
+    background: var(--background-modifier-hover);
+    color: var(--text-normal);
+}
+
+.compare-text-collision-btn.active {
+    background: rgba(139, 92, 246, 0.18) !important;
+    color: #8b5cf6 !important;
+    border-color: #8b5cf6 !important;
+    font-weight: 700;
+    box-shadow: 0 0 8px rgba(139, 92, 246, 0.25);
+}
+
+/* Venn Subview Controls */
+.venn-subview-controls {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 10px;
+    padding: 8px 12px;
+    background: var(--background-secondary);
+    border-radius: 8px;
+    border: 1px solid var(--background-modifier-border);
+    margin-bottom: 12px;
+}
+
+.venn-notes-selector-wrap {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.venn-controls-label {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-muted);
+    margin-right: 4px;
+}
+
+.venn-note-chip {
+    padding: 3px 9px;
+    font-size: 11.5px;
+    font-weight: 600;
+    border-radius: 12px;
+    border: 1px solid var(--background-modifier-border);
+    background: var(--background-primary);
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.venn-note-chip:hover {
+    background: var(--background-modifier-hover);
+    color: var(--text-normal);
+}
+
+.venn-note-chip.active {
+    background: var(--interactive-accent) !important;
+    color: var(--text-on-accent, #ffffff) !important;
+    border-color: var(--interactive-accent) !important;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.18);
+}
+
+.venn-controls-right {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.venn-collision-toggle {
+    padding: 3px 9px;
+    font-size: 11.5px;
+    font-weight: 600;
+    border-radius: 6px;
+    background: var(--background-primary);
+    color: var(--text-muted);
+    border: 1px solid var(--background-modifier-border);
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.venn-collision-toggle:hover {
+    color: var(--text-normal);
+    background: var(--background-modifier-hover);
+}
+
+.venn-collision-toggle.active {
+    background: rgba(139, 92, 246, 0.18) !important;
+    color: #8b5cf6 !important;
+    border-color: #8b5cf6 !important;
+    font-weight: 700;
+}
+
+/* Embedded Venn Canvas Wrapper */
+.venn-bubble-canvas-wrapper {
+    width: 100%;
+    min-height: 380px;
+    background: var(--background-secondary);
+    border-radius: 10px;
+    border: 1px solid var(--background-modifier-border);
+    overflow: hidden;
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: inset 0 1px 4px rgba(0, 0, 0, 0.08);
+}
+
+.venn-bubble-canvas {
+    display: block;
+    cursor: grab;
+    user-select: none;
+}
+
+.venn-bubble-canvas:active {
+    cursor: grabbing;
+}
+
+/* Venn Canvas Tooltip */
+.venn-canvas-tooltip {
+    background: var(--background-primary);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 6px;
+    padding: 6px 10px;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+    font-size: 12px;
+    color: var(--text-normal);
+    white-space: nowrap;
+    transition: opacity 0.1s ease;
+}
+
+.venn-tooltip-title {
+    font-weight: 700;
+    margin-bottom: 2px;
+}
+
+.venn-tooltip-zone {
+    font-size: 10.5px;
+    color: var(--text-faint);
+}
+
+/* Zone Filter Chips Bar */
+.venn-filter-chips-bar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin: 12px 0;
+    align-items: center;
+}
+
+.venn-filter-chip {
+    padding: 4px 10px;
+    font-size: 12px;
+    font-weight: 600;
+    border-radius: 6px;
+    border: 1px solid var(--background-modifier-border);
+    background: var(--background-secondary);
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.venn-filter-chip:hover {
+    background: var(--background-modifier-hover);
+    color: var(--text-normal);
+}
+
+.venn-filter-chip.active {
+    background: var(--interactive-accent) !important;
+    color: var(--text-on-accent, #ffffff) !important;
+    border-color: var(--interactive-accent) !important;
+    font-weight: 700;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.15);
+}
+
+/* Detail Panel */
+.venn-detail-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin-top: 8px;
+}
+
+.venn-zone-section {
+    background: var(--background-secondary);
+    border-radius: 8px;
+    padding: 12px 14px;
+    border: 1px solid var(--background-modifier-border);
+}
+
+.venn-section-title {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--text-normal);
+    margin-bottom: 8px;
+}
+
+.venn-section-count {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-faint);
+    background: var(--background-primary);
+    padding: 2px 7px;
+    border-radius: 10px;
+}
+
+.venn-pills-wrap {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.venn-attr-pill {
+    padding: 3px 8px;
+    font-size: 11.5px;
+    font-weight: 500;
+    background: var(--background-primary);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 4px;
+    color: var(--text-normal);
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.venn-attr-pill:hover {
+    background: var(--background-modifier-hover);
+    border-color: var(--interactive-accent);
+    color: var(--text-accent);
+}
+
+.venn-empty-list {
+    font-size: 12px;
+    color: var(--text-faint);
+    font-style: italic;
+}
+
+

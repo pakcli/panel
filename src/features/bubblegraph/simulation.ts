@@ -15,6 +15,7 @@ export interface SimulationOptions {
     damping?: number;
     sfx?: SfxManager | null;
     sfxThreshold?: number;
+    simulateTextCollision?: boolean; // When true, relaxes text labels to avoid overlapping nodes/labels
 }
 
 /**
@@ -526,6 +527,17 @@ export class BubbleSimulation {
             // Adjusting sound threshold does not reheat settled physics
         } else if (!opts.isLocked) {
             this.reheat();
+        }
+    }
+
+    public setSimulateTextCollision(enabled: boolean): void {
+        this.options.simulateTextCollision = enabled;
+        if (!enabled) {
+            // Reset custom label coordinates when turned off
+            for (const node of this.nodes) {
+                node.labelX = undefined;
+                node.labelY = undefined;
+            }
         }
     }
 
@@ -1386,6 +1398,11 @@ export class BubbleSimulation {
             }
         }
 
+        // Relax simulated text labels to prevent text-node and text-text occlusion when enabled
+        if (this.options.simulateTextCollision) {
+            this.relaxTextLabels(visibleNodeIds);
+        }
+
         updateClusterHulls(this.clusters, this.nodeMap, 18, visibleNodeIds, isBubbleMode);
         if (this.isDragging) {
             this.alpha = Math.max(this.alpha, 0.28);
@@ -1642,5 +1659,101 @@ export class BubbleSimulation {
         this.descendantClusterOffsets.clear();
         this.clusterNodeOffsets.clear();
         this.reheat(0.25);
+    }
+
+    /**
+     * Relaxes simulated text labels using Position-Based Dynamics (PBD)
+     * - Keeps label anchored near its originating node circle
+     * - Pushes label away from foreign node circles (Circle-to-Box repulsion)
+     * - Pushes overlapping labels away from each other (Box-to-Box repulsion)
+     * - Clamps labels inside their parent cluster bubble perimeter
+     */
+    private relaxTextLabels(visibleNodeIds?: Set<string> | null): void {
+        const activeNodes = visibleNodeIds 
+            ? this.nodes.filter(n => visibleNodeIds.has(n.id))
+            : this.nodes;
+
+        // 1. Initialize or pull existing label position
+        for (const node of activeNodes) {
+            const labelLen = (node.name || '').length;
+            const approxW = Math.max(30, labelLen * 6.5 + 8);
+            const approxH = 14;
+
+            node.labelWidth = approxW;
+            node.labelHeight = approxH;
+
+            if (node.labelX === undefined || isNaN(node.labelX)) {
+                node.labelX = node.x + node.radius + approxW / 2 + 4;
+            }
+            if (node.labelY === undefined || isNaN(node.labelY)) {
+                node.labelY = node.y;
+            }
+
+            // Soft spring anchor pulling label toward default offset beside its node
+            const targetX = node.x + node.radius + approxW / 2 + 4;
+            const targetY = node.y;
+            node.labelX += (targetX - node.labelX) * 0.25;
+            node.labelY += (targetY - node.labelY) * 0.25;
+        }
+
+        // 2. Circle-to-Box Repulsion: push foreign nodes away from label boxes
+        for (const node of activeNodes) {
+            const lx = node.labelX!;
+            const ly = node.labelY!;
+            const halfW = (node.labelWidth || 30) / 2;
+            const halfH = (node.labelHeight || 14) / 2;
+
+            for (const other of activeNodes) {
+                if (other.id === node.id) continue;
+                // Find closest point on label box to other node's center
+                const clampX = Math.max(lx - halfW, Math.min(other.x, lx + halfW));
+                const clampY = Math.max(ly - halfH, Math.min(other.y, ly + halfH));
+                const dx = other.x - clampX;
+                const dy = other.y - clampY;
+                const distSq = dx * dx + dy * dy;
+                const minR = other.radius + 3.0;
+
+                if (distSq < minR * minR) {
+                    const dist = Math.sqrt(distSq) || 0.001;
+                    const overlap = minR - dist;
+                    // Push label away from the foreign node
+                    node.labelX! -= (dx / dist) * overlap * 0.45;
+                    node.labelY! -= (dy / dist) * overlap * 0.45;
+                }
+            }
+        }
+
+        // 3. Box-to-Box Repulsion: push overlapping labels apart
+        for (let i = 0; i < activeNodes.length; i++) {
+            const a = activeNodes[i];
+            const aHalfW = (a.labelWidth || 30) / 2;
+            const aHalfH = (a.labelHeight || 14) / 2;
+
+            for (let j = i + 1; j < activeNodes.length; j++) {
+                const b = activeNodes[j];
+                const bHalfW = (b.labelWidth || 30) / 2;
+                const bHalfH = (b.labelHeight || 14) / 2;
+
+                const dx = Math.abs(a.labelX! - b.labelX!);
+                const dy = Math.abs(a.labelY! - b.labelY!);
+                const minX = aHalfW + bHalfW + 3;
+                const minY = aHalfH + bHalfH + 2;
+
+                if (dx < minX && dy < minY) {
+                    const overlapX = minX - dx;
+                    const overlapY = minY - dy;
+
+                    if (overlapX < overlapY) {
+                        const sign = a.labelX! < b.labelX! ? -1 : 1;
+                        a.labelX! += sign * overlapX * 0.4;
+                        b.labelX! -= sign * overlapX * 0.4;
+                    } else {
+                        const sign = a.labelY! < b.labelY! ? -1 : 1;
+                        a.labelY! += sign * overlapY * 0.4;
+                        b.labelY! -= sign * overlapY * 0.4;
+                    }
+                }
+            }
+        }
     }
 }

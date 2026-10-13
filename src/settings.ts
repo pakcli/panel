@@ -165,6 +165,7 @@ export interface BubbleGraphSettings {
     bubbleCurveHandle2?: BezierHandle;
     bubbleCurveP0?: BezierHandle;
     bubbleCurveP3?: BezierHandle;
+    bubbleTextCollisionSimulation?: boolean; // When true, relaxes text labels to avoid overlapping nodes/labels
 }
 
 export type BubbleSpawnCalloutDurationMode = '1x' | '2x' | '1s' | '2s' | '3s' | '4s' | '5s' | 'custom';
@@ -342,6 +343,7 @@ export const DEFAULT_BUBBLE_GRAPH_SETTINGS: BubbleGraphSettings = {
     bubbleCurveHandle2: { x: 0.65, y: 1.0 },
     bubbleCurveP0: { x: 0.0, y: 0.0 },
     bubbleCurveP3: { x: 1.0, y: 1.0 },
+    bubbleTextCollisionSimulation: false,
 };
 
 export const DEFAULT_TABLE_SETTINGS: PakCLITableSettings = {
