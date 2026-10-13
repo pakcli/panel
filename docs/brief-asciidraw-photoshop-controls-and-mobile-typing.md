@@ -63,26 +63,58 @@
     - Input tersembunyi langsung di-`blur()`.
     - Virtual keyboard mobile langsung tertutup rapi (*dismissed*) sehingga kanvas kembali terlihat penuh tanpa terpotong keyboard.
 
+### D. Precision Rulers & Grid Snapping (Penggaris & Snap)
+- **Top & Left Rulers (Photoshop Style)**:
+  - **Horizontal Ruler**: Menampilkan indeks kolom (`0`, `5`, `10`, `15`, ...) yang sejajar presisi dengan cell karakter.
+  - **Vertical Ruler**: Menampilkan indeks baris (`0`, `5`, `10`, `15`, ...) di sebelah kiri kanvas.
+  - **Dynamic Tracking Cursor**: Marker kursor dinamis bergerak di kedua penggaris mengikuti posisi pointer mouse `(col, row)`.
+- **Toggle Rulers & Snapping**:
+  - Tombol toggle `📐 Rulers & Snap` di top navigation bar untuk menampilkan/menyembunyikan penggaris dan panduan snap grid.
+
+### E. Layer Customization & Right-Click Context Menu
+- **Quick Eye Visibility Toggle**:
+  - Setiap row layer memiliki tombol icon `👁️` / `🚫` yang langsung toggle visibility dan meng-update composite canvas seketika.
+- **Layer Right-Click Context Menu**:
+  - Klik kanan pada baris layer membuka menu aksi lengkap:
+    - `👁️ Show / Hide Layer` (Toggle visibilitas layer)
+    - `🔒 Lock / Unlock Layer` (Kunci layer agar tidak tersenggol)
+    - `📋 Duplicate Layer` (Duplikasi layer aktif)
+    - `🔤 Apply Character to Layer` (Ubah semua karakter non-kosong di layer ini dengan active character, misal ganti seluruh kotak jadi `'#'` atau `'x'`)
+    - `🎭 Invert Mask` (Inversi cell kosong dan cell terisi pada layer)
+    - `⮛ Merge Down` (Gabungkan ke layer bawahnya)
+    - `✏️ Rename Layer` (Ganti nama layer)
+    - `🗑️ Delete Layer` (Hapus layer)
+
 ---
 
 ## 3. UI/UX Hierarchy Diagram (Mermaid)
 
 ```mermaid
 flowchart TD
-    subgraph ViewportContainer ["Canvas Viewport Container (Overflow Hidden)"]
-        direction TB
-        subgraph TransformWrapper ["GPU Transform Layer (translate3d + scale)"]
-            GridSurface["ASCII Grid Surface (Character Buffer Cells)"]
-            InlineCaret["Blinking Text Caret (Direct Typing Mode)"]
+    subgraph ViewportArea ["Canvas Viewport with Rulers"]
+        TopRuler["Top Horizontal Ruler (Col 0, 5, 10...)"]
+        subgraph CanvasRow ["Main Canvas Area"]
+            direction LR
+            LeftRuler["Left Vertical Ruler (Row 0, 5, 10...)"]
+            subgraph TransformWrapper ["GPU Transform Layer (translate3d + scale)"]
+                GridSurface["ASCII Grid Surface (Composite Layers)"]
+                InlineCaret["Blinking Text Caret (Direct Typing Mode)"]
+            end
         end
+    end
+
+    subgraph LayerSidebar ["Photoshop-Style Layer Panel"]
+        LayerRow["Layer Item (Eye Toggle, Lock, Drag Handle)"]
+        ContextMenu["Right-Click Menu: Show/Hide, Apply Char 'x', Invert Mask, Delete"]
     end
 
     subgraph InputControls ["Interaction Controller"]
         WheelHandler["Alt + Wheel / Pinch: Focal Zoom"]
         PanHandler["Space + Drag / 2-Finger Drag: Pan Viewport"]
-        TextCommit["Enter / Escape / Tap Outside: Commit & Dismiss Keyboard"]
+        TextCommit["Enter / Escape / Tap Outside: Dismiss Keyboard"]
     end
 
+    LayerRow -.-> ContextMenu
     InputControls --> TransformWrapper
 ```
 
@@ -92,21 +124,25 @@ flowchart TD
 
 | Target File | Rencana Perubahan |
 | :--- | :--- |
-| `panel/src/features/asciidraw/ui/AsciiDrawModal.ts` | Tambahkan state `panX`, `panY`, event listener Wheel zoom to cursor, Spacebar hand tool, Touch pinch/pan, dan inline text editing controller. |
-| `panel/src/styles/asciidraw.scss` | Styling untuk `transform3d` wrapper, touch-action gestures, mobile bottom-sheet drawer, dan caret blinking teks. |
+| `panel/src/features/asciidraw/core/LayerManager.ts` | Tambahkan method `applyCharToLayer(index, char)` dan `invertLayerMask(index, defaultChar)`. |
+| `panel/src/features/asciidraw/ui/AsciiDrawModal.ts` | Tambahkan state `panX`, `panY`, Wheel zoom to cursor, Spacebar pan, Rulers rendering & cursor tracking, Context Menu right-click pada layer, dan Direct Typing controller. |
+| `panel/src/styles/asciidraw.scss` | Styling untuk rulers (top/left), context menu, transform3d wrapper, dan mobile responsive sheet. |
 | `panel/docs/brief-asciidraw-photoshop-controls-and-mobile-typing.md` | Master Brief & Lifecycle Tracker (Status 0 -> 1). |
 
 ---
 
 ## 5. Acceptance Criteria Checklist
 
-- [ ] Status 0 brief dibuat dan di-commit ke git.
+- [x] Status 0 brief dibuat dan di-commit ke git.
 - [ ] `Alt + Wheel` / `Ctrl + Wheel` melakukan zoom tepat ke arah posisi kursor mouse.
 - [ ] Tahan `Spacebar` + Drag Kiri atau Klik Tengah Mouse dapat menggeser (*pan*) kanvas bebas.
 - [ ] Zoom dan Pan menggunakan GPU CSS transform tanpa re-render DOM cell (60 FPS).
 - [ ] Pintasan `Ctrl + 0` (Fit Viewport) dan `Ctrl + 1` (100% Actual Size) aktif.
+- [ ] Penggaris (Rulers) Top & Left dengan koordinat kolom/baris dan tracking marker kursor.
 - [ ] Dukungan mobile pinch-to-zoom (2 jari) dan two-finger pan berfungsi mulus.
 - [ ] Text Tool (`T`) memungkinkan klik cell dan ketik teks berurutan di grid.
 - [ ] Tekan `Enter` / `Escape` / klik luar meng-commit teks dan menutup virtual keyboard mobile.
+- [ ] Toggle eye visibility per layer langsung meng-update kanvas secara instan.
+- [ ] Right-click context menu pada layer: Hide/Show, Duplicate, Apply active character to all drawn cells, Invert mask, Delete.
 - [ ] Build `npm run build` sukses, 0 error, bundle tetap $< 5.0\text{ MB}$.
 - [ ] Update brief ke Status 1 dan commit.
