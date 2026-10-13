@@ -752,22 +752,31 @@ export function buildVaultGraph(
         }
 
         const relTierColor = matchedRelTier ? resolveTierColor(matchedRelTier) : undefined;
-        let color = themePalette ? themePalette.accent : getDefaultNodeColor(app);
+        let captainColor: string | null = null;
 
-        if (themePalette) {
-            // Theme override active: bubbles and nodes synchronize with active theme accent
-            color = themePalette.accent;
-        } else if (!useCaptainColors) {
-            color = getDefaultNodeColor(app);
-        } else if (matchedRelTier) {
-            // Relationship nodes strictly keep their tier color from settings
-            const exactRule = captainRules?.find(r => r.enabled !== false && compareFolderPaths(r.path, folderPath));
-            color = (exactRule && exactRule.color) ? exactRule.color : (relTierColor || getDefaultNodeColor(app));
-        } else {
-            const matchedRule = matchFolderRule(folderPath || topLevelFolder, captainRules || [], fileConfigs);
-            if (matchedRule && matchedRule.color) {
-                color = matchedRule.color;
+        if (useCaptainColors) {
+            if (matchedRelTier) {
+                // Relationship nodes strictly keep their tier color from settings
+                const exactRule = captainRules?.find(r => r.enabled !== false && compareFolderPaths(r.path, folderPath));
+                captainColor = (exactRule && exactRule.color) ? exactRule.color : (relTierColor || null);
+            } else {
+                const matchedRule = matchFolderRule(folderPath || topLevelFolder, captainRules || [], fileConfigs);
+                if (matchedRule && matchedRule.color) {
+                    captainColor = matchedRule.color;
+                }
             }
+        }
+
+        let color: string;
+        if (captainColor) {
+            // HIGHEST PRIORITY: Captain Folder Color dictates over theme override!
+            color = captainColor;
+        } else if (themePalette) {
+            // Secondary Priority: Theme override for unruled bubbles/nodes
+            color = themePalette.accent;
+        } else {
+            // Fallback: Default node color
+            color = getDefaultNodeColor(app);
         }
 
         const node: BubbleNode = {
@@ -1302,9 +1311,28 @@ export function buildVaultGraph(
             ? computeClusterRadius(directIds.length, depth)
             : computeClusterRadius(allIds.length, depth);
 
-        const clusterColor = themePalette
-            ? themePalette.accent
-            : getFolderColor(folderPath, captainRules, useCaptainColors, fileConfigs, app);
+        let captainClusterColor: string | null = null;
+        if (useCaptainColors) {
+            const matchedRule = matchFolderRule(folderPath, captainRules || [], fileConfigs);
+            if (matchedRule && matchedRule.color) {
+                captainClusterColor = matchedRule.color;
+            } else if (fileConfigs) {
+                const norm = normalizePath(folderPath).replace(/^\/+|\/+$/g, '');
+                const parts = norm.split('/');
+                for (let i = parts.length; i >= 1; i--) {
+                    const sub = parts.slice(0, i).join('/');
+                    const cfg = fileConfigs[sub] || fileConfigs[sub.toLowerCase()];
+                    if (cfg && cfg.color) {
+                        captainClusterColor = cfg.color;
+                        break;
+                    }
+                }
+            }
+        }
+
+        const clusterColor = captainClusterColor
+            ? captainClusterColor
+            : (themePalette ? themePalette.accent : getDefaultNodeColor(app));
 
         const cluster: BubbleCluster = {
             id: folderPath,

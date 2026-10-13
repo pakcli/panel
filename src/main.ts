@@ -6695,7 +6695,7 @@ export default class PakCLITablePlugin extends Plugin {
 				// Theme Color Override Toggle
 				new Setting(containerEl)
 					.setName('Theme-Aware Color Override')
-					.setDesc('Automatically detect the active Obsidian theme and override all bubbles, nodes, labels, and folder tabs with the theme\'s accent and text colors. If disabled, default node color and captain folder colors are used.')
+					.setDesc('Automatically detect the active Obsidian theme and harmonize bubbles, nodes, labels, and folder tabs with the theme\'s accent and text colors. Captain Folder Colors always retain highest priority and will never be overwritten.')
 					.addToggle((t) => {
 						t.setValue(this.settings.bubbleThemeColorOverride === true)
 							.onChange(async (val) => {

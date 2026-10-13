@@ -793,44 +793,69 @@ export class BubbleGraphView extends ItemView {
             : getDefaultNodeColor(this.app);
 
         for (const node of this.graphData.nodes) {
-            if (this.themeColorOverride && this.currentThemePalette) {
-                node.color = this.currentThemePalette.accent;
-            } else if (!this.useCaptainColors) {
-                node.color = defaultAccent;
-            } else if (node.relTierColor) {
-                // Relationship nodes keep their tier color from settings when anchor is enabled
-                const exactRule = captainRules.find(r => r.enabled !== false && compareFolderPaths(r.path, node.folderPath || ''));
-                node.color = (exactRule && exactRule.color) ? exactRule.color : node.relTierColor;
-            } else {
-                const matchedRule = matchFolderRule(node.folderPath || node.topLevelFolder, captainRules, fileConfigs);
-                if (matchedRule && matchedRule.color) {
-                    node.color = matchedRule.color;
+            let captainColor: string | null = null;
+            if (this.useCaptainColors) {
+                if (node.relTierColor) {
+                    const exactRule = captainRules.find(r => r.enabled !== false && compareFolderPaths(r.path, node.folderPath || ''));
+                    captainColor = (exactRule && exactRule.color) ? exactRule.color : node.relTierColor;
                 } else {
-                    node.color = getFolderColor(node.folderPath || node.topLevelFolder, captainRules, true, fileConfigs, this.app);
+                    const matchedRule = matchFolderRule(node.folderPath || node.topLevelFolder, captainRules, fileConfigs);
+                    if (matchedRule && matchedRule.color) {
+                        captainColor = matchedRule.color;
+                    }
                 }
+            }
+
+            if (captainColor) {
+                // HIGHEST PRIORITY: Captain Folder Color dictates over theme override!
+                node.color = captainColor;
+            } else if (this.themeColorOverride && this.currentThemePalette) {
+                // Secondary Priority: Theme-aware accent for default/unmatched nodes
+                node.color = this.currentThemePalette.accent;
+            } else {
+                // Fallback: Default node color
+                node.color = defaultAccent;
             }
         }
         for (const cluster of this.graphData.clusters) {
-            if (this.themeColorOverride && this.currentThemePalette) {
-                cluster.color = this.currentThemePalette.accent;
-            } else if (!this.useCaptainColors) {
-                cluster.color = defaultAccent;
-            } else {
+            let captainColor: string | null = null;
+            if (this.useCaptainColors) {
                 const isRootRel = cluster.id === relRoot || 
                                   normalizePath(cluster.id).toLowerCase() === normRelRoot ||
                                   (cluster.isRelTier && cluster.depth === 1 && !cluster.parentClusterId);
 
                 if (cluster.isRelTier) {
-                    if (isRootRel) {
-                        // Outermost Relationships container cluster is ALWAYS default theme color
-                        cluster.color = defaultAccent;
-                    } else {
-                        // Sub-tier bubbles (Household, Family, Close Friends, Friends, Know, Bad) keep their tier color
-                        cluster.color = cluster.tierColor || defaultAccent;
+                    if (!isRootRel && cluster.tierColor) {
+                        captainColor = cluster.tierColor;
                     }
                 } else {
-                    cluster.color = getFolderColor(cluster.id, captainRules, true, fileConfigs, this.app);
+                    const matchedRule = matchFolderRule(cluster.id, captainRules, fileConfigs);
+                    if (matchedRule && matchedRule.color) {
+                        captainColor = matchedRule.color;
+                    } else if (fileConfigs) {
+                        const norm = normalizePath(cluster.id).replace(/^\/+|\/+$/g, '');
+                        const parts = norm.split('/');
+                        for (let i = parts.length; i >= 1; i--) {
+                            const sub = parts.slice(0, i).join('/');
+                            const cfg = fileConfigs[sub] || fileConfigs[sub.toLowerCase()];
+                            if (cfg && cfg.color) {
+                                captainColor = cfg.color;
+                                break;
+                            }
+                        }
+                    }
                 }
+            }
+
+            if (captainColor) {
+                // HIGHEST PRIORITY: Captain Folder Color dictates over theme override!
+                cluster.color = captainColor;
+            } else if (this.themeColorOverride && this.currentThemePalette) {
+                // Secondary Priority: Theme-aware accent for default/unmatched bubbles
+                cluster.color = this.currentThemePalette.accent;
+            } else {
+                // Fallback: Default node color
+                cluster.color = defaultAccent;
             }
         }
     }

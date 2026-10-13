@@ -48,14 +48,18 @@ export interface BubbleThemePalette {
 }
 ```
 
-### C. Color Override Rules
-Ketika `bubbleThemeColorOverride` = `true`:
-- **Nodes**: node yang tidak memiliki warna tier kustom / captain rules akan menggunakan `palette.accent` (atau turunan luminous theme).
-- **Bubble Hull & Outer Contour**: menggunakan warna aksen tema dengan opacity dinamis.
-- **Node Labels & Text**: teks label node menggunakan `palette.textNormal`, teks sekunder menggunakan `palette.textMuted`.
-- **Folder Tab Badges**: background pill menggunakan `palette.bgSecondary`, border menggunakan `palette.accent` / `palette.border`, teks menggunakan `palette.textNormal`.
-- **Button & Control Bar**: elemen quick toggle dan tombol bar dapat disinkronkan dengan warna teks dan aksen tema.
-- **Fallback**: Jika `bubbleThemeColorOverride` = `false`, seluruh mekanik pewarnaan tetap sama persis seperti saat ini tanpa perubahan.
+### C. Strict Color Priority Hierarchy
+Urutan penentuan warna node dan bubble:
+1. **HIGHEST PRIORITY: Captain Folder Colors**
+   - Jika `useCaptainColors` aktif dan folder memiliki aturan Captain Folder Rules (atau Relationship Tier), warna Captain **TIDAK BOLEH** di-override oleh tema. Pilihan warna folder captain selalu mendikte secara absolut.
+2. **THEME COLOR OVERRIDE (Secondary Priority)**:
+   - Jika `bubbleThemeColorOverride` = `true`:
+     - Seluruh node dan bubble cluster yang **tidak** memiliki aturan captain folder akan menggunakan `palette.accent`.
+     - Teks label node menggunakan `palette.textNormal`, teks sekunder menggunakan `palette.textMuted`.
+     - Folder tab badges menggunakan `palette.bgSecondary` dan border `palette.accent` / `palette.border`.
+     - Quick toggle buttons dan UI controls disinkronkan dengan palet tema.
+3. **FALLBACK / DEFAULT (Lowest Priority)**:
+   - Jika `bubbleThemeColorOverride` = `false` dan tidak ada captain rule, node dan cluster menggunakan `getDefaultNodeColor(app)`.
 
 ---
 
