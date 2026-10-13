@@ -174,10 +174,19 @@ export class CanvasRenderer {
             const baseColor = cluster.color || getDefaultNodeColor();
             const directChildren = state.clusters.filter(c => c.parentClusterId === cluster.id && c.radius > 0);
 
+            // Container fill & border styling (Container -> Bubble)
+            const isThemeStyledBubble = Boolean(state.themePalette && !cluster.isRelTier);
+            const containerBgColor = (isThemeStyledBubble && state.themePalette?.containerBg) 
+                ? state.themePalette.containerBg 
+                : baseColor;
+            const containerBorderColor = (isThemeStyledBubble && state.themePalette?.containerBorder)
+                ? state.themePalette.containerBorder
+                : baseColor;
+
             if (cluster.depth === 1) {
                 // Top-level Parent Bubble
-                const fillAlpha = isHovered ? state.hullOpacity * 2.2 : state.hullOpacity;
-                ctx.fillStyle = this.hexToRgba(baseColor, fillAlpha);
+                const fillAlpha = isHovered ? (state.hullOpacity * 2.2) : state.hullOpacity;
+                ctx.fillStyle = this.hexToRgba(containerBgColor, fillAlpha);
 
                 // Carve out direct child bubbles so parent color does NOT bleed into inner bubbles
                 ctx.beginPath();
@@ -198,12 +207,12 @@ export class CanvasRenderer {
                     ctx.beginPath();
                     ctx.arc(cluster.centroid.x, cluster.centroid.y, cluster.radius, 0, Math.PI * 2);
                     if (isHovered) {
-                        ctx.shadowColor = baseColor;
+                        ctx.shadowColor = containerBorderColor;
                         ctx.shadowBlur = 16;
-                        ctx.strokeStyle = this.hexToRgba(baseColor, 0.9);
+                        ctx.strokeStyle = this.hexToRgba(containerBorderColor, 0.9);
                         ctx.lineWidth = 2.5;
                     } else {
-                        ctx.strokeStyle = this.hexToRgba(baseColor, 0.35);
+                        ctx.strokeStyle = this.hexToRgba(containerBorderColor, 0.35);
                         ctx.lineWidth = 1.4;
                     }
                     ctx.stroke();
@@ -211,7 +220,7 @@ export class CanvasRenderer {
             } else {
                 // Nested Child Bubble (Depth 2 to 5)
                 const fillAlpha = isHovered ? 0.32 : Math.max(0.08, (state.hullOpacity || 0.12) * 1.1);
-                ctx.fillStyle = this.hexToRgba(baseColor, fillAlpha);
+                ctx.fillStyle = this.hexToRgba(containerBgColor, fillAlpha);
 
                 // Carve out direct children so this bubble's color (even if red) won't affect bubbles inside it
                 ctx.beginPath();
@@ -231,7 +240,7 @@ export class CanvasRenderer {
                 if (!isExactScopedRoot) {
                     ctx.beginPath();
                     ctx.arc(cluster.centroid.x, cluster.centroid.y, cluster.radius, 0, Math.PI * 2);
-                    ctx.strokeStyle = this.hexToRgba(baseColor, isHovered ? 0.95 : 0.65);
+                    ctx.strokeStyle = this.hexToRgba(containerBorderColor, isHovered ? 0.95 : 0.65);
                     ctx.lineWidth = isHovered ? 2.0 : 1.4;
                     ctx.stroke();
                 }
@@ -503,7 +512,8 @@ export class CanvasRenderer {
                 isSelected, 
                 isNodeActive, 
                 state.enableNodeImageCover !== false,
-                state.nodeImageBorder || 'thick'
+                state.nodeImageBorder || 'thick',
+                state.themePalette
             );
 
             // Draw Labels (Dual Handle Range: Global Vault Hierarchy 1-5 & Current Scope 1-5)
@@ -562,7 +572,8 @@ export class CanvasRenderer {
         isSelected: boolean, 
         isNodeActive: boolean = false,
         enableNodeImageCover: boolean = true,
-        nodeImageBorder: 'noborder' | 'thin' | 'thick' = 'thick'
+        nodeImageBorder: 'noborder' | 'thin' | 'thick' = 'thick',
+        themePalette?: BubbleThemePalette | null
     ): void {
         const ctx = this.ctx;
 
@@ -591,6 +602,10 @@ export class CanvasRenderer {
         } else if (isHovered || isSelected) {
             ctx.shadowColor = nodeColor;
             ctx.shadowBlur = 12;
+        } else if (themePalette?.hasTextGlow) {
+            // Theme Text Glowing -> Matching Node Glow Aura
+            ctx.shadowColor = themePalette.textGlowColor || nodeColor;
+            ctx.shadowBlur = Math.max(6, themePalette.textGlowBlur || 8);
         }
         ctx.fill();
 

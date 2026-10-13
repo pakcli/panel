@@ -810,8 +810,8 @@ export class BubbleGraphView extends ItemView {
                 // HIGHEST PRIORITY: Captain Folder Color dictates over theme override!
                 node.color = captainColor;
             } else if (this.themeColorOverride && this.currentThemePalette) {
-                // Secondary Priority: Theme-aware accent for default/unmatched nodes
-                node.color = this.currentThemePalette.accent;
+                // Secondary Priority: Theme-aware text color for default/unmatched nodes (Theme Text -> Node)
+                node.color = this.currentThemePalette.textNormal || this.currentThemePalette.accent;
             } else {
                 // Fallback: Default node color
                 node.color = defaultAccent;

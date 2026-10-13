@@ -42,22 +42,35 @@ export interface BubbleThemePalette {
     accent: string;
     textNormal: string;
     textMuted: string;
+    textFaint: string;
+    textAccent: string;
     bgPrimary: string;
     bgSecondary: string;
     border: string;
+    // Theme Text Glow Detection
+    hasTextGlow: boolean;
+    textGlowColor: string;
+    textGlowBlur: number;
+    // Theme Container / Surface Styling for Bubbles
+    containerBg: string;
+    containerBorder: string;
 }
 ```
 
-### C. Strict Color Priority Hierarchy
-Urutan penentuan warna node dan bubble:
+### C. Strict Color Priority Hierarchy & Element Mapping
 1. **HIGHEST PRIORITY: Captain Folder Colors**
    - Jika `useCaptainColors` aktif dan folder memiliki aturan Captain Folder Rules (atau Relationship Tier), warna Captain **TIDAK BOLEH** di-override oleh tema. Pilihan warna folder captain selalu mendikte secara absolut.
-2. **THEME COLOR OVERRIDE (Secondary Priority)**:
+2. **THEME COLOR & GLOW OVERRIDE (Secondary Priority)**:
    - Jika `bubbleThemeColorOverride` = `true`:
-     - Seluruh node dan bubble cluster yang **tidak** memiliki aturan captain folder akan menggunakan `palette.accent`.
-     - Teks label node menggunakan `palette.textNormal`, teks sekunder menggunakan `palette.textMuted`.
-     - Folder tab badges menggunakan `palette.bgSecondary` dan border `palette.accent` / `palette.border`.
-     - Quick toggle buttons dan UI controls disinkronkan dengan palet tema.
+     - **THEME TEXT -> NODE**:
+       - Base node color menyerap warna theme text (`palette.textNormal` / `palette.accent`) jika tidak memiliki captain rule.
+       - **Text Glow -> Node Glow**: Jika tema menggunakan text glow / text-shadow / neon luminous styling (`text-shadow`, `--text-glow`, `--glow-color`), node otomatis menyerap efek pendaran cahaya (glow aura) menggunakan `ctx.shadowColor` dan `ctx.shadowBlur` yang identik di kanvas.
+     - **CONTAINER -> BUBBLE**:
+       - Bubble hull background dan contour border menyerap container surface styling (`palette.containerBg` dan `palette.containerBorder`) untuk cluster yang tidak diatur oleh captain rule.
+     - **TEXT LABELS & CONTROLS**:
+       - Teks label node menggunakan `palette.textNormal`, teks sekunder menggunakan `palette.textMuted`.
+       - Folder tab badges menggunakan `palette.bgSecondary` dan border `palette.containerBorder`.
+       - Quick toggle buttons dan UI controls disinkronkan dengan palet tema.
 3. **FALLBACK / DEFAULT (Lowest Priority)**:
    - Jika `bubbleThemeColorOverride` = `false` dan tidak ada captain rule, node dan cluster menggunakan `getDefaultNodeColor(app)`.
 

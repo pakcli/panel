@@ -772,8 +772,8 @@ export function buildVaultGraph(
             // HIGHEST PRIORITY: Captain Folder Color dictates over theme override!
             color = captainColor;
         } else if (themePalette) {
-            // Secondary Priority: Theme override for unruled bubbles/nodes
-            color = themePalette.accent;
+            // Secondary Priority: Theme override for unruled bubbles/nodes (Theme Text -> Node)
+            color = themePalette.textNormal || themePalette.accent;
         } else {
             // Fallback: Default node color
             color = getDefaultNodeColor(app);
