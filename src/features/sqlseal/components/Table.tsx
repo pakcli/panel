@@ -84,6 +84,7 @@ interface TableProps {
   onToggleRowVisibility?: (rowIndex: number) => void;
   onToggleColumnVisibility?: (colIndex: number) => void;
   onShowAllVisibility?: () => void;
+  headerMode?: "simple" | "advance" | "simple_calc";
 }
 
 interface RangeFilterValue {
@@ -287,6 +288,7 @@ export function Table({
   onToggleRowVisibility,
   onToggleColumnVisibility,
   onShowAllVisibility,
+  headerMode = "advance",
 }: TableProps) {
   const tableContainerRef = useRef<HTMLDivElement>(null);
   const [selectedRows, setSelectedRows] = useState<Set<number>>(new Set());
@@ -738,6 +740,7 @@ export function Table({
                 calcPosition={calcPosition}
                 uniqueValues={uniqueValues[sourceIndex] || []}
                 isOnlySorted={isOnlySorted}
+                headerMode={headerMode}
                 onForceOnlySort={() => {
                   if (sorting.length === 1 && sorting[0].id === colId) {
                     onSortingChange([]);
@@ -1405,7 +1408,7 @@ export function Table({
             );
           })}
         </tbody>
-        {(calcPosition === "below" || calcPosition === "both") && table.getHeaderGroups()[0] && (
+        {((calcPosition === "below" || calcPosition === "both" || headerMode === "simple_calc") && headerMode !== "simple") && table.getHeaderGroups()[0] && (
           <tfoot
             class="tablite-tfoot"
             style={{

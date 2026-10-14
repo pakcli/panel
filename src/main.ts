@@ -1116,6 +1116,45 @@ export default class PakCLITablePlugin extends Plugin {
 			}
 		});
 
+		// 🏷️ Tablite CSV Table Header Mode Ribbon Toggle & Commands
+		this.addRibbonIcon('table', 'CSV Header Mode: Toggle Simple / Advance / Simple+Calc', () => {
+			const activeView = this.app.workspace.getActiveViewOfType(CsvView);
+			if (activeView && (activeView as any).file?.path) {
+				const filePath = (activeView as any).file.path;
+				const currentConfig = this.getFileColumnConfig(filePath, 1);
+				const modes: Array<'simple' | 'advance' | 'simple_calc'> = ['simple', 'advance', 'simple_calc'];
+				const currIdx = modes.indexOf(currentConfig.headerMode || 'advance');
+				const nextMode = modes[(currIdx + 1) % modes.length];
+				currentConfig.headerMode = nextMode;
+				void this.setFileColumnConfig(filePath, currentConfig.order?.length || 1, currentConfig);
+				activeView.renderApp();
+				new Notice(`CSV Header Mode: ${nextMode === 'simple' ? '⚡ Simple (text cells only)' : nextMode === 'advance' ? '🛠️ Advance (full filters & sort)' : '🔢 Simple + Calculation Only'}`);
+			} else {
+				new Notice('Buka file CSV atau gunakan tombol toggle di atas tabel untuk mengubah mode header.');
+			}
+		});
+
+		this.addCommand({
+			id: 'tablite-cycle-header-mode',
+			name: 'CSV Table: Cycle Header Mode (Simple / Advance / Simple+Calc)',
+			callback: () => {
+				const activeView = this.app.workspace.getActiveViewOfType(CsvView);
+				if (activeView && (activeView as any).file?.path) {
+					const filePath = (activeView as any).file.path;
+					const currentConfig = this.getFileColumnConfig(filePath, 1);
+					const modes: Array<'simple' | 'advance' | 'simple_calc'> = ['simple', 'advance', 'simple_calc'];
+					const currIdx = modes.indexOf(currentConfig.headerMode || 'advance');
+					const nextMode = modes[(currIdx + 1) % modes.length];
+					currentConfig.headerMode = nextMode;
+					void this.setFileColumnConfig(filePath, currentConfig.order?.length || 1, currentConfig);
+					activeView.renderApp();
+					new Notice(`CSV Header Mode: ${nextMode === 'simple' ? '⚡ Simple' : nextMode === 'advance' ? '🛠️ Advance' : '🔢 Simple + Calc'}`);
+				} else {
+					new Notice('Buka file CSV terlebih dahulu untuk menggunakan perintah ini.');
+				}
+			}
+		});
+
 		this.addCommand({
 			id: 'reorganize-relationship-files-disk',
 			name: 'Reorganize Relationship Notes on Disk (Physical Switcher)',

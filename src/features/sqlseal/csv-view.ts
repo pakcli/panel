@@ -71,7 +71,7 @@ export class CsvView extends TextFileView {
     }
   }
 
-  private renderApp(): void {
+  public renderApp(): void {
     if (!this.rootEl) return;
     const initialText = this.data ?? "";
 

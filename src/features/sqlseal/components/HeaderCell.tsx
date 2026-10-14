@@ -53,6 +53,7 @@ interface HeaderCellProps {
   uniqueValues?: string[];
   isOnlySorted?: boolean;
   onForceOnlySort?: () => void;
+  headerMode?: "simple" | "advance" | "simple_calc";
 }
 
 export function HeaderCell({
@@ -75,6 +76,7 @@ export function HeaderCell({
   uniqueValues,
   isOnlySorted: propIsOnlySorted,
   onForceOnlySort,
+  headerMode = "advance",
 }: HeaderCellProps) {
   const [selectOpen, setSelectOpen] = useState(false);
   const [filterSearchQuery, setFilterSearchQuery] = useState("");
@@ -264,6 +266,52 @@ export function HeaderCell({
   };
 
   const letter = getColumnLetter(colIndex);
+
+  if (headerMode === "simple" || headerMode === "simple_calc") {
+    return (
+      <div
+        class={`tablite-header-cell tablite-header-simple ${isDragOver ? "tablite-col-drag-over" : ""}`}
+        data-col-index={colIndex}
+        title={`Column "${displayName}" — Click to select (Shift+Click to extend)`}
+        onClick={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          onSelectColumn?.(colIndex, e.shiftKey);
+        }}
+        onDragOver={(event) => {
+          event.preventDefault();
+          event.dataTransfer.dropEffect = "move";
+          setIsDragOver(true);
+        }}
+        onDragLeave={() => {
+          setIsDragOver(false);
+        }}
+        onDrop={(event) => {
+          event.preventDefault();
+          setIsDragOver(false);
+          const sourceIndex = Number(event.dataTransfer?.getData("text/tablite-column"));
+          if (!Number.isNaN(sourceIndex) && sourceIndex !== colIndex) {
+            const globalApp = window.app;
+            if (globalApp) {
+              new ConfirmReorderModal(
+                globalApp,
+                "Move Column",
+                `Are you sure you want to move column "${displayName}" to column position ${colIndex + 1}?`,
+                () => onMoveColumn(sourceIndex, colIndex),
+              ).open();
+            } else {
+              onMoveColumn(sourceIndex, colIndex);
+            }
+          }
+        }}
+      >
+        <div class="tablite-header-simple-inner">
+          <span class="tablite-header-name">{displayName}</span>
+        </div>
+        <div class="tablite-resize-handle" onMouseDown={onMouseDown} />
+      </div>
+    );
+  }
 
   return (
     <div

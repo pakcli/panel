@@ -49,6 +49,7 @@ export interface ColumnConfig {
   calcFreeze?: boolean;
   columnCalcs?: Record<string, string>;
   textWrap?: boolean;
+  headerMode?: 'simple' | 'advance' | 'simple_calc';
 }
 
 export interface TablitePluginData extends SQLSealSettings {
@@ -110,6 +111,7 @@ export function createDefaultColumnConfig(columnCount: number): ColumnConfig {
     calcFreeze: true,
     columnCalcs: {},
     textWrap: false,
+    headerMode: 'advance',
   };
 }
 
@@ -148,6 +150,11 @@ export function normalizeColumnConfig(
   const calcFreeze = config.calcFreeze !== undefined ? Boolean(config.calcFreeze) : true;
   const textWrap = config.textWrap !== undefined ? Boolean(config.textWrap) : false;
 
+  const validHeaderModes = ['simple', 'advance', 'simple_calc'];
+  const headerMode = (config.headerMode && validHeaderModes.includes(config.headerMode))
+    ? config.headerMode
+    : 'advance';
+
   const columnCalcs: Record<string, string> = {};
   if (config.columnCalcs && typeof config.columnCalcs === "object") {
     for (const [k, v] of Object.entries(config.columnCalcs)) {
@@ -168,6 +175,7 @@ export function normalizeColumnConfig(
     calcFreeze,
     columnCalcs,
     textWrap,
+    headerMode,
   };
 }
 

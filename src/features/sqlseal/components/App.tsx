@@ -219,6 +219,15 @@ export function App({
   const [viewMode, setViewMode] = useState<"table" | "raw">("table");
   const [rawText, setRawText] = useState<string>(() => initialData);
   const [isToolsOpen, setIsToolsOpen] = useState(!isEmbedded);
+  const [headerMode, setHeaderMode] = useState<"simple" | "advance" | "simple_calc">(
+    () => columnConfig.headerMode || (isEmbedded ? "simple" : "advance")
+  );
+
+  useEffect(() => {
+    if (columnConfig.headerMode) {
+      setHeaderMode(columnConfig.headerMode);
+    }
+  }, [columnConfig.headerMode]);
 
   const handleRawTextChange = useCallback(
     (newText: string) => {
@@ -529,6 +538,7 @@ export function App({
         stored.calcPosition === columnConfig.calcPosition &&
         stored.calcFreeze === columnConfig.calcFreeze &&
         stored.textWrap === columnConfig.textWrap &&
+        stored.headerMode === columnConfig.headerMode &&
         JSON.stringify(stored.columnCalcs || {}) === JSON.stringify(columnConfig.columnCalcs || {})
       ) {
         return;
@@ -753,6 +763,26 @@ export function App({
       return updatedConfig;
     });
   }, [activeView, saveViewsArtifact]);
+
+  const handleHeaderModeChange = useCallback(
+    (mode: "simple" | "advance" | "simple_calc") => {
+      setHeaderMode(mode);
+      setColumnConfig((prev) => {
+        const updatedConfig: ColumnConfig = { ...prev, headerMode: mode };
+        setViews((currViews) => {
+          const nextViews = {
+            ...currViews,
+            [activeView]: updatedConfig,
+          };
+          void saveViewsArtifact(nextViews, activeView);
+          return nextViews;
+        });
+        return updatedConfig;
+      });
+      new Notice(`Header Mode: ${mode === "simple" ? "Simple (text cells only)" : mode === "advance" ? "Advance (full controls)" : "Simple + Calculation Only"}`);
+    },
+    [activeView, saveViewsArtifact]
+  );
 
   const [, setPresetUpdateTrigger] = useState(0);
 
@@ -1257,6 +1287,32 @@ export function App({
             </span>
           </div>
           <div class="tablite-embed-right">
+            <div class="tablite-header-mode-group" title="Header Display Mode">
+              <button
+                type="button"
+                class={`tablite-btn tablite-embed-btn ${headerMode === "simple" ? "is-active" : ""}`}
+                title="Simple Header: clean text cells only"
+                onClick={() => handleHeaderModeChange("simple")}
+              >
+                ⚡ Simple
+              </button>
+              <button
+                type="button"
+                class={`tablite-btn tablite-embed-btn ${headerMode === "advance" ? "is-active" : ""}`}
+                title="Advance Header: filters, sort & types"
+                onClick={() => handleHeaderModeChange("advance")}
+              >
+                🛠️ Advance
+              </button>
+              <button
+                type="button"
+                class={`tablite-btn tablite-embed-btn ${headerMode === "simple_calc" ? "is-active" : ""}`}
+                title="Simple Header + Calculation Row Only"
+                onClick={() => handleHeaderModeChange("simple_calc")}
+              >
+                🔢 Simple + Calc
+              </button>
+            </div>
             <button
               type="button"
               class="tablite-btn tablite-embed-btn"
@@ -1344,6 +1400,8 @@ export function App({
           onToggleRowVisibility={toggleRowVisibility}
           onShowAllRows={showAllRows}
           onShowAllVisibility={showAllVisibility}
+          headerMode={headerMode}
+          onHeaderModeChange={handleHeaderModeChange}
         />
       )}
       <FindReplaceBar
@@ -1427,6 +1485,7 @@ export function App({
           onToggleRowVisibility={toggleRowVisibility}
           onToggleColumnVisibility={toggleColumnVisibility}
           onShowAllVisibility={showAllVisibility}
+          headerMode={headerMode}
         />
       )}
     </div>

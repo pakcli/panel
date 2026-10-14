@@ -58,6 +58,8 @@ interface ToolbarProps {
   onToggleRowVisibility?: (rowIndex: number) => void;
   onShowAllRows?: () => void;
   onShowAllVisibility?: () => void;
+  headerMode?: "simple" | "advance" | "simple_calc";
+  onHeaderModeChange?: (mode: "simple" | "advance" | "simple_calc") => void;
 }
 
 const DELIMITER_LABELS: Record<string, string> = {
@@ -122,6 +124,8 @@ export function Toolbar({
   onToggleRowVisibility,
   onShowAllRows,
   onShowAllVisibility,
+  headerMode = "advance",
+  onHeaderModeChange,
 }: ToolbarProps) {
   const undoBtnRef = useRef<HTMLButtonElement>(null);
   const redoBtnRef = useRef<HTMLButtonElement>(null);
@@ -324,6 +328,36 @@ export function Toolbar({
             >
               {colCount}×{rowCount}
             </span>
+          </div>
+        )}
+
+        {/* Header Display Mode Toggle */}
+        {onHeaderModeChange && (
+          <div class="tablite-header-mode-group" title="Header Display Mode">
+            <button
+              type="button"
+              class={`tablite-btn tablite-mode-btn ${headerMode === "simple" ? "is-active" : ""}`}
+              onClick={() => onHeaderModeChange("simple")}
+              title="Simple Header: clean text cells"
+            >
+              ⚡ Simple
+            </button>
+            <button
+              type="button"
+              class={`tablite-btn tablite-mode-btn ${headerMode === "advance" ? "is-active" : ""}`}
+              onClick={() => onHeaderModeChange("advance")}
+              title="Advance Header: Filters, Sort, Letters & Types"
+            >
+              🛠️ Advance
+            </button>
+            <button
+              type="button"
+              class={`tablite-btn tablite-mode-btn ${headerMode === "simple_calc" ? "is-active" : ""}`}
+              onClick={() => onHeaderModeChange("simple_calc")}
+              title="Simple Header + Calculation Row Only"
+            >
+              🔢 Simple + Calc
+            </button>
           </div>
         )}
 
