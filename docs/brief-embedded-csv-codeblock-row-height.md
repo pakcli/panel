@@ -1,6 +1,6 @@
 # 📌 Master Brief: Embedded CSV Codeblock Renderer with Dynamic Row-Height (`pakcli-panel`)
 
-> **Feature Status**: `0` (Draft / Pending Implementation)  
+> **Feature Status**: `1` (Implemented & Verified)  
 > **Target Module**: `pakcli-panel` (`src/features/csv`)  
 > **Platform**: Obsidian Desktop & Mobile (Markdown CodeBlock Processor `csv` / `tsv`)  
 > **Date**: 2026-10-14  
@@ -77,12 +77,12 @@ flowchart TD
 
 ## 4. Acceptance Criteria Checklist
 
-- [ ] Status 0 brief created and committed to git.
-- [ ] ````csv```` codeblocks render as embedded visual tables.
-- [ ] Table container height strictly matches total rows in the codeblock (no empty void for 1 or 3 rows).
-- [ ] Horizontal scroll enabled for wide tables (e.g. 14 columns).
-- [ ] Header toolbar includes row/col count badge, Copy CSV button, and Raw/Table view toggle.
-- [ ] Image paths and boolean values rendered cleanly.
-- [ ] `npm run build` succeeds with 0 errors and bundle size $< 5.0\text{ MB}$.
-- [ ] Auto-deployed to target vaults.
-- [ ] Brief updated to Status 1 and committed.
+- [x] Status 0 brief created and committed to git.
+- [x] ````csv```` codeblocks render as embedded visual tables.
+- [x] Table container height strictly matches total rows in the codeblock (no empty void for 1 or 3 rows).
+- [x] Horizontal scroll enabled for wide tables (e.g. 14 columns).
+- [x] Header toolbar includes row/col count badge, Copy CSV button, and Raw/Table view toggle.
+- [x] Image paths and boolean values rendered cleanly.
+- [x] `npm run build` succeeds with 0 errors and bundle size $< 5.0\text{ MB}$ (Bundle: 4.58 MB).
+- [x] Auto-deployed to target vaults.
+- [x] Brief updated to Status 1 and committed.

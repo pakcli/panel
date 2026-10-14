@@ -1,0 +1,225 @@
+/* ========================================================================= */
+/* Embedded CSV Codeblock Table Styles (Dynamic Row-Height)                  */
+/* ========================================================================= */
+
+.pakcli-csv-card {
+	margin: 1rem 0;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-m, 8px);
+	background: var(--background-secondary);
+	overflow: hidden;
+	box-shadow: 0 4px 14px rgba(0, 0, 0, 0.12);
+	font-family: var(--font-text);
+	transition: border-color 0.2s ease, box-shadow 0.2s ease;
+
+	&:hover {
+		border-color: var(--interactive-accent);
+		box-shadow: 0 6px 18px rgba(0, 0, 0, 0.16);
+	}
+
+	.pakcli-csv-toolbar {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		padding: 6px 12px;
+		background: var(--background-secondary-alt, rgba(0, 0, 0, 0.12));
+		border-bottom: 1px solid var(--background-modifier-border);
+		font-size: 12px;
+		gap: 8px;
+		flex-wrap: wrap;
+
+		.pakcli-csv-toolbar-left,
+		.pakcli-csv-toolbar-right {
+			display: flex;
+			align-items: center;
+			gap: 8px;
+		}
+
+		.pakcli-csv-title {
+			font-weight: 700;
+			color: var(--text-normal);
+			display: flex;
+			align-items: center;
+			gap: 4px;
+			letter-spacing: -0.2px;
+		}
+
+		.pakcli-csv-badge {
+			font-size: 11px;
+			padding: 2px 8px;
+			border-radius: 12px;
+			background: var(--background-modifier-hover);
+			color: var(--text-muted);
+			font-variant-numeric: tabular-nums;
+			border: 1px solid var(--background-modifier-border);
+		}
+
+		.pakcli-csv-btn {
+			background: var(--background-primary);
+			border: 1px solid var(--background-modifier-border);
+			border-radius: 4px;
+			padding: 3px 8px;
+			font-size: 11.5px;
+			cursor: pointer;
+			color: var(--text-normal);
+			display: inline-flex;
+			align-items: center;
+			gap: 4px;
+			transition: all 0.12s ease;
+
+			&:hover {
+				background: var(--background-modifier-hover);
+				border-color: var(--interactive-accent);
+				color: var(--interactive-accent);
+			}
+		}
+	}
+
+	/* Table Viewport with Dynamic Row Height */
+	.pakcli-csv-table-wrapper {
+		width: 100%;
+		overflow-x: auto;
+		background: var(--background-primary);
+		scrollbar-width: thin;
+
+		&.is-fit-content {
+			height: auto;
+			overflow-y: visible;
+		}
+
+		&.is-scrollable-y {
+			max-height: 520px;
+			overflow-y: auto;
+		}
+
+		.pakcli-csv-table {
+			width: 100%;
+			border-collapse: collapse;
+			font-size: 12px;
+			line-height: 1.45;
+			white-space: nowrap;
+			font-family: ui-monospace, 'Cascadia Code', 'Fira Code', Menlo, Consolas, monospace;
+
+			thead {
+				position: sticky;
+				top: 0;
+				z-index: 2;
+			}
+
+			.pakcli-csv-th {
+				background: var(--background-secondary);
+				font-weight: 600;
+				color: var(--text-muted);
+				padding: 7px 12px;
+				border-bottom: 1px solid var(--background-modifier-border);
+				border-right: 1px solid var(--background-modifier-border);
+				text-align: left;
+				font-size: 11px;
+				letter-spacing: 0.3px;
+				user-select: none;
+
+				&:last-child {
+					border-right: none;
+				}
+			}
+
+			.pakcli-csv-td {
+				padding: 6px 12px;
+				border-bottom: 1px solid var(--background-modifier-border);
+				border-right: 1px solid var(--background-modifier-border);
+				color: var(--text-normal);
+				vertical-align: middle;
+
+				&:last-child {
+					border-right: none;
+				}
+			}
+
+			.pakcli-csv-row-num {
+				width: 38px;
+				min-width: 38px;
+				max-width: 44px;
+				text-align: center;
+				color: var(--text-faint);
+				font-size: 10px;
+				user-select: none;
+				background: var(--background-secondary-alt, rgba(0, 0, 0, 0.04));
+			}
+
+			.pakcli-csv-tr {
+				transition: background-color 0.1s ease;
+
+				&:last-child .pakcli-csv-td {
+					border-bottom: none;
+				}
+
+				&:hover td {
+					background-color: var(--background-modifier-hover);
+				}
+			}
+
+			.pakcli-csv-empty-cell {
+				padding: 16px;
+				text-align: center;
+				color: var(--text-muted);
+				font-style: italic;
+			}
+
+			.pakcli-csv-null {
+				color: var(--text-faint);
+			}
+
+			.pakcli-csv-pill {
+				display: inline-block;
+				font-size: 10px;
+				padding: 1px 6px;
+				border-radius: 4px;
+				font-weight: 600;
+				text-transform: uppercase;
+
+				&.is-true {
+					background: rgba(34, 197, 94, 0.15);
+					color: #22c55e;
+					border: 1px solid rgba(34, 197, 94, 0.3);
+				}
+
+				&.is-false {
+					background: rgba(239, 68, 68, 0.15);
+					color: #ef4444;
+					border: 1px solid rgba(239, 68, 68, 0.3);
+				}
+			}
+
+			.pakcli-csv-img-cell {
+				display: inline-flex;
+				align-items: center;
+				gap: 4px;
+				color: var(--interactive-accent);
+				font-size: 11.5px;
+
+				.pakcli-csv-img-icon {
+					font-size: 12px;
+				}
+
+				.pakcli-csv-img-text {
+					text-decoration: underline;
+					text-underline-offset: 2px;
+				}
+			}
+
+			.pakcli-csv-link {
+				color: var(--interactive-accent);
+				text-decoration: underline;
+			}
+		}
+	}
+
+	.pakcli-csv-raw-code {
+		margin: 0;
+		padding: 12px;
+		background: var(--background-primary);
+		font-size: 12px;
+		overflow-x: auto;
+		border-radius: 0;
+	}
+}

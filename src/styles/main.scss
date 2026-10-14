@@ -22,6 +22,7 @@
 @use 'todolist';
 @use 'sanitizer';
 @use 'tierlist';
+@use 'csvCodeblock';
 
 
 @use '../features/sqlseal/modules/explorer/explorer/style.scss';

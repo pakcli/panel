@@ -83,6 +83,9 @@ import {
 import { FrontmatterSuggestManager } from './features/frontmatterSuggester/FrontmatterSuggestManager';
 import { FrontmatterSuggestCardRenderer } from './features/frontmatterSuggester/ui/FrontmatterSuggestCardRenderer';
 
+// Embedded CSV & TSV Codeblock Renderer
+import { CsvCodeblockRenderer } from './features/csv/CsvCodeblockRenderer';
+
 // Pane Zoom Engine (v11) & Scrollback Explorer (v14) Imports
 import { ZoomManager } from './features/zoom/ZoomManager';
 import { ScrollbackManager } from './features/scrollback/ScrollbackManager';
@@ -629,6 +632,14 @@ export default class PakCLITablePlugin extends Plugin {
 
 		this.registerMarkdownCodeBlockProcessor('timeline-tree', async (source, el, ctx) => {
 			ctx.addChild(new TimelineNarrativeRenderer(this.app, source, el, ctx));
+		});
+
+		// 5b. Embedded CSV & TSV CodeBlock Processors (Dynamic Row-Height)
+		this.registerMarkdownCodeBlockProcessor('csv', (source, el, ctx) => {
+			ctx.addChild(new CsvCodeblockRenderer(el, source, ctx));
+		});
+		this.registerMarkdownCodeBlockProcessor('tsv', (source, el, ctx) => {
+			ctx.addChild(new CsvCodeblockRenderer(el, source, ctx));
 		});
 
 		this.registerEditorSuggest(new TimelineNarrativeEditorSuggest(this.app));
