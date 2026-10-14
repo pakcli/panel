@@ -1,7 +1,129 @@
 /* ========================================================================= */
-/* Embedded CSV Codeblock Table Styles (Dynamic Row-Height)                  */
+/* Embedded Tablite CSV CodeBlock Container (Direct Interaction & Dynamic Row-Height) */
 /* ========================================================================= */
 
+.tablite-root.tablite-codeblock-embed,
+.tablite-container.tablite-codeblock-embed {
+	width: 100% !important;
+	height: auto !important;
+	max-height: 620px;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-m, 8px);
+	margin: 1rem 0;
+	overflow: hidden;
+	background-color: var(--background-primary);
+	box-shadow: 0 4px 14px rgba(0, 0, 0, 0.12);
+	font-family: var(--font-text);
+	transition: border-color 0.2s ease, box-shadow 0.2s ease;
+
+	&:hover {
+		border-color: var(--interactive-accent);
+	}
+
+	.tablite-app {
+		width: 100% !important;
+		height: auto !important;
+		max-height: 620px;
+		display: flex;
+		flex-direction: column;
+	}
+
+	/* Embedded Compact Header */
+	.tablite-embed-topbar {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		padding: 6px 12px;
+		background: var(--background-secondary-alt, rgba(0, 0, 0, 0.12));
+		border-bottom: 1px solid var(--background-modifier-border);
+		font-size: 12px;
+		gap: 8px;
+		flex-wrap: wrap;
+		user-select: none;
+
+		.tablite-embed-left,
+		.tablite-embed-right {
+			display: flex;
+			align-items: center;
+			gap: 8px;
+		}
+
+		.tablite-embed-title {
+			font-weight: 700;
+			color: var(--text-normal);
+			font-size: 12px;
+		}
+
+		.tablite-embed-badge {
+			font-size: 11px;
+			padding: 2px 8px;
+			border-radius: 12px;
+			background: var(--background-modifier-hover);
+			color: var(--text-muted);
+			font-variant-numeric: tabular-nums;
+			border: 1px solid var(--background-modifier-border);
+		}
+
+		.tablite-embed-btn {
+			background: var(--background-primary);
+			border: 1px solid var(--background-modifier-border);
+			border-radius: 4px;
+			padding: 3px 8px;
+			font-size: 11.5px;
+			cursor: pointer;
+			color: var(--text-normal);
+			display: inline-flex;
+			align-items: center;
+			gap: 4px;
+			transition: all 0.12s ease;
+
+			&:hover {
+				background: var(--background-modifier-hover);
+				border-color: var(--interactive-accent);
+				color: var(--interactive-accent);
+			}
+
+			&.is-active {
+				background: var(--interactive-accent);
+				color: var(--text-on-accent);
+				border-color: var(--interactive-accent);
+			}
+
+			&.tablite-gear-toggle {
+				font-weight: 600;
+			}
+		}
+	}
+
+	/* Dynamic Row-Height for Table Container: perfectly fits total rows */
+	.tablite-table-container {
+		height: auto !important;
+		max-height: 480px;
+		flex: 0 1 auto !important;
+		overflow-x: auto;
+		overflow-y: auto;
+	}
+
+	/* Raw Editor embedded auto-height */
+	.tablite-raw-editor-container {
+		height: auto !important;
+		min-height: 120px;
+		max-height: 480px;
+
+		.tablite-raw-body {
+			height: auto !important;
+			min-height: 100px;
+			max-height: 420px;
+		}
+
+		.tablite-raw-textarea {
+			min-height: 100px;
+			max-height: 420px;
+		}
+	}
+}
+
+/* Fallback card styles for custom tables */
 .pakcli-csv-card {
 	margin: 1rem 0;
 	border: 1px solid var(--background-modifier-border);
@@ -75,7 +197,6 @@
 		}
 	}
 
-	/* Table Viewport with Dynamic Row Height */
 	.pakcli-csv-table-wrapper {
 		width: 100%;
 		overflow-x: auto;
@@ -138,78 +259,15 @@
 			.pakcli-csv-row-num {
 				width: 38px;
 				min-width: 38px;
-				max-width: 44px;
 				text-align: center;
 				color: var(--text-faint);
-				font-size: 10px;
+				background: var(--background-secondary);
 				user-select: none;
-				background: var(--background-secondary-alt, rgba(0, 0, 0, 0.04));
+				font-variant-numeric: tabular-nums;
 			}
 
-			.pakcli-csv-tr {
-				transition: background-color 0.1s ease;
-
-				&:last-child .pakcli-csv-td {
-					border-bottom: none;
-				}
-
-				&:hover td {
-					background-color: var(--background-modifier-hover);
-				}
-			}
-
-			.pakcli-csv-empty-cell {
-				padding: 16px;
-				text-align: center;
-				color: var(--text-muted);
-				font-style: italic;
-			}
-
-			.pakcli-csv-null {
-				color: var(--text-faint);
-			}
-
-			.pakcli-csv-pill {
-				display: inline-block;
-				font-size: 10px;
-				padding: 1px 6px;
-				border-radius: 4px;
-				font-weight: 600;
-				text-transform: uppercase;
-
-				&.is-true {
-					background: rgba(34, 197, 94, 0.15);
-					color: #22c55e;
-					border: 1px solid rgba(34, 197, 94, 0.3);
-				}
-
-				&.is-false {
-					background: rgba(239, 68, 68, 0.15);
-					color: #ef4444;
-					border: 1px solid rgba(239, 68, 68, 0.3);
-				}
-			}
-
-			.pakcli-csv-img-cell {
-				display: inline-flex;
-				align-items: center;
-				gap: 4px;
-				color: var(--interactive-accent);
-				font-size: 11.5px;
-
-				.pakcli-csv-img-icon {
-					font-size: 12px;
-				}
-
-				.pakcli-csv-img-text {
-					text-decoration: underline;
-					text-underline-offset: 2px;
-				}
-			}
-
-			.pakcli-csv-link {
-				color: var(--interactive-accent);
-				text-decoration: underline;
+			tr:hover td {
+				background-color: var(--background-modifier-hover);
 			}
 		}
 	}
@@ -218,8 +276,11 @@
 		margin: 0;
 		padding: 12px;
 		background: var(--background-primary);
+		font-family: ui-monospace, 'Cascadia Code', 'Fira Code', Menlo, Consolas, monospace;
 		font-size: 12px;
+		line-height: 1.45;
+		white-space: pre;
 		overflow-x: auto;
-		border-radius: 0;
+		color: var(--text-normal);
 	}
 }

@@ -32,6 +32,7 @@ interface AppProps {
   onColumnConfigChange: (config: ColumnConfig, columnCount: number) => void | Promise<void>;
   onDataChange: (data: string) => void;
   autocompleteColumns?: string;
+  isEmbedded?: boolean;
 }
 
 interface ActiveCell {
@@ -195,6 +196,7 @@ export function App({
   onColumnConfigChange,
   onDataChange,
   autocompleteColumns,
+  isEmbedded = false,
 }: AppProps) {
   // Use pre-parsed result from csv-view — no redundant re-parsing
   const [delimiter, setDelimiter] = useState<Delimiter>(initialDelimiter);
@@ -216,6 +218,7 @@ export function App({
   const [isViewsLoaded, setIsViewsLoaded] = useState(false);
   const [viewMode, setViewMode] = useState<"table" | "raw">("table");
   const [rawText, setRawText] = useState<string>(() => initialData);
+  const [isToolsOpen, setIsToolsOpen] = useState(!isEmbedded);
 
   const handleRawTextChange = useCallback(
     (newText: string) => {
@@ -1241,66 +1244,108 @@ export function App({
   return (
     <div
       ref={containerRef}
-      class={`tablite-container ${ctrlPressed ? "sqlseal-ctrl-pressed" : ""}`}
+      class={`tablite-container ${ctrlPressed ? "sqlseal-ctrl-pressed" : ""} ${isEmbedded ? "tablite-codeblock-embed" : ""}`}
       data-file-path={filePath}
       tabIndex={0}
     >
-      <Toolbar
-        encoding={encoding}
-        delimiter={delimiter}
-        hasHeader={hasHeader}
-        crossHighlight={crossHighlight}
-        rowCount={viewMode === "raw" ? rawText.split("\n").length : data.length}
-        colCount={viewMode === "raw" ? 1 : headers.length}
-        headers={headers}
-        columnOrder={columnConfig.order}
-        hiddenColumns={columnConfig.hidden}
-        frozenCount={columnConfig.frozenCount}
-        searchQuery={searchQuery}
-        searchMatchIndex={activeMatchIndex >= 0 ? activeMatchIndex + 1 : 0}
-        searchMatchCount={searchMatches.length}
-        searchInputRef={searchInputRef}
-        loading={loading}
-        loadProgress={progress}
-        onDelimiterChange={handleDelimiterChange}
-        onEncodingChange={setEncoding}
-        onHasHeaderChange={handleHasHeaderChange}
-        onCrossHighlightChange={setCrossHighlight}
-        onSearch={setSearchQuery}
-        onSearchNext={() => navigateSearch(1)}
-        onSearchPrev={() => navigateSearch(-1)}
-        onToggleColumnVisibility={toggleColumnVisibility}
-        onShowAllColumns={showAllColumns}
-        onFrozenCountChange={updateFrozenCount}
-        onUndo={undo}
-        onRedo={redo}
-        views={views}
-        activeView={activeView}
-        onViewChange={handleViewChange}
-        onResetView={handleResetView}
-        onAddView={handleAddView}
-        onDuplicateView={handleDuplicateView}
-        onDeleteView={handleDeleteView}
-        autocompleteColumns={autocompleteColumns}
-        viewMode={viewMode}
-        onToggleViewMode={handleToggleViewMode}
-        onDownloadThumbnails={handleDownloadThumbnails}
-        isFindOpen={isFindOpen}
-        onToggleFindReplace={() => setIsFindOpen(!isFindOpen)}
-        calcPosition={columnConfig.calcPosition || (plugin?.settings.defaultCalcPosition as 'below' | 'above' | 'both' | 'none') || "above"}
-        calcFreeze={columnConfig.calcFreeze !== undefined ? columnConfig.calcFreeze : (plugin?.settings.defaultCalcFreeze !== false)}
-        onCalcPositionChange={handleCalcPositionChange}
-        onCalcFreezeChange={handleCalcFreezeChange}
-        onOpenAddCalcPreset={handleOpenAddCalcPreset}
-        textWrap={columnConfig.textWrap}
-        onToggleTextWrap={handleToggleTextWrap}
-        onAddRow={handleAddRow}
-        onAddColumn={handleAddColumn}
-        hiddenRows={hiddenRows}
-        onToggleRowVisibility={toggleRowVisibility}
-        onShowAllRows={showAllRows}
-        onShowAllVisibility={showAllVisibility}
-      />
+      {isEmbedded && (
+        <div class="tablite-embed-topbar">
+          <div class="tablite-embed-left">
+            <span class="tablite-embed-title">📊 CSV Table</span>
+            <span class="tablite-embed-badge">
+              {viewMode === "raw" ? rawText.split("\n").length : data.length} {data.length === 1 ? "row" : "rows"} • {headers.length} {headers.length === 1 ? "col" : "cols"}
+            </span>
+          </div>
+          <div class="tablite-embed-right">
+            <button
+              type="button"
+              class="tablite-btn tablite-embed-btn"
+              title="Copy CSV data to clipboard"
+              onClick={() => {
+                const csv = serializeCSV(headers, data, delimiter, hasHeader);
+                navigator.clipboard?.writeText(csv);
+                new Notice("📋 Copied CSV to clipboard!");
+              }}
+            >
+              📋 Copy
+            </button>
+            <button
+              type="button"
+              class={`tablite-btn tablite-embed-btn ${viewMode === "raw" ? "is-active" : ""}`}
+              title="Toggle Raw / Table View"
+              onClick={handleToggleViewMode}
+            >
+              {viewMode === "raw" ? "📊 Table" : "🔀 Raw"}
+            </button>
+            <button
+              type="button"
+              class={`tablite-btn tablite-embed-btn tablite-gear-toggle ${isToolsOpen ? "is-active" : ""}`}
+              title={isToolsOpen ? "Hide CSV Editor Tools" : "Show CSV Editor Tools (Columns, Calcs, Search, Filters)"}
+              onClick={() => setIsToolsOpen(!isToolsOpen)}
+            >
+              ⚙️ Tools {isToolsOpen ? "▲" : "▼"}
+            </button>
+          </div>
+        </div>
+      )}
+      {(!isEmbedded || isToolsOpen) && (
+        <Toolbar
+          encoding={encoding}
+          delimiter={delimiter}
+          hasHeader={hasHeader}
+          crossHighlight={crossHighlight}
+          rowCount={viewMode === "raw" ? rawText.split("\n").length : data.length}
+          colCount={viewMode === "raw" ? 1 : headers.length}
+          headers={headers}
+          columnOrder={columnConfig.order}
+          hiddenColumns={columnConfig.hidden}
+          frozenCount={columnConfig.frozenCount}
+          searchQuery={searchQuery}
+          searchMatchIndex={activeMatchIndex >= 0 ? activeMatchIndex + 1 : 0}
+          searchMatchCount={searchMatches.length}
+          searchInputRef={searchInputRef}
+          loading={loading}
+          loadProgress={progress}
+          onDelimiterChange={handleDelimiterChange}
+          onEncodingChange={setEncoding}
+          onHasHeaderChange={handleHasHeaderChange}
+          onCrossHighlightChange={setCrossHighlight}
+          onSearch={setSearchQuery}
+          onSearchNext={() => navigateSearch(1)}
+          onSearchPrev={() => navigateSearch(-1)}
+          onToggleColumnVisibility={toggleColumnVisibility}
+          onShowAllColumns={showAllColumns}
+          onFrozenCountChange={updateFrozenCount}
+          onUndo={undo}
+          onRedo={redo}
+          views={views}
+          activeView={activeView}
+          onViewChange={handleViewChange}
+          onResetView={handleResetView}
+          onAddView={handleAddView}
+          onDuplicateView={handleDuplicateView}
+          onDeleteView={handleDeleteView}
+          autocompleteColumns={autocompleteColumns}
+          viewMode={viewMode}
+          onToggleViewMode={handleToggleViewMode}
+          onDownloadThumbnails={handleDownloadThumbnails}
+          isFindOpen={isFindOpen}
+          onToggleFindReplace={() => setIsFindOpen(!isFindOpen)}
+          calcPosition={columnConfig.calcPosition || (plugin?.settings.defaultCalcPosition as 'below' | 'above' | 'both' | 'none') || "above"}
+          calcFreeze={columnConfig.calcFreeze !== undefined ? columnConfig.calcFreeze : (plugin?.settings.defaultCalcFreeze !== false)}
+          onCalcPositionChange={handleCalcPositionChange}
+          onCalcFreezeChange={handleCalcFreezeChange}
+          onOpenAddCalcPreset={handleOpenAddCalcPreset}
+          textWrap={columnConfig.textWrap}
+          onToggleTextWrap={handleToggleTextWrap}
+          onAddRow={handleAddRow}
+          onAddColumn={handleAddColumn}
+          hiddenRows={hiddenRows}
+          onToggleRowVisibility={toggleRowVisibility}
+          onShowAllRows={showAllRows}
+          onShowAllVisibility={showAllVisibility}
+        />
+      )}
       <FindReplaceBar
         isOpen={isFindOpen}
         showReplace={showReplace}

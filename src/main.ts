@@ -634,12 +634,12 @@ export default class PakCLITablePlugin extends Plugin {
 			ctx.addChild(new TimelineNarrativeRenderer(this.app, source, el, ctx));
 		});
 
-		// 5b. Embedded CSV & TSV CodeBlock Processors (Dynamic Row-Height)
+		// 5b. Embedded CSV & TSV CodeBlock Processors (Tablite Direct Interaction & Dynamic Row-Height)
 		this.registerMarkdownCodeBlockProcessor('csv', (source, el, ctx) => {
-			ctx.addChild(new CsvCodeblockRenderer(el, source, ctx));
+			ctx.addChild(new CsvCodeblockRenderer(el, source, ctx, this));
 		});
 		this.registerMarkdownCodeBlockProcessor('tsv', (source, el, ctx) => {
-			ctx.addChild(new CsvCodeblockRenderer(el, source, ctx));
+			ctx.addChild(new CsvCodeblockRenderer(el, source, ctx, this));
 		});
 
 		this.registerEditorSuggest(new TimelineNarrativeEditorSuggest(this.app));
