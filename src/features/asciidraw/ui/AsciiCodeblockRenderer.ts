@@ -5,6 +5,7 @@ import { GridBuffer } from '../core/GridBuffer';
 import { AsciiSerializer } from '../utils/serializer';
 import { AsciiExporter } from '../utils/exporter';
 import { AsciiDrawModal } from './AsciiDrawModal';
+import { openAsciiStudioTab } from '../index';
 
 export class AsciiCodeblockRenderer extends MarkdownRenderChild {
 	private app: App;
@@ -30,6 +31,9 @@ export class AsciiCodeblockRenderer extends MarkdownRenderChild {
 	private lastPointerPos: { x: number; y: number } | null = null;
 	private dragStartPos: { x: number; y: number } | null = null;
 	private saveTimeout: number | null = null;
+
+	// High-Performance Direct Cell DOM Matrix (60 FPS)
+	private cellSpans: HTMLSpanElement[][] = [];
 
 	// DOM Elements
 	private containerCard!: HTMLElement;
@@ -362,7 +366,14 @@ export class AsciiCodeblockRenderer extends MarkdownRenderChild {
 			new Notice('✓ Copied codeblock to clipboard!');
 		};
 
-		// 6. Open in full screen
+		// 6. Open in Tab & Fullscreen
+		const btnTab = rightGroup.createEl('button', {
+			cls: 'asciidraw-card-btn',
+			text: '⧉ Tab',
+			title: 'Open in Dedicated Workspace Tab View'
+		});
+		btnTab.onclick = () => this.openInTabStudio();
+
 		const btnFullscreen = rightGroup.createEl('button', {
 			cls: 'asciidraw-card-btn asciidraw-card-btn-primary',
 			text: '⛶ Fullscreen',
@@ -407,21 +418,56 @@ export class AsciiCodeblockRenderer extends MarkdownRenderChild {
 		const cols = this.buffer.cols;
 		const rows = this.buffer.rows;
 
+		// Fast Path: update in-place without rebuilding DOM
+		if (this.cellSpans.length === rows && this.cellSpans[0]?.length === cols) {
+			for (let r = 0; r < rows; r++) {
+				const rowSpans = this.cellSpans[r];
+				for (let c = 0; c < cols; c++) {
+					const cell = this.buffer.getCell(c, r);
+					const ch = cell ? cell.char : ' ';
+					const span = rowSpans[c];
+					if (span) {
+						span.textContent = ch === ' ' ? '\u00A0' : ch;
+					}
+				}
+			}
+			return;
+		}
+
+		// Rebuild only on dimension change
+		this.cellSpans = [];
 		const frag = document.createDocumentFragment();
 		for (let r = 0; r < rows; r++) {
-			const rowDiv = frag.createDiv({ cls: 'ascii-row' });
+			const rowDiv = document.createElement('div');
+			rowDiv.className = 'ascii-row';
+			const rowSpans: HTMLSpanElement[] = [];
+
 			for (let c = 0; c < cols; c++) {
 				const cell = this.buffer.getCell(c, r);
 				const ch = cell ? cell.char : ' ';
-				const cellSpan = rowDiv.createSpan({ cls: 'ascii-cell' });
+				const cellSpan = document.createElement('span');
+				cellSpan.className = 'ascii-cell';
 				cellSpan.setAttribute('data-col', String(c));
 				cellSpan.setAttribute('data-row', String(r));
 				cellSpan.textContent = ch === ' ' ? '\u00A0' : ch;
+				rowDiv.appendChild(cellSpan);
+				rowSpans.push(cellSpan);
 			}
+
+			this.cellSpans.push(rowSpans);
+			frag.appendChild(rowDiv);
 		}
 
 		this.gridSurfaceEl.empty();
 		this.gridSurfaceEl.appendChild(frag);
+	}
+
+	private updateSingleCell(c: number, r: number): void {
+		const span = this.cellSpans[r]?.[c];
+		if (!span) return;
+		const cell = this.buffer.getCell(c, r);
+		const ch = cell ? cell.char : ' ';
+		span.textContent = ch === ' ' ? '\u00A0' : ch;
 	}
 
 	// =========================================================================
@@ -450,10 +496,10 @@ export class AsciiCodeblockRenderer extends MarkdownRenderChild {
 
 		if (this.activeTool === 'pencil') {
 			this.buffer.setCell(pt.x, pt.y, { char: this.activeChar });
-			this.renderGrid();
+			this.updateSingleCell(pt.x, pt.y);
 		} else if (this.activeTool === 'eraser') {
 			this.buffer.setCell(pt.x, pt.y, { char: ' ' });
-			this.renderGrid();
+			this.updateSingleCell(pt.x, pt.y);
 		} else if (this.activeTool === 'fill') {
 			this.buffer.floodFill(pt.x, pt.y, this.activeChar);
 			this.renderGrid();
@@ -480,16 +526,16 @@ export class AsciiCodeblockRenderer extends MarkdownRenderChild {
 			const points = this.buffer.getBresenhamPoints(this.lastPointerPos.x, this.lastPointerPos.y, pt.x, pt.y);
 			for (const p of points) {
 				this.buffer.setCell(p.x, p.y, { char: this.activeChar });
+				this.updateSingleCell(p.x, p.y);
 			}
 			this.lastPointerPos = pt;
-			this.renderGrid();
 		} else if (this.activeTool === 'eraser' && this.lastPointerPos) {
 			const points = this.buffer.getBresenhamPoints(this.lastPointerPos.x, this.lastPointerPos.y, pt.x, pt.y);
 			for (const p of points) {
 				this.buffer.setCell(p.x, p.y, { char: ' ' });
+				this.updateSingleCell(p.x, p.y);
 			}
 			this.lastPointerPos = pt;
-			this.renderGrid();
 		}
 	}
 
@@ -599,5 +645,10 @@ export class AsciiCodeblockRenderer extends MarkdownRenderChild {
 		window.setTimeout(() => {
 			modal.modalEl.addClass('is-fullscreen-immersive');
 		}, 30);
+	}
+
+	private async openInTabStudio(): Promise<void> {
+		const currentText = AsciiSerializer.serialize([this.buffer], this.theme, false);
+		await openAsciiStudioTab(this.app, currentText, this.ctx.sourcePath);
 	}
 }

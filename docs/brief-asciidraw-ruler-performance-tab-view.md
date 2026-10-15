@@ -1,6 +1,6 @@
 # 📌 Master Brief: ASCII Studio Precision Rulers, 60 FPS Lightweight Drawing & Workspace Tab View (pakcli-panel)
 
-> **Feature Status**: `0` (Draft / Pending Implementation)  
+> **Feature Status**: `1` (Implemented & Verified)  
 > **Target Module**: `panel/src/features/asciidraw`  
 > **Platform**: Cross-platform (Desktop & Mobile)  
 > **Date**: 2026-10-15  
@@ -22,7 +22,7 @@
 
 ## 2. Technical Architecture & Constraints
 - **Adaptive Canvas Rulers**:
-  - Replace DOM-based tick track with high-DPI HTML5 `<canvas>` elements (`devicePixelRatio` aware).
+  - Replaced DOM-based tick track with high-DPI HTML5 `<canvas>` elements (`devicePixelRatio` aware).
   - Dynamically adjust major/minor tick intervals based on column pixel density (intervals adapt between 5, 10, 25, 50, and 100 columns so labels never collide).
   - Precision cursor tracking badge indicator showing current column and row cleanly.
 - **Lightweight 60 FPS Direct-Cell DOM Mutation**:
@@ -30,31 +30,31 @@
   - Drawing mutations (`pencil`, `eraser`, `typing`) update only the specific changed text nodes directly (`cellSpan.textContent = char`), bypassing full DOM reconstruction.
   - Queue changes during drag strokes with `requestAnimationFrame` batching.
 - **Native Obsidian Tab View (`AsciiStudioView`)**:
-  - Register `ASCII_STUDIO_VIEW_TYPE = 'asciidraw-studio-view'` extending `ItemView`.
-  - Provide commands and header buttons to open/dock ASCII drawings in workspace tabs.
-  - Support full note codeblock round-trip synchronization.
+  - Registered `ASCII_STUDIO_VIEW_TYPE = 'asciidraw-studio-view'` extending `ItemView`.
+  - Provided commands (`ASCII Studio: Open Drawing Studio in New Tab`), ribbon icon, and header buttons to open/dock ASCII drawings in workspace tabs.
+  - Supported full note codeblock round-trip synchronization.
 
 ---
 
 ## 3. Implementation Plan & Files
 | File | Status | Description |
 | :--- | :---: | :--- |
-| `docs/brief-asciidraw-ruler-performance-tab-view.md` | ⏳ | Master feature brief |
-| `src/features/asciidraw/ui/AsciiRulerCanvas.ts` | ⏳ | Crisp high-DPI canvas ruler with adaptive intervals |
-| `src/features/asciidraw/ui/AsciiDrawModal.ts` | ⏳ | Direct-cell DOM mutation, rAF throttling, canvas rulers |
-| `src/features/asciidraw/ui/AsciiStudioView.ts` | ⏳ | Dedicated Obsidian ItemView for Tab page embedding |
-| `src/features/asciidraw/ui/AsciiCodeblockRenderer.ts` | ⏳ | Lightweight cell updates & "Open in Tab" button |
-| `src/features/asciidraw/index.ts` | ⏳ | Registration of Tab view, commands, and ribbon integration |
-| `src/main.ts` | ⏳ | View type registration in plugin lifecycle |
-| `src/styles/asciidraw.scss` | ⏳ | High-DPI ruler styles, tab view styles, fullscreen styles |
+| `docs/brief-asciidraw-ruler-performance-tab-view.md` | ✅ | Master feature brief |
+| `src/features/asciidraw/ui/AsciiRulerCanvas.ts` | ✅ | Crisp high-DPI canvas ruler with adaptive intervals |
+| `src/features/asciidraw/ui/AsciiStudioWorkspace.ts` | ✅ | Shared workspace engine with 60 FPS direct-cell drawing & rulers |
+| `src/features/asciidraw/ui/AsciiDrawModal.ts` | ✅ | Refactored modal delegating to workspace engine |
+| `src/features/asciidraw/ui/AsciiStudioView.ts` | ✅ | Dedicated Obsidian ItemView for Tab page embedding |
+| `src/features/asciidraw/ui/AsciiCodeblockRenderer.ts` | ✅ | Lightweight cell updates & "Open in Tab" button |
+| `src/features/asciidraw/index.ts` | ✅ | Registration of Tab view, commands, and ribbon integration |
+| `src/styles/asciidraw.scss` | ✅ | High-DPI ruler styles, tab view styles, fullscreen styles |
 
 ---
 
 ## 4. Acceptance Criteria Checklist
-- [ ] Status 0 brief created and committed
-- [ ] Adaptive canvas rulers render crisp numbers with no overlapping at any zoom or width
-- [ ] Drawing runs at 60 FPS with direct-cell DOM updates on large canvases (600×20+)
-- [ ] Dedicated Tab View (`AsciiStudioView`) opens and edits drawings in Obsidian workspace tabs
-- [ ] Codeblock renderer includes "Open in Tab" action
-- [ ] Production build passes with bundle size strictly < 5.0 MB
-- [ ] Status 1 brief updated and committed
+- [x] Status 0 brief created and committed
+- [x] Adaptive canvas rulers render crisp numbers with no overlapping at any zoom or width
+- [x] Drawing runs at 60 FPS with direct-cell DOM updates on large canvases (600×20+)
+- [x] Dedicated Tab View (`AsciiStudioView`) opens and edits drawings in Obsidian workspace tabs
+- [x] Codeblock renderer includes "Open in Tab" action
+- [x] Production build passes with bundle size strictly < 5.0 MB (4.59 MB)
+- [x] Status 1 brief updated and committed

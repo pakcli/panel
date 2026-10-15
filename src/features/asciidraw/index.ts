@@ -1,6 +1,9 @@
-import { MarkdownView, Notice, Plugin, type MarkdownPostProcessorContext } from 'obsidian';
+import { MarkdownView, Notice, Plugin, WorkspaceLeaf, type MarkdownPostProcessorContext } from 'obsidian';
 import { AsciiCodeblockRenderer } from './ui/AsciiCodeblockRenderer';
 import { AsciiDrawModal } from './ui/AsciiDrawModal';
+import { AsciiStudioView, ASCII_STUDIO_VIEW_TYPE } from './ui/AsciiStudioView';
+
+export { ASCII_STUDIO_VIEW_TYPE, AsciiStudioView };
 
 export function registerAsciiDrawFeature(plugin: Plugin): void {
 	// 1. Register Codeblock Processors
@@ -18,12 +21,26 @@ export function registerAsciiDrawFeature(plugin: Plugin): void {
 		}
 	});
 
-	// 2. Add Ribbon Icon
+	// 2. Register Workspace Tab View (Embed in Tab Page)
+	plugin.registerView(
+		ASCII_STUDIO_VIEW_TYPE,
+		(leaf: WorkspaceLeaf) => new AsciiStudioView(leaf, plugin as any)
+	);
+
+	// 3. Add Ribbon Icon
 	plugin.addRibbonIcon('pencil', 'ASCII Studio: New Drawing Canvas', () => {
 		openAsciiStudioModal(plugin, false);
 	});
 
-	// 3. Add Commands
+	// 4. Add Commands
+	plugin.addCommand({
+		id: 'asciidraw-open-tab-view',
+		name: 'ASCII Studio: Open Drawing Studio in New Tab',
+		callback: async () => {
+			await openAsciiStudioTab(plugin.app);
+		}
+	});
+
 	plugin.addCommand({
 		id: 'asciidraw-insert-new-canvas',
 		name: 'ASCII Studio: Insert New Drawing Canvas at Cursor',
@@ -41,12 +58,25 @@ export function registerAsciiDrawFeature(plugin: Plugin): void {
 	});
 }
 
-function openAsciiStudioModal(plugin: Plugin, startFullscreen = false): void {
+export async function openAsciiStudioTab(app: any, initialContent?: string, targetFile?: string): Promise<void> {
+	let targetLeaf = app.workspace.getLeaf('tab');
+	await targetLeaf.setViewState({
+		type: ASCII_STUDIO_VIEW_TYPE,
+		active: true
+	});
+	app.workspace.revealLeaf(targetLeaf);
+	if (initialContent && targetLeaf.view instanceof AsciiStudioView) {
+		targetLeaf.view.setContent(initialContent, targetFile);
+	}
+}
+
+export function openAsciiStudioModal(plugin: Plugin, startFullscreen = false, initialContent?: string, targetFile?: string): void {
 	const activeView = plugin.app.workspace.getActiveViewOfType(MarkdownView);
-	const initialTemplate = `┌──────────────────────────┐\n│  ASCII Drawing Canvas    │\n└──────────────────────────┘`;
+	const initialTemplate = initialContent || `┌──────────────────────────┐\n│  ASCII Drawing Canvas    │\n└──────────────────────────┘`;
 
 	const modal = new AsciiDrawModal(plugin.app, {
 		initialContent: initialTemplate,
+		targetFile: targetFile || activeView?.file?.path,
 		onSave: async (savedContent: string) => {
 			if (activeView && activeView.editor) {
 				const editor = activeView.editor;
@@ -77,6 +107,7 @@ function insertNewAsciiBlock(plugin: Plugin): void {
 
 	const modal = new AsciiDrawModal(plugin.app, {
 		initialContent,
+		targetFile: activeView.file?.path,
 		onSave: (savedContent: string) => {
 			const editor = activeView.editor;
 			const block = `\`\`\`asciidraw\n${savedContent}\n\`\`\`\n`;
