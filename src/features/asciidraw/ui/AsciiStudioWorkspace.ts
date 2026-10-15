@@ -454,6 +454,108 @@ export class AsciiStudioWorkspace {
 		this.guideHudEl = this.canvasInnerViewportEl.createDiv({ cls: 'asciidraw-guide-hud' });
 		this.guideHudEl.style.display = 'none';
 
+		// Context menu on the canvas inner viewport
+		this.canvasInnerViewportEl.addEventListener('contextmenu', (e: MouseEvent) => {
+			if ((e.target as HTMLElement)?.classList.contains('asciidraw-guide-line')) {
+				return;
+			}
+			e.preventDefault();
+			const innerRect = this.canvasInnerViewportEl.getBoundingClientRect();
+			const mouseX = e.clientX - innerRect.left;
+			const mouseY = e.clientY - innerRect.top;
+			const canvasX = (mouseX - this.panX) / this.zoomScale;
+			const canvasY = (mouseY - this.panY) / this.zoomScale;
+			const cellCol = Math.round((canvasX - 8) / 10);
+			const cellRow = Math.round((canvasY - 8) / 17);
+
+			const menu = new Menu();
+
+			menu.addItem((item) => {
+				item.setTitle(`Add Horizontal Guide at Row ${cellRow}`)
+					.setIcon('ruler')
+					.onClick(() => {
+						if (!this.guides.horizontal.includes(cellRow)) {
+							this.guides.horizontal.push(cellRow);
+							this.guides.horizontal.sort((a, b) => a - b);
+							this.renderGuides();
+							new Notice(`Added horizontal guide at Row ${cellRow}`);
+						}
+					});
+			});
+
+			menu.addItem((item) => {
+				item.setTitle(`Add Vertical Guide at Col ${cellCol}`)
+					.setIcon('ruler')
+					.onClick(() => {
+						if (!this.guides.vertical.includes(cellCol)) {
+							this.guides.vertical.push(cellCol);
+							this.guides.vertical.sort((a, b) => a - b);
+							this.renderGuides();
+							new Notice(`Added vertical guide at Col ${cellCol}`);
+						}
+					});
+			});
+
+			if (this.guides.horizontal.length > 0 || this.guides.vertical.length > 0) {
+				menu.addItem((item) => {
+					item.setTitle('Clear All Guides')
+						.setIcon('trash')
+						.onClick(() => this.clearAllGuides());
+				});
+			}
+
+			menu.addSeparator();
+
+			menu.addItem((item) => {
+				item.setTitle(this.showGuides ? 'Hide Guide Lines (Ctrl+;)' : 'Show Guide Lines (Ctrl+;)')
+					.setIcon('eye')
+					.onClick(() => this.toggleGuides());
+			});
+
+			menu.addItem((item) => {
+				item.setTitle(this.showRulers ? 'Hide Precision Rulers (Ctrl+R)' : 'Show Precision Rulers (Ctrl+R)')
+					.setIcon('sliders')
+					.onClick(() => {
+						this.showRulers = !this.showRulers;
+						this.updateRulerVisibility();
+					});
+			});
+
+			menu.addSeparator();
+
+			menu.addItem((item) => {
+				item.setTitle('Fit to Screen (Ctrl+0)')
+					.setIcon('minimize')
+					.onClick(() => this.fitToScreen());
+			});
+
+			menu.addItem((item) => {
+				item.setTitle('Actual Size 100% (Ctrl+1)')
+					.setIcon('maximize')
+					.onClick(() => this.resetZoom100());
+			});
+
+			menu.addSeparator();
+
+			menu.addItem((item) => {
+				item.setTitle('Copy Plain ASCII Text')
+					.setIcon('copy')
+					.onClick(async () => {
+						const composite = this.layerManager.getCompositeBuffer();
+						await AsciiExporter.copyToClipboard(composite.toString(true));
+						new Notice('Copied plain ASCII text to clipboard!');
+					});
+			});
+
+			menu.addItem((item) => {
+				item.setTitle('Save to Note (Ctrl+S)')
+					.setIcon('save')
+					.onClick(() => this.handleSave());
+			});
+
+			menu.showAtMouseEvent(e);
+		});
+
 		this.setupViewportNavigationEvents();
 		this.setupDirectTypingEvents();
 
@@ -1418,6 +1520,178 @@ export class AsciiStudioWorkspace {
 				this.renderLayersList();
 				this.updateStatus(`Active Layer: ${layer.name}`);
 			};
+
+			// Right-Click Context Menu for Layer (In-Page Tab)
+			item.addEventListener('contextmenu', (e: MouseEvent) => {
+				e.preventDefault();
+				e.stopPropagation();
+
+				// Activate this layer on right click if not already active
+				if (lm.activeLayerIndex !== layerIndex) {
+					lm.setActiveLayer(layerIndex);
+					this.renderLayersList();
+				}
+
+				const menu = new Menu();
+
+				// 1. Rename Layer
+				menu.addItem((m) => {
+					m.setTitle(`Rename "${layer.name}"...`)
+						.setIcon('pencil')
+						.onClick(() => {
+							new AsciiPromptModal(this.app, 'Rename Layer', layer.name, (newName) => {
+								if (newName && newName.trim()) {
+									lm.renameLayer(layerIndex, newName.trim());
+									this.renderLayersList();
+									this.pushHistory();
+									new Notice(`Renamed to "${newName.trim()}"`);
+								}
+							}).open();
+						});
+				});
+
+				// 2. Duplicate Layer
+				menu.addItem((m) => {
+					m.setTitle('Duplicate Layer')
+						.setIcon('copy')
+						.onClick(() => {
+							lm.duplicateLayer(layerIndex);
+							this.renderLayersList();
+							this.renderCanvas();
+							this.pushHistory();
+							new Notice(`Duplicated "${layer.name}"`);
+						});
+				});
+
+				menu.addSeparator();
+
+				// 3. Toggle Visibility
+				menu.addItem((m) => {
+					m.setTitle(layer.visible ? 'Hide Layer' : 'Show Layer')
+						.setIcon(layer.visible ? 'eye-off' : 'eye')
+						.onClick(() => {
+							lm.toggleVisibility(layerIndex);
+							this.renderLayersList();
+							this.renderCanvas();
+							this.pushHistory();
+						});
+				});
+
+				// 4. Toggle Lock
+				menu.addItem((m) => {
+					m.setTitle(layer.locked ? 'Unlock Layer' : 'Lock Layer')
+						.setIcon(layer.locked ? 'unlock' : 'lock')
+						.onClick(() => {
+							lm.toggleLock(layerIndex);
+							this.renderLayersList();
+							this.pushHistory();
+						});
+				});
+
+				menu.addSeparator();
+
+				// 5. Apply Active Character to Layer
+				menu.addItem((m) => {
+					m.setTitle(`Apply Char "${this.activeChar}" to Layer`)
+						.setIcon('type')
+						.onClick(() => {
+							lm.applyCharToLayer(layerIndex, this.activeChar);
+							this.renderLayersList();
+							this.renderCanvas();
+							this.pushHistory();
+							new Notice(`Applied "${this.activeChar}" across "${layer.name}"`);
+						});
+				});
+
+				// 6. Invert Layer Mask
+				menu.addItem((m) => {
+					m.setTitle('Invert Layer Mask')
+						.setIcon('refresh-cw')
+						.onClick(() => {
+							lm.invertLayerMask(layerIndex, this.activeChar || '#');
+							this.renderLayersList();
+							this.renderCanvas();
+							this.pushHistory();
+							new Notice(`Inverted mask for "${layer.name}"`);
+						});
+				});
+
+				menu.addSeparator();
+
+				// 7. Move Layer Up (higher index)
+				if (layerIndex < lm.layers.length - 1) {
+					menu.addItem((m) => {
+						m.setTitle('Move Layer Up')
+							.setIcon('arrow-up')
+							.onClick(() => {
+								lm.reorderLayers(layerIndex, layerIndex + 1);
+								this.renderLayersList();
+								this.renderCanvas();
+								this.pushHistory();
+							});
+					});
+				}
+
+				// 8. Move Layer Down (lower index)
+				if (layerIndex > 0) {
+					menu.addItem((m) => {
+						m.setTitle('Move Layer Down')
+							.setIcon('arrow-down')
+							.onClick(() => {
+								lm.reorderLayers(layerIndex, layerIndex - 1);
+								this.renderLayersList();
+								this.renderCanvas();
+								this.pushHistory();
+							});
+					});
+				}
+
+				// 9. Merge Down (only if not bottom layer)
+				if (layerIndex > 0) {
+					menu.addItem((m) => {
+						m.setTitle('Merge Down')
+							.setIcon('arrow-down-circle')
+							.onClick(() => {
+								lm.mergeDown(layerIndex);
+								this.renderLayersList();
+								this.renderCanvas();
+								this.pushHistory();
+								new Notice('Merged layer down');
+							});
+					});
+				}
+
+				menu.addSeparator();
+
+				// 10. Clear Layer Content
+				menu.addItem((m) => {
+					m.setTitle('Clear Layer Content')
+						.setIcon('eraser')
+						.onClick(() => {
+							layer.buffer.clear();
+							this.renderCanvas();
+							this.pushHistory();
+							new Notice(`Cleared "${layer.name}" content`);
+						});
+				});
+
+				// 11. Delete Layer
+				if (lm.layers.length > 1) {
+					menu.addItem((m) => {
+						m.setTitle(`Delete "${layer.name}"`)
+							.setIcon('trash')
+							.onClick(() => {
+								lm.deleteLayer(layerIndex);
+								this.renderLayersList();
+								this.renderCanvas();
+								this.pushHistory();
+								new Notice(`Deleted "${layer.name}"`);
+							});
+					});
+				}
+
+				menu.showAtMouseEvent(e);
+			});
 		}
 	}
 

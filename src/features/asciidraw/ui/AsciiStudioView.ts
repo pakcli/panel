@@ -1,4 +1,4 @@
-import { ItemView, WorkspaceLeaf, Notice, TFile } from 'obsidian';
+import { ItemView, WorkspaceLeaf, Notice, TFile, Menu } from 'obsidian';
 import { AsciiStudioWorkspace } from './AsciiStudioWorkspace';
 import type TablitePlugin from '../../../main';
 
@@ -84,6 +84,25 @@ export class AsciiStudioView extends ItemView {
 		if (this.workspace) {
 			this.workspace.loadContent(content);
 		}
+	}
+
+	public onPaneMenu(menu: Menu, source: string): void {
+		menu.addItem((item) => {
+			item.setTitle('Save to Note (Ctrl+S)')
+				.setIcon('save')
+				.onClick(() => this.workspace?.handleSave());
+		});
+		menu.addItem((item) => {
+			item.setTitle('Fit to Viewport (Ctrl+0)')
+				.setIcon('minimize')
+				.onClick(() => this.workspace?.fitToScreen());
+		});
+		menu.addItem((item) => {
+			item.setTitle('Toggle Guide Lines (Ctrl+;)')
+				.setIcon('ruler')
+				.onClick(() => this.workspace?.toggleGuides());
+		});
+		super.onPaneMenu(menu, source);
 	}
 
 	async onClose(): Promise<void> {

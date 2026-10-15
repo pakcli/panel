@@ -1,6 +1,6 @@
 # 📌 Master Brief: ASCII Studio In-Page Tab & Layer Right-Click Context Menus (pakcli-panel)
 
-> **Feature Status**: `0` (Draft / Pending Implementation)  
+> **Feature Status**: `1` (Implemented & Verified)  
 > **Target Module**: `panel/src/features/asciidraw`  
 > **Platform**: Cross-platform (Desktop & Mobile)  
 > **Date**: 2026-10-15  
@@ -53,16 +53,16 @@
 ## 3. Implementation Plan & Files
 | File | Status | Description |
 | :--- | :---: | :--- |
-| `docs/brief-asciidraw-inpage-rightclick-contextmenu.md` | ⏳ | Master feature brief (Status 0 -> 1) |
-| `src/features/asciidraw/ui/AsciiStudioWorkspace.ts` | ⏳ | Layer item contextmenu and canvas viewport contextmenu |
-| `src/features/asciidraw/ui/AsciiStudioView.ts` | ⏳ | Tab pane header `onPaneMenu` handler |
+| `docs/brief-asciidraw-inpage-rightclick-contextmenu.md` | ✅ | Master feature brief (Status 0 -> 1) |
+| `src/features/asciidraw/ui/AsciiStudioWorkspace.ts` | ✅ | Layer item contextmenu and canvas viewport contextmenu |
+| `src/features/asciidraw/ui/AsciiStudioView.ts` | ✅ | Tab pane header `onPaneMenu` handler |
 
 ---
 
 ## 4. Acceptance Criteria Checklist
-- [ ] Status 0 brief created and committed
-- [ ] Right-clicking on layer item (`Layer 1` tab) displays full layer operations context menu
-- [ ] Right-clicking on canvas viewport displays canvas and guide operations context menu
-- [ ] Tab pane header exposes ASCII Studio actions via `onPaneMenu`
-- [ ] Build passes with bundle size < 5.0 MB
-- [ ] Status 1 brief updated and committed
+- [x] Status 0 brief created and committed
+- [x] Right-clicking on layer item (`Layer 1` tab) displays full layer operations context menu
+- [x] Right-clicking on canvas viewport displays canvas and guide operations context menu
+- [x] Tab pane header exposes ASCII Studio actions via `onPaneMenu`
+- [x] Build passes with bundle size < 5.0 MB (4.60 MB verified)
+- [x] Status 1 brief updated and committed
