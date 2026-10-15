@@ -218,6 +218,16 @@ export function App({
   const [isViewsLoaded, setIsViewsLoaded] = useState(false);
   const [viewMode, setViewMode] = useState<"table" | "raw">("table");
   const [rawText, setRawText] = useState<string>(() => initialData);
+
+  const initialState = useMemo<TableState>(
+    () => ensureEditableState({ headers: initialParsed.headers, data: initialParsed.data }),
+    [],
+  );
+
+  const [columnConfig, setColumnConfig] = useState<ColumnConfig>(() =>
+    normalizeColumnConfig(initialColumnConfig, initialState.headers.length),
+  );
+
   const [isToolsOpen, setIsToolsOpen] = useState(!isEmbedded);
   const [headerMode, setHeaderMode] = useState<"simple" | "advance" | "simple_calc">(
     () => columnConfig.headerMode || (isEmbedded ? "simple" : "advance")
@@ -269,11 +279,6 @@ export function App({
       window.removeEventListener("blur", handleBlur);
     };
   }, []);
-
-  const initialState = useMemo<TableState>(
-    () => ensureEditableState({ headers: initialParsed.headers, data: initialParsed.data }),
-    [],
-  );
 
   const [isFindOpen, setIsFindOpen] = useState(false);
   const [showReplace, setShowReplace] = useState(false);
@@ -394,10 +399,6 @@ export function App({
   const visibleData = useMemo(
     () => (visibleCount >= data.length ? data : data.slice(0, visibleCount)),
     [data, visibleCount],
-  );
-
-  const [columnConfig, setColumnConfig] = useState<ColumnConfig>(() =>
-    normalizeColumnConfig(initialColumnConfig, initialState.headers.length),
   );
 
   const isLoadedRef = useRef(false);
