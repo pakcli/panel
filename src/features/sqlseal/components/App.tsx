@@ -228,9 +228,9 @@ export function App({
     normalizeColumnConfig(initialColumnConfig, initialState.headers.length),
   );
 
-  const [isToolsOpen, setIsToolsOpen] = useState(!isEmbedded);
+  const [isToolsOpen, setIsToolsOpen] = useState(false);
   const [headerMode, setHeaderMode] = useState<"simple" | "advance" | "simple_calc">(
-    () => columnConfig.headerMode || (isEmbedded ? "simple" : "advance")
+    () => columnConfig.headerMode || "simple"
   );
 
   useEffect(() => {
@@ -1279,73 +1279,73 @@ export function App({
       data-file-path={filePath}
       tabIndex={0}
     >
-      {isEmbedded && (
-        <div class="tablite-embed-topbar">
-          <div class="tablite-embed-left">
-            <span class="tablite-embed-title">📊 CSV Table</span>
-            <span class="tablite-embed-badge">
-              {viewMode === "raw" ? rawText.split("\n").length : data.length} {data.length === 1 ? "row" : "rows"} • {headers.length} {headers.length === 1 ? "col" : "cols"}
-            </span>
-          </div>
-          <div class="tablite-embed-right">
-            <div class="tablite-header-mode-group" title="Header Display Mode">
-              <button
-                type="button"
-                class={`tablite-btn tablite-embed-btn ${headerMode === "simple" ? "is-active" : ""}`}
-                title="Simple Header: clean text cells only"
-                onClick={() => handleHeaderModeChange("simple")}
-              >
-                ⚡ Simple
-              </button>
-              <button
-                type="button"
-                class={`tablite-btn tablite-embed-btn ${headerMode === "advance" ? "is-active" : ""}`}
-                title="Advance Header: filters, sort & types"
-                onClick={() => handleHeaderModeChange("advance")}
-              >
-                🛠️ Advance
-              </button>
-              <button
-                type="button"
-                class={`tablite-btn tablite-embed-btn ${headerMode === "simple_calc" ? "is-active" : ""}`}
-                title="Simple Header + Calculation Row Only"
-                onClick={() => handleHeaderModeChange("simple_calc")}
-              >
-                🔢 Simple + Calc
-              </button>
-            </div>
-            <button
-              type="button"
-              class="tablite-btn tablite-embed-btn"
-              title="Copy CSV data to clipboard"
-              onClick={() => {
-                const csv = serializeCSV(headers, data, delimiter, hasHeader);
-                navigator.clipboard?.writeText(csv);
-                new Notice("📋 Copied CSV to clipboard!");
-              }}
-            >
-              📋 Copy
-            </button>
-            <button
-              type="button"
-              class={`tablite-btn tablite-embed-btn ${viewMode === "raw" ? "is-active" : ""}`}
-              title="Toggle Raw / Table View"
-              onClick={handleToggleViewMode}
-            >
-              {viewMode === "raw" ? "📊 Table" : "🔀 Raw"}
-            </button>
-            <button
-              type="button"
-              class={`tablite-btn tablite-embed-btn tablite-gear-toggle ${isToolsOpen ? "is-active" : ""}`}
-              title={isToolsOpen ? "Hide CSV Editor Tools" : "Show CSV Editor Tools (Columns, Calcs, Search, Filters)"}
-              onClick={() => setIsToolsOpen(!isToolsOpen)}
-            >
-              ⚙️ Tools {isToolsOpen ? "▲" : "▼"}
-            </button>
-          </div>
+      <div class="tablite-topbar tablite-embed-topbar">
+        <div class="tablite-topbar-left tablite-embed-left">
+          <span class="tablite-topbar-title tablite-embed-title" title={filePath || "CSV Table"}>
+            📊 CSV Table
+          </span>
+          <span class="tablite-topbar-badge tablite-embed-badge">
+            {viewMode === "raw" ? rawText.split("\n").length : data.length} {data.length === 1 ? "row" : "rows"} • {headers.length} {headers.length === 1 ? "col" : "cols"}
+          </span>
         </div>
-      )}
-      {(!isEmbedded || isToolsOpen) && (
+        <div class="tablite-topbar-right tablite-embed-right">
+          <div class="tablite-header-mode-group" title="Header Display Mode">
+            <button
+              type="button"
+              class={`tablite-btn tablite-topbar-btn tablite-embed-btn ${headerMode === "simple" ? "is-active" : ""}`}
+              title="Simple Header: clean text cells only"
+              onClick={() => handleHeaderModeChange("simple")}
+            >
+              ⚡ Simple
+            </button>
+            <button
+              type="button"
+              class={`tablite-btn tablite-topbar-btn tablite-embed-btn ${headerMode === "advance" ? "is-active" : ""}`}
+              title="Advance Header: filters, sort & types"
+              onClick={() => handleHeaderModeChange("advance")}
+            >
+              🛠️ Advance
+            </button>
+            <button
+              type="button"
+              class={`tablite-btn tablite-topbar-btn tablite-embed-btn ${headerMode === "simple_calc" ? "is-active" : ""}`}
+              title="Simple Header + Calculation Row Only"
+              onClick={() => handleHeaderModeChange("simple_calc")}
+            >
+              🔢 Simple + Calc
+            </button>
+          </div>
+          <button
+            type="button"
+            class="tablite-btn tablite-topbar-btn tablite-embed-btn"
+            title="Copy CSV data to clipboard"
+            onClick={() => {
+              const csv = serializeCSV(headers, data, delimiter, hasHeader);
+              navigator.clipboard?.writeText(csv);
+              new Notice("📋 Copied CSV to clipboard!");
+            }}
+          >
+            📋 Copy
+          </button>
+          <button
+            type="button"
+            class={`tablite-btn tablite-topbar-btn tablite-embed-btn ${viewMode === "raw" ? "is-active" : ""}`}
+            title="Toggle Raw / Table View"
+            onClick={handleToggleViewMode}
+          >
+            {viewMode === "raw" ? "📊 Table" : "🔀 Raw"}
+          </button>
+          <button
+            type="button"
+            class={`tablite-btn tablite-topbar-btn tablite-embed-btn tablite-gear-toggle ${isToolsOpen ? "is-active" : ""}`}
+            title={isToolsOpen ? "Hide CSV Editor Tools" : "Show CSV Editor Tools (Columns, Calcs, Search, Filters)"}
+            onClick={() => setIsToolsOpen(!isToolsOpen)}
+          >
+            ⚙️ Tools {isToolsOpen ? "▲" : "▼"}
+          </button>
+        </div>
+      </div>
+      {isToolsOpen && (
         <Toolbar
           encoding={encoding}
           delimiter={delimiter}
