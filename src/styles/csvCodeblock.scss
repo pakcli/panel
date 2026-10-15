@@ -367,9 +367,10 @@
 	display: flex !important;
 	align-items: center !important;
 	justify-content: flex-start !important;
-	height: 32px !important;
-	min-height: 32px !important;
-	max-height: 32px !important;
+	height: 28px !important;
+	min-height: 28px !important;
+	max-height: 28px !important;
+	line-height: 28px !important;
 	padding: 0 10px !important;
 	position: relative !important;
 	background-color: var(--background-secondary) !important;
@@ -419,6 +420,47 @@
 		&:hover {
 			background: var(--interactive-accent);
 		}
+	}
+}
+
+/* Simple Header Mode: Compact 28px Table Header */
+.tablite-table.tablite-mode-simple,
+.tablite-table.tablite-mode-simple_calc {
+	thead,
+	thead tr {
+		height: 28px !important;
+		min-height: 28px !important;
+		max-height: 28px !important;
+	}
+
+	.tablite-th {
+		height: 28px !important;
+		min-height: 28px !important;
+		max-height: 28px !important;
+		padding: 0 !important;
+		background-color: var(--background-secondary) !important;
+	}
+
+	.tablite-header-cell.tablite-header-simple {
+		height: 28px !important;
+		min-height: 28px !important;
+		max-height: 28px !important;
+		line-height: 28px !important;
+		border-bottom: 1px solid var(--background-modifier-border) !important;
+	}
+
+	.tablite-header-cell.tablite-select-header-cell.tablite-header-simple,
+	.tablite-header-cell.tablite-row-num-header-cell.tablite-header-simple {
+		height: 28px !important;
+		min-height: 28px !important;
+		max-height: 28px !important;
+		display: flex !important;
+		align-items: center !important;
+		justify-content: center !important;
+		padding: 0 !important;
+		background-color: var(--background-secondary) !important;
+		border-bottom: 1px solid var(--background-modifier-border) !important;
+		border-right: 1px solid var(--background-modifier-border) !important;
 	}
 }
 

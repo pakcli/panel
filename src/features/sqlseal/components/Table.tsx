@@ -393,6 +393,30 @@ export function Table({
         minSize: 34,
         header: () => {
           const allSelected = data.length > 0 && selectedRows.size === data.length;
+          if (headerMode === "simple" || headerMode === "simple_calc") {
+            return (
+              <div
+                class="tablite-header-cell tablite-select-header-cell tablite-header-simple"
+                style={{ height: "100%", width: "100%", display: "flex", alignItems: "center", justifyContent: "center" }}
+                title="Select / Deselect All Rows"
+              >
+                <input
+                  type="checkbox"
+                  class="tablite-row-checkbox"
+                  checked={allSelected}
+                  indeterminate={selectedRows.size > 0 && selectedRows.size < data.length}
+                  onChange={(e) => {
+                    const checked = (e.target as HTMLInputElement).checked;
+                    if (checked) {
+                      setSelectedRows(new Set(data.map((_, i) => i)));
+                    } else {
+                      setSelectedRows(new Set());
+                    }
+                  }}
+                />
+              </div>
+            );
+          }
           return (
             <div class="tablite-header-cell tablite-select-header-cell" style={{ height: "100%", display: "flex", flexDirection: "column" }}>
               <div
@@ -466,6 +490,28 @@ export function Table({
         sortingFn: (rowA, rowB) => rowA.index - rowB.index,
         header: ({ column }) => {
           const sortDir = column.getIsSorted();
+          if (headerMode === "simple" || headerMode === "simple_calc") {
+            return (
+              <div
+                class="tablite-header-cell tablite-row-num-header-cell tablite-header-simple"
+                style={{ height: "100%", width: "100%", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}
+                title="Click to select all cells"
+                onClick={() => {
+                  onActiveCellChange({ row: 0, col: 0 });
+                  onSelectionChange({
+                    startRow: 0,
+                    startCol: 0,
+                    endRow: Math.max(0, data.length - 1),
+                    endCol: Math.max(0, headers.length - 1),
+                  });
+                }}
+              >
+                <span class="tablite-header-name" style={{ fontWeight: 700, fontSize: "11px", color: "var(--text-muted)" }}>
+                  #
+                </span>
+              </div>
+            );
+          }
           return (
             <div class="tablite-header-cell tablite-row-num-header-cell" style={{ height: "100%", display: "flex", flexDirection: "column" }}>
               <div
@@ -1153,7 +1199,7 @@ export function Table({
       tabIndex={-1}
       style={{ outline: "none" }}
     >
-      <table class="tablite-table" style={{ display: "grid" }}>
+      <table class={`tablite-table tablite-mode-${headerMode}`} style={{ display: "grid" }}>
         <thead
           style={{
             display: "grid",
