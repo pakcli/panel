@@ -2631,13 +2631,38 @@ body.pakcli-cb-theme-custom {
 }
 
 .tablite-frozen-cell {
-    position: sticky;
-    z-index: 5;
-    background-color: var(--background-primary);
+    position: sticky !important;
+    background-color: var(--background-primary) !important;
+    opacity: 1 !important;
+    z-index: 4 !important;
 }
 
 th.tablite-frozen-cell {
-    z-index: 15;
+    background-color: var(--background-secondary) !important;
+    opacity: 1 !important;
+    z-index: 8 !important;
+}
+
+.tablite-th.tablite-th-select,
+.tablite-th.tablite-th-row-num {
+    position: sticky !important;
+    background-color: var(--background-secondary) !important;
+    opacity: 1 !important;
+    z-index: 8 !important;
+}
+
+.tablite-td.tablite-td-select,
+.tablite-td.tablite-td-row-num {
+    position: sticky !important;
+    background-color: var(--background-secondary-alt, var(--background-secondary)) !important;
+    opacity: 1 !important;
+    z-index: 4 !important;
+}
+
+.tablite-th.tablite-th-row-num,
+.tablite-td.tablite-td-row-num {
+    border-right: 1px solid var(--background-modifier-border) !important;
+    box-shadow: 2px 0 4px rgba(0, 0, 0, 0.08);
 }
 
 .tablite-cell {

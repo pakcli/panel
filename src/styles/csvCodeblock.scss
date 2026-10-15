@@ -229,21 +229,37 @@
 /* Shared Tablite Topbar (Header Page Style - Unified for Page & Embed View)  */
 /* ========================================================================= */
 
+div.view-header.tablite-topbar,
 .tablite-topbar,
 .tablite-embed-topbar {
-	display: flex;
-	align-items: center;
-	justify-content: space-between;
-	padding: 6px 12px;
-	background: var(--background-secondary-alt, rgba(0, 0, 0, 0.12));
-	border-bottom: 1px solid var(--background-modifier-border);
-	font-size: 12px;
-	gap: 8px;
-	flex-wrap: wrap;
-	user-select: none;
-	width: 100%;
-	box-sizing: border-box;
-	flex-shrink: 0;
+	display: flex !important;
+	align-items: center !important;
+	justify-content: space-between !important;
+	padding: 4px 12px !important;
+	min-height: var(--header-height, 38px) !important;
+	background-color: var(--background-secondary) !important;
+	opacity: 1 !important;
+	border: none !important;
+	border-bottom: 1px solid var(--background-modifier-border) !important;
+	font-size: 12px !important;
+	gap: 8px !important;
+	flex-wrap: wrap !important;
+	user-select: none !important;
+	width: 100% !important;
+	box-sizing: border-box !important;
+	flex-shrink: 0 !important;
+	position: sticky !important;
+	top: 0 !important;
+	z-index: 20 !important;
+
+	&.tablite-is-page {
+		border-radius: 0 !important;
+	}
+
+	&.tablite-is-embedded {
+		border-top-left-radius: var(--radius-m, 8px) !important;
+		border-top-right-radius: var(--radius-m, 8px) !important;
+	}
 
 	.tablite-topbar-left,
 	.tablite-embed-left,
@@ -482,6 +498,7 @@
 		justify-content: center !important;
 		padding: 0 !important;
 		background-color: var(--background-secondary) !important;
+		opacity: 1 !important;
 		border-bottom: 1px solid var(--background-modifier-border) !important;
 		border-right: 1px solid var(--background-modifier-border) !important;
 	}

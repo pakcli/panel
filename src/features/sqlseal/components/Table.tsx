@@ -1181,12 +1181,12 @@ export function Table({
 
   const getPinnedStyles = useCallback(
     (cellId: string, position: number, isHeader: boolean) => {
-      const isPinned = position < frozenCount || cellId === "__select" || cellId === "__row_num";
+      const isPinned = position < (frozenCount > 0 ? frozenCount + 2 : 2) || cellId === "__select" || cellId === "__row_num";
       if (!isPinned) return {};
       return {
         position: "sticky",
         left: `${frozenOffsets[cellId] ?? 0}px`,
-        zIndex: isHeader ? 5 : 3,
+        zIndex: isHeader ? 8 : 4,
       } as const;
     },
     [frozenCount, frozenOffsets],

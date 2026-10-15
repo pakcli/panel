@@ -1279,7 +1279,7 @@ export function App({
       data-file-path={filePath}
       tabIndex={0}
     >
-      <div class="tablite-topbar tablite-embed-topbar">
+      <div class={`view-header tablite-topbar tablite-embed-topbar ${isEmbedded ? "tablite-is-embedded" : "tablite-is-page"}`}>
         <div class="tablite-topbar-left tablite-embed-left">
           <span class="tablite-topbar-title tablite-embed-title" title={filePath || "CSV Table"}>
             📊 CSV Table
