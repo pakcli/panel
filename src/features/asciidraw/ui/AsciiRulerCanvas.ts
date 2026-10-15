@@ -17,6 +17,74 @@ export interface RulerRenderOptions {
 	};
 }
 
+function parseRgb(colorStr: string): [number, number, number] | null {
+	if (!colorStr) return null;
+	const rgbMatch = colorStr.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/i);
+	if (rgbMatch) {
+		return [parseInt(rgbMatch[1], 10), parseInt(rgbMatch[2], 10), parseInt(rgbMatch[3], 10)];
+	}
+	if (colorStr.startsWith('#')) {
+		let hex = colorStr.slice(1);
+		if (hex.length === 3) hex = hex.split('').map(c => c + c).join('');
+		if (hex.length >= 6) {
+			return [
+				parseInt(hex.slice(0, 2), 16),
+				parseInt(hex.slice(2, 4), 16),
+				parseInt(hex.slice(4, 6), 16)
+			];
+		}
+	}
+	return null;
+}
+
+function resolveCssColor(cssVal: string | undefined, el: HTMLElement, fallback: string): string {
+	if (!cssVal) return fallback;
+	if (cssVal.startsWith('var(')) {
+		const varName = cssVal.replace(/^var\(\s*/, '').replace(/\s*,.*$/, '').replace(/\)$/, '').trim();
+		const comp = window.getComputedStyle(el).getPropertyValue(varName).trim();
+		if (comp) return comp;
+		const match = cssVal.match(/var\([^,]+,\s*([^)]+)\)/);
+		if (match && match[1]) return match[1].trim();
+		return fallback;
+	}
+	return cssVal;
+}
+
+function getRulerThemeInfo(el: HTMLElement, paletteBg?: string, paletteFg?: string, paletteBorder?: string, paletteAccent?: string) {
+	const comp = window.getComputedStyle(el);
+	let bg = resolveCssColor(paletteBg, el, comp.backgroundColor || '');
+	if (!bg || bg === 'transparent' || bg === 'rgba(0, 0, 0, 0)') {
+		bg = comp.backgroundColor;
+	}
+	if (!bg || bg === 'transparent' || bg === 'rgba(0, 0, 0, 0)') {
+		const bodyBg = window.getComputedStyle(document.body).backgroundColor;
+		bg = bodyBg || '#1e1e22';
+	}
+
+	const rgb = parseRgb(bg) || [30, 30, 34];
+	const luminance = 0.299 * rgb[0] + 0.587 * rgb[1] + 0.114 * rgb[2];
+	const isLight = luminance > 130;
+
+	const border = resolveCssColor(paletteBorder, el, isLight ? 'rgba(0, 0, 0, 0.15)' : 'rgba(255, 255, 255, 0.12)');
+	const text = resolveCssColor(paletteFg, el, isLight ? '#1f2937' : '#a1a1aa');
+	const accent = resolveCssColor(paletteAccent, el, '#7c3aed');
+
+	const majorTickColor = isLight ? 'rgba(0, 0, 0, 0.45)' : 'rgba(255, 255, 255, 0.40)';
+	const minorTickColor = isLight ? 'rgba(0, 0, 0, 0.20)' : 'rgba(255, 255, 255, 0.18)';
+	const activeBgHighlight = isLight ? 'rgba(124, 58, 237, 0.16)' : 'rgba(124, 58, 237, 0.28)';
+
+	return {
+		bg,
+		border,
+		text,
+		accent,
+		isLight,
+		majorTickColor,
+		minorTickColor,
+		activeBgHighlight
+	};
+}
+
 export class AsciiRulerCanvas {
 	private topContainer: HTMLElement;
 	private leftContainer: HTMLElement;
@@ -24,6 +92,8 @@ export class AsciiRulerCanvas {
 	private leftCanvas: HTMLCanvasElement;
 	private topCtx: CanvasRenderingContext2D | null = null;
 	private leftCtx: CanvasRenderingContext2D | null = null;
+
+	public onStartGuideDrag?: (type: 'horizontal' | 'vertical', e: PointerEvent) => void;
 
 	constructor(topContainer: HTMLElement, leftContainer: HTMLElement) {
 		this.topContainer = topContainer;
@@ -37,6 +107,18 @@ export class AsciiRulerCanvas {
 
 		this.topCtx = this.topCanvas.getContext('2d');
 		this.leftCtx = this.leftCanvas.getContext('2d');
+
+		this.topContainer.addEventListener('pointerdown', (e: PointerEvent) => {
+			if (e.button === 0 && this.onStartGuideDrag) {
+				this.onStartGuideDrag('horizontal', e);
+			}
+		});
+
+		this.leftContainer.addEventListener('pointerdown', (e: PointerEvent) => {
+			if (e.button === 0 && this.onStartGuideDrag) {
+				this.onStartGuideDrag('vertical', e);
+			}
+		});
 	}
 
 	public render(opts: RulerRenderOptions): void {
@@ -62,17 +144,20 @@ export class AsciiRulerCanvas {
 		ctx.save();
 		ctx.scale(dpr, dpr);
 
-		// Background
-		const bgColor = opts.palette?.bg || '#1e1e22';
-		const borderColor = opts.palette?.border || '#333338';
-		const textColor = opts.palette?.fg || '#a1a1aa';
-		const accentColor = opts.palette?.accent || 'var(--interactive-accent, #7c3aed)';
+		// Theme adaptation
+		const theme = getRulerThemeInfo(
+			this.topContainer,
+			opts.palette?.bg,
+			opts.palette?.fg,
+			opts.palette?.border,
+			opts.palette?.accent
+		);
 
-		ctx.fillStyle = bgColor;
+		ctx.fillStyle = theme.bg;
 		ctx.fillRect(0, 0, width, height);
 
 		// Bottom border line
-		ctx.strokeStyle = borderColor;
+		ctx.strokeStyle = theme.border;
 		ctx.lineWidth = 1;
 		ctx.beginPath();
 		ctx.moveTo(0, height - 0.5);
@@ -106,10 +191,10 @@ export class AsciiRulerCanvas {
 		if (activeCol !== null && activeCol >= 0 && activeCol < cols) {
 			const activeX = panX + (pad + activeCol * cellW) * zoomScale;
 			const activeW = Math.max(1, cellW * zoomScale);
-			ctx.fillStyle = 'rgba(124, 58, 237, 0.28)';
+			ctx.fillStyle = theme.activeBgHighlight;
 			ctx.fillRect(activeX, 0, activeW, height);
 
-			ctx.fillStyle = accentColor;
+			ctx.fillStyle = theme.accent;
 			ctx.fillRect(activeX, height - 3, activeW, 3);
 		}
 
@@ -131,18 +216,18 @@ export class AsciiRulerCanvas {
 
 			if (isMajor) {
 				// Major tick line
-				ctx.strokeStyle = 'rgba(255, 255, 255, 0.35)';
+				ctx.strokeStyle = theme.majorTickColor;
 				ctx.beginPath();
 				ctx.moveTo(x, 13);
 				ctx.lineTo(x, height);
 				ctx.stroke();
 
 				// Major label
-				ctx.fillStyle = c === activeCol ? '#ffffff' : textColor;
+				ctx.fillStyle = c === activeCol ? (theme.isLight ? '#000000' : '#ffffff') : theme.text;
 				ctx.fillText(String(c), x, 7);
 			} else {
 				// Minor tick line
-				ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
+				ctx.strokeStyle = theme.minorTickColor;
 				ctx.beginPath();
 				ctx.moveTo(x, 18);
 				ctx.lineTo(x, height);
@@ -171,17 +256,20 @@ export class AsciiRulerCanvas {
 		ctx.save();
 		ctx.scale(dpr, dpr);
 
-		// Background
-		const bgColor = opts.palette?.bg || '#1e1e22';
-		const borderColor = opts.palette?.border || '#333338';
-		const textColor = opts.palette?.fg || '#a1a1aa';
-		const accentColor = opts.palette?.accent || 'var(--interactive-accent, #7c3aed)';
+		// Theme adaptation
+		const theme = getRulerThemeInfo(
+			this.leftContainer,
+			opts.palette?.bg,
+			opts.palette?.fg,
+			opts.palette?.border,
+			opts.palette?.accent
+		);
 
-		ctx.fillStyle = bgColor;
+		ctx.fillStyle = theme.bg;
 		ctx.fillRect(0, 0, width, height);
 
 		// Right border line
-		ctx.strokeStyle = borderColor;
+		ctx.strokeStyle = theme.border;
 		ctx.lineWidth = 1;
 		ctx.beginPath();
 		ctx.moveTo(width - 0.5, 0);
@@ -211,10 +299,10 @@ export class AsciiRulerCanvas {
 		if (activeRow !== null && activeRow >= 0 && activeRow < rows) {
 			const activeY = panY + (pad + activeRow * cellH) * zoomScale;
 			const activeH = Math.max(1, cellH * zoomScale);
-			ctx.fillStyle = 'rgba(124, 58, 237, 0.28)';
+			ctx.fillStyle = theme.activeBgHighlight;
 			ctx.fillRect(0, activeY, width, activeH);
 
-			ctx.fillStyle = accentColor;
+			ctx.fillStyle = theme.accent;
 			ctx.fillRect(width - 3, activeY, 3, activeH);
 		}
 
@@ -236,18 +324,18 @@ export class AsciiRulerCanvas {
 
 			if (isMajor) {
 				// Major tick line
-				ctx.strokeStyle = 'rgba(255, 255, 255, 0.35)';
+				ctx.strokeStyle = theme.majorTickColor;
 				ctx.beginPath();
 				ctx.moveTo(width - 8, y);
 				ctx.lineTo(width, y);
 				ctx.stroke();
 
 				// Major label
-				ctx.fillStyle = r === activeRow ? '#ffffff' : textColor;
+				ctx.fillStyle = r === activeRow ? (theme.isLight ? '#000000' : '#ffffff') : theme.text;
 				ctx.fillText(String(r), width - 11, y);
 			} else {
 				// Minor tick line
-				ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
+				ctx.strokeStyle = theme.minorTickColor;
 				ctx.beginPath();
 				ctx.moveTo(width - 4, y);
 				ctx.lineTo(width, y);

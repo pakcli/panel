@@ -75,6 +75,18 @@ export class AsciiStudioWorkspace {
 	private canvasTransformEl!: HTMLElement;
 	private canvasGridEl!: HTMLElement;
 
+	// Photo-Editor Grade Guide Lines (snapping to grid, drag from rulers)
+	private guides: { horizontal: number[]; vertical: number[] } = { horizontal: [], vertical: [] };
+	private showGuides = true;
+	private activeGuideDrag: {
+		type: 'horizontal' | 'vertical';
+		index: number; // -1 if new guide being created
+		currentPos: number; // grid row or col
+		isDelete: boolean;
+	} | null = null;
+	private guidesOverlayEl!: HTMLElement;
+	private guideHudEl!: HTMLElement;
+
 	// High-Performance Direct Cell DOM Matrix (60 FPS)
 	private cellSpans: HTMLSpanElement[][] = [];
 	private gridBuiltCols = 0;
@@ -284,6 +296,17 @@ export class AsciiStudioWorkspace {
 			this.updateRulerVisibility();
 		};
 
+		const btnGuides = centerGroup.createEl('button', {
+			text: this.showGuides ? '📏 Guides' : '📏',
+			cls: 'asciidraw-btn-sm asciidraw-btn-guides' + (this.showGuides ? ' is-active' : ''),
+			title: 'Toggle Photo-Editor Guide Lines (Ctrl+;)'
+		});
+		btnGuides.onclick = () => {
+			this.toggleGuides();
+			btnGuides.toggleClass('is-active', this.showGuides);
+			btnGuides.setText(this.showGuides ? '📏 Guides' : '📏');
+		};
+
 		const btnUndo = centerGroup.createEl('button', { text: '↩ Undo', cls: 'asciidraw-btn-sm', title: 'Undo (Ctrl+Z)' });
 		btnUndo.onclick = () => this.undo();
 
@@ -388,6 +411,29 @@ export class AsciiStudioWorkspace {
 		this.topRulerEl = this.canvasViewportContainerEl.createDiv({ cls: 'asciidraw-ruler-top' });
 		this.leftRulerEl = this.canvasViewportContainerEl.createDiv({ cls: 'asciidraw-ruler-left' });
 		this.rulerCanvas = new AsciiRulerCanvas(this.topRulerEl, this.leftRulerEl);
+		this.rulerCanvas.onStartGuideDrag = (type, e) => this.startGuideDragFromRuler(type, e);
+
+		// Context menu on ruler corner and rulers to clear or toggle guides
+		const showRulerContextMenu = (e: MouseEvent) => {
+			e.preventDefault();
+			const menu = new Menu();
+			menu.addItem(item => {
+				item.setTitle(this.showGuides ? 'Hide Guide Lines (Ctrl+;)' : 'Show Guide Lines (Ctrl+;)')
+					.setIcon('ruler')
+					.onClick(() => this.toggleGuides());
+			});
+			if (this.guides.horizontal.length > 0 || this.guides.vertical.length > 0) {
+				menu.addItem(item => {
+					item.setTitle('Clear All Guide Lines')
+						.setIcon('trash')
+						.onClick(() => this.clearAllGuides());
+				});
+			}
+			menu.showAtMouseEvent(e);
+		};
+		corner.addEventListener('contextmenu', showRulerContextMenu);
+		this.topRulerEl.addEventListener('contextmenu', showRulerContextMenu);
+		this.leftRulerEl.addEventListener('contextmenu', showRulerContextMenu);
 
 		// 3. Viewport Inner Container
 		this.canvasInnerViewportEl = this.canvasViewportContainerEl.createDiv({ cls: 'asciidraw-inner-viewport' });
@@ -402,6 +448,11 @@ export class AsciiStudioWorkspace {
 		// GPU Transform layer (smooth 60 FPS panning & zooming)
 		this.canvasTransformEl = this.canvasInnerViewportEl.createDiv({ cls: 'asciidraw-canvas-transform-layer' });
 		this.canvasGridEl = this.canvasTransformEl.createDiv({ cls: 'asciidraw-grid-surface' });
+		this.guidesOverlayEl = this.canvasTransformEl.createDiv({ cls: 'asciidraw-guides-overlay' });
+
+		// Floating Guide HUD Tooltip (inside inner viewport)
+		this.guideHudEl = this.canvasInnerViewportEl.createDiv({ cls: 'asciidraw-guide-hud' });
+		this.guideHudEl.style.display = 'none';
 
 		this.setupViewportNavigationEvents();
 		this.setupDirectTypingEvents();
@@ -411,6 +462,7 @@ export class AsciiStudioWorkspace {
 
 		this.updateCanvasTransform();
 		this.renderRulers();
+		this.renderGuides();
 	}
 
 	private setupViewportNavigationEvents(): void {
@@ -479,6 +531,12 @@ export class AsciiStudioWorkspace {
 		});
 
 		window.addEventListener('pointermove', (e: PointerEvent) => {
+			if (this.activeGuideDrag) {
+				this.updateGuideDragPosition(e.clientX, e.clientY);
+				e.preventDefault();
+				return;
+			}
+
 			if (this.isPanning) {
 				const dx = e.clientX - this.panStartClientX;
 				const dy = e.clientY - this.panStartClientY;
@@ -496,6 +554,12 @@ export class AsciiStudioWorkspace {
 		});
 
 		window.addEventListener('pointerup', (e: PointerEvent) => {
+			if (this.activeGuideDrag) {
+				this.finishGuideDrag();
+				e.preventDefault();
+				return;
+			}
+
 			if (this.isPanning) {
 				this.isPanning = false;
 				viewport.removeClass('is-grabbing');
@@ -746,6 +810,249 @@ export class AsciiStudioWorkspace {
 		}
 		if (this.showRulers) {
 			this.renderRulers();
+		}
+	}
+
+	// =========================================================================
+	// Photo-Editor Grade Guide Lines (Snap to Grid & Drag from Rulers)
+	// =========================================================================
+
+	public toggleGuides(): void {
+		this.showGuides = !this.showGuides;
+		const btn = this.containerEl.querySelector('.asciidraw-btn-guides');
+		if (btn) {
+			btn.toggleClass('is-active', this.showGuides);
+			btn.textContent = this.showGuides ? '📏 Guides' : '📏';
+		}
+		this.renderGuides();
+		new Notice(`Guide lines ${this.showGuides ? 'visible' : 'hidden'} (Ctrl+;)`);
+	}
+
+	public clearAllGuides(): void {
+		this.guides = { horizontal: [], vertical: [] };
+		this.renderGuides();
+		new Notice('Cleared all guide lines');
+	}
+
+	public startGuideDragFromRuler(type: 'horizontal' | 'vertical', e: PointerEvent): void {
+		this.showGuides = true;
+		const btn = this.containerEl.querySelector('.asciidraw-btn-guides');
+		if (btn) {
+			btn.addClass('is-active');
+			btn.textContent = '📏 Guides';
+		}
+
+		if (!this.canvasInnerViewportEl) return;
+		const innerRect = this.canvasInnerViewportEl.getBoundingClientRect();
+		const mouseX = e.clientX - innerRect.left;
+		const mouseY = e.clientY - innerRect.top;
+		const canvasX = (mouseX - this.panX) / this.zoomScale;
+		const canvasY = (mouseY - this.panY) / this.zoomScale;
+
+		const initialPos = type === 'horizontal'
+			? Math.max(0, Math.min(this.layerManager.rows, Math.round((canvasY - 8) / 17)))
+			: Math.max(0, Math.min(this.layerManager.cols, Math.round((canvasX - 8) / 10)));
+
+		this.activeGuideDrag = {
+			type,
+			index: -1, // new guide
+			currentPos: initialPos,
+			isDelete: false
+		};
+
+		if (this.guideHudEl) {
+			this.guideHudEl.style.display = 'block';
+		}
+		this.updateGuideDragPosition(e.clientX, e.clientY);
+	}
+
+	public startGuideDragExisting(type: 'horizontal' | 'vertical', index: number, currentPos: number, e: PointerEvent): void {
+		this.activeGuideDrag = {
+			type,
+			index,
+			currentPos,
+			isDelete: false
+		};
+
+		if (this.guideHudEl) {
+			this.guideHudEl.style.display = 'block';
+		}
+		this.updateGuideDragPosition(e.clientX, e.clientY);
+	}
+
+	private updateGuideDragPosition(clientX: number, clientY: number): void {
+		if (!this.activeGuideDrag || !this.canvasInnerViewportEl) return;
+		const innerRect = this.canvasInnerViewportEl.getBoundingClientRect();
+		const mouseX = clientX - innerRect.left;
+		const mouseY = clientY - innerRect.top;
+
+		const canvasX = (mouseX - this.panX) / this.zoomScale;
+		const canvasY = (mouseY - this.panY) / this.zoomScale;
+
+		const type = this.activeGuideDrag.type;
+		let pos = 0;
+		let isDelete = false;
+
+		if (type === 'horizontal') {
+			pos = Math.round((canvasY - 8) / 17);
+			// Dragged back to ruler or outside bounds
+			if (mouseY <= 0 || pos < -2 || pos > this.layerManager.rows + 2) {
+				isDelete = true;
+			}
+		} else {
+			pos = Math.round((canvasX - 8) / 10);
+			// Dragged back to ruler or outside bounds
+			if (mouseX <= 0 || pos < -2 || pos > this.layerManager.cols + 2) {
+				isDelete = true;
+			}
+		}
+
+		this.activeGuideDrag.currentPos = pos;
+		this.activeGuideDrag.isDelete = isDelete;
+
+		// Position HUD near cursor
+		if (this.guideHudEl) {
+			this.guideHudEl.style.left = `${Math.min(innerRect.width - 150, Math.max(10, mouseX + 16))}px`;
+			this.guideHudEl.style.top = `${Math.min(innerRect.height - 35, Math.max(10, mouseY + 16))}px`;
+
+			if (isDelete) {
+				this.guideHudEl.textContent = 'Release to remove guide';
+				this.guideHudEl.addClass('is-delete');
+			} else {
+				this.guideHudEl.removeClass('is-delete');
+				this.guideHudEl.textContent = type === 'horizontal' ? `Row: ${pos}` : `Col: ${pos}`;
+			}
+		}
+
+		this.renderGuides();
+	}
+
+	private finishGuideDrag(): void {
+		if (!this.activeGuideDrag) return;
+		const { type, index, currentPos, isDelete } = this.activeGuideDrag;
+		if (this.guideHudEl) {
+			this.guideHudEl.style.display = 'none';
+		}
+
+		if (isDelete) {
+			if (index >= 0) {
+				this.guides[type].splice(index, 1);
+				new Notice(`Removed ${type} guide`);
+			}
+		} else {
+			if (index >= 0) {
+				this.guides[type][index] = currentPos;
+			} else {
+				if (!this.guides[type].includes(currentPos)) {
+					this.guides[type].push(currentPos);
+					this.guides[type].sort((a, b) => a - b);
+					new Notice(`Added ${type} guide at ${type === 'horizontal' ? 'Row' : 'Col'} ${currentPos}`);
+				}
+			}
+		}
+
+		this.activeGuideDrag = null;
+		this.renderGuides();
+	}
+
+	public renderGuides(): void {
+		if (!this.guidesOverlayEl) return;
+		this.guidesOverlayEl.empty();
+		if (!this.showGuides) return;
+
+		// 1. Horizontal Guides
+		this.guides.horizontal.forEach((row, idx) => {
+			if (this.activeGuideDrag && this.activeGuideDrag.type === 'horizontal' && this.activeGuideDrag.index === idx) {
+				return;
+			}
+			const line = this.guidesOverlayEl.createDiv({
+				cls: 'asciidraw-guide-line is-horizontal'
+			});
+			line.style.top = `${8 + row * 17}px`;
+			line.title = `Horizontal Guide (Row ${row}) • Drag to move, right-click to delete`;
+
+			line.addEventListener('pointerdown', (e: PointerEvent) => {
+				if (e.button === 0) {
+					e.stopPropagation();
+					e.preventDefault();
+					this.startGuideDragExisting('horizontal', idx, row, e);
+				}
+			});
+
+			line.addEventListener('contextmenu', (e: MouseEvent) => {
+				e.stopPropagation();
+				e.preventDefault();
+				const menu = new Menu();
+				menu.addItem(item => {
+					item.setTitle(`Delete Guide (Row ${row})`)
+						.setIcon('trash')
+						.onClick(() => {
+							this.guides.horizontal.splice(idx, 1);
+							this.renderGuides();
+							new Notice(`Deleted Horizontal Guide (Row ${row})`);
+						});
+				});
+				menu.addItem(item => {
+					item.setTitle('Clear All Guides')
+						.setIcon('trash')
+						.onClick(() => this.clearAllGuides());
+				});
+				menu.showAtMouseEvent(e);
+			});
+		});
+
+		// 2. Vertical Guides
+		this.guides.vertical.forEach((col, idx) => {
+			if (this.activeGuideDrag && this.activeGuideDrag.type === 'vertical' && this.activeGuideDrag.index === idx) {
+				return;
+			}
+			const line = this.guidesOverlayEl.createDiv({
+				cls: 'asciidraw-guide-line is-vertical'
+			});
+			line.style.left = `${8 + col * 10}px`;
+			line.title = `Vertical Guide (Col ${col}) • Drag to move, right-click to delete`;
+
+			line.addEventListener('pointerdown', (e: PointerEvent) => {
+				if (e.button === 0) {
+					e.stopPropagation();
+					e.preventDefault();
+					this.startGuideDragExisting('vertical', idx, col, e);
+				}
+			});
+
+			line.addEventListener('contextmenu', (e: MouseEvent) => {
+				e.stopPropagation();
+				e.preventDefault();
+				const menu = new Menu();
+				menu.addItem(item => {
+					item.setTitle(`Delete Guide (Col ${col})`)
+						.setIcon('trash')
+						.onClick(() => {
+							this.guides.vertical.splice(idx, 1);
+							this.renderGuides();
+							new Notice(`Deleted Vertical Guide (Col ${col})`);
+						});
+				});
+				menu.addItem(item => {
+					item.setTitle('Clear All Guides')
+						.setIcon('trash')
+						.onClick(() => this.clearAllGuides());
+				});
+				menu.showAtMouseEvent(e);
+			});
+		});
+
+		// 3. Active dragged guide preview
+		if (this.activeGuideDrag) {
+			const drag = this.activeGuideDrag;
+			const preview = this.guidesOverlayEl.createDiv({
+				cls: `asciidraw-guide-line is-${drag.type} is-dragging ${drag.isDelete ? 'is-delete' : ''}`
+			});
+			if (drag.type === 'horizontal') {
+				preview.style.top = `${8 + drag.currentPos * 17}px`;
+			} else {
+				preview.style.left = `${8 + drag.currentPos * 10}px`;
+			}
 		}
 	}
 
@@ -1266,6 +1573,13 @@ export class AsciiStudioWorkspace {
 				e.preventDefault();
 				this.showRulers = !this.showRulers;
 				this.updateRulerVisibility();
+			} else if (isMod && (e.key === ';' || e.code === 'Semicolon')) {
+				e.preventDefault();
+				if (e.altKey) {
+					this.clearAllGuides();
+				} else {
+					this.toggleGuides();
+				}
 			}
 		});
 	}
