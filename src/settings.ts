@@ -244,6 +244,7 @@ export interface PakCLITableSettings extends
     todoListSettings?: TodoListSettings;
     stringSanitizerSettings?: StringSanitizerSettings;
     enableVsCodeTabs?: boolean;
+    vscodeTabsMode?: 'default' | 'active';
     tabTitleMaxChars?: number;
     [key: string]: unknown;
 }
@@ -386,6 +387,7 @@ export const DEFAULT_TABLE_SETTINGS: PakCLITableSettings = {
     stringSanitizerSettings: DEFAULT_STRING_SANITIZER_SETTINGS,
     tierListSettings: DEFAULT_TIERLIST_SETTINGS,
     enableVsCodeTabs: true,
+    vscodeTabsMode: 'active',
     tabTitleMaxChars: 15,
 };
 

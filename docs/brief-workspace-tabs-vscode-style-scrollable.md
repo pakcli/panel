@@ -9,26 +9,33 @@
 
 ## 1. Objective & Problem Statement
 - **Problem**:
-  1. **Tab Headers Shrinking and Becoming Illegible**:
-     - In Obsidian's default workspace tab header behavior, when multiple tabs (table tabs, note tabs, view tabs) are open, tab headers shrink aggressively to fit the window width.
+  1. **Tab Headers Shrinking in Center Workspace**:
+     - In Obsidian's default center workspace tab header behavior, when multiple tabs (table tabs, note tabs, view tabs) are open, tab headers shrink aggressively to fit the window width.
      - This causes titles to be truncated to 1–2 letters, making it impossible to identify open documents or tables without hovering.
-  2. **Lack of VS Code-like Smooth Horizontal Navigation**:
-     - VS Code maintains a readable tab width (~15 characters title) and makes the entire tab bar horizontally scrollable with mouse wheel or trackpad, keeping tab headers legible regardless of how many tabs are open.
-     - The active tab (`div.workspace-tab-header.tappable.is-active`) should remain prominent and automatically scroll into view when activated.
+  2. **Sidebar Left & Right Should Not Be Affected**:
+     - Left sidebar (File Explorer, Bookmarks, Search) and Right sidebar (Outline, Backlinks, Tags) have distinct tab layouts and must remain in their native default style without horizontal scroll or forced widths.
+  3. **Need for Instant Toggle (Default / Active)**:
+     - Users must be able to switch between standard Obsidian tabs (`default`) and VS Code-style scrollable tabs (`active`) via settings dropdown and Command Palette without restarting Obsidian.
 
 ---
 
 ## 2. Solution & Technical Architecture
-1. **VS Code Style Tab Header Sizing & Max 15 Chars**:
-   - Limit tab title text (`.workspace-tab-header-inner-title`) to `max-width: 15ch` with `overflow: hidden`, `text-overflow: ellipsis`, and `white-space: nowrap`.
-   - Keep tab items (`div.workspace-tab-header.tappable`) with `flex: 0 0 auto`, `min-width: 80px`, and `max-width: 180px` so tabs never shrink into tiny boxes.
-2. **Scrollable Tab Container (`overflow-x: auto`)**:
-   - Container `.workspace-tabs .workspace-tab-header-container` set to `display: flex !important; flex-wrap: nowrap !important; overflow-x: auto !important; scroll-behavior: smooth !important;`.
+1. **Strictly Scoped to Center Workspace (`.mod-root`)**:
+   - All tab styling is prefixed with `body.pakcli-vscode-tabs .mod-root`.
+   - Sidebars (`.mod-left-split` and `.mod-right-split`) are 100% excluded and retain native styling.
+2. **VS Code Style Tab Header Sizing & Max 15 Chars**:
+   - Limit center tab title text (`.mod-root div.workspace-tab-header.tappable .workspace-tab-header-inner-title`) to `max-width: 15ch` with `overflow: hidden`, `text-overflow: ellipsis`, and `white-space: nowrap`.
+   - Keep center tab items with `flex: 0 0 auto`, `min-width: 80px`, and `max-width: 200px` so tabs never shrink into tiny boxes.
+3. **Scrollable Center Tab Container (`overflow-x: auto`)**:
+   - Container `.mod-root .workspace-tabs .workspace-tab-header-container` set to `display: flex !important; flex-wrap: nowrap !important; overflow-x: auto !important; scroll-behavior: smooth !important;`.
    - Subtle scrollbar that appears on hover and keeps the interface clean.
-3. **Mouse-Wheel Horizontal Scrolling**:
-   - Register a wheel listener in `main.ts` on `.workspace-tab-header-container` to map vertical scroll wheel (`deltaY`) to horizontal scroll (`scrollLeft`), exactly like VS Code tab bar behavior.
-4. **Active Tab Auto-Scroll into View**:
-   - On `active-leaf-change`, smooth scroll the active tab header (`div.workspace-tab-header.tappable.is-active`) into view if it is partially or completely offscreen.
+4. **Mouse-Wheel Horizontal Scrolling**:
+   - Register a wheel listener in `main.ts` strictly on `.mod-root .workspace-tab-header-container` to map vertical scroll wheel (`deltaY`) to horizontal scroll (`scrollLeft`), exactly like VS Code tab bar behavior.
+5. **Active Tab Auto-Scroll into View**:
+   - On `active-leaf-change`, smooth scroll the active center tab header (`div.workspace-tab-header.tappable.is-active`) into view if it is partially or completely offscreen.
+6. **Toggleable: Default / Active**:
+   - Dropdown in Settings under CSV / Tablite: `Center Workspace Tabs Style` with options `Active` and `Default`.
+   - Command Palette shortcut: `Toggle Center Workspace Tabs: Default / Active`.
 
 ---
 
@@ -36,18 +43,22 @@
 | File | Status | Description |
 | :--- | :---: | :--- |
 | `docs/brief-workspace-tabs-vscode-style-scrollable.md` | ✅ | Master brief (Status 0 -> 1) |
-| `src/settings.ts` | ✅ | Add `enableVsCodeTabs` & `tabTitleMaxChars` to settings |
-| `src/styles/main.scss` | ✅ | Add CSS rules for scrollable tab bar, max 15ch title, and active tab indicator |
-| `src/main.ts` | ✅ | Add horizontal wheel scroll and active tab scroll-into-view listener |
+| `src/settings.ts` | ✅ | Add `vscodeTabsMode` ('default' | 'active') to settings & defaults |
+| `src/styles/main.scss` | ✅ | CSS rules scoped strictly to `.mod-root` center workspace |
+| `src/main.ts` | ✅ | Add center-only wheel listener, auto scroll-into-view, command, and settings dropdown |
 
 ---
 
 ## 4. Acceptance Criteria Checklist
 - [x] Status 0 brief created and committed
+- [x] Tab styling strictly scoped to center workspace (`.mod-root`)
+- [x] Left and right sidebars (`.mod-left-split`, `.mod-right-split`) remain untouched in default style
+- [x] Toggleable between `default` and `active` in Settings dropdown
+- [x] Command Palette command available: `Toggle Center Workspace Tabs: Default / Active`
 - [x] Tab title text capped at max 15 characters with clean ellipsis (`max-width: 15ch`)
-- [x] Tab headers never compress into unreadable narrow boxes when many tabs are open
-- [x] Tab header bar is smoothly scrollable horizontally (`overflow-x: auto`)
-- [x] Mouse wheel on tab bar scrolls tabs horizontally like VS Code
-- [x] Active tab (`div.workspace-tab-header.tappable.is-active`) is clearly styled and scrolls into view on selection
+- [x] Center tab headers never compress into unreadable narrow boxes when many tabs are open
+- [x] Center tab header bar is smoothly scrollable horizontally (`overflow-x: auto`)
+- [x] Mouse wheel on center tab bar scrolls tabs horizontally like VS Code
+- [x] Active tab (`div.workspace-tab-header.tappable.is-active`) clearly styled and scrolls into view on selection
 - [x] Production build (`npm run build`) passes with 0 errors and bundle size < 5.0 MB
 - [x] Status 1 brief updated and committed

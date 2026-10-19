@@ -355,6 +355,19 @@ export default class PakCLITablePlugin extends Plugin {
 		console.log(`[PakCLI] HTML Snapshot Markdown (${modeLabel}) [${markdownOutput.length} chars, ${sizeKb} KB]:\n`, markdownOutput);
 	}
 
+	isVsCodeTabsActive(): boolean {
+		return (this.settings.vscodeTabsMode === 'active') || 
+			(this.settings.vscodeTabsMode !== 'default' && this.settings.enableVsCodeTabs !== false);
+	}
+
+	applyVsCodeTabsClass(): void {
+		if (this.isVsCodeTabsActive()) {
+			document.body.classList.add('pakcli-vscode-tabs');
+		} else {
+			document.body.classList.remove('pakcli-vscode-tabs');
+		}
+	}
+
 	async onload(): Promise<void> {
 		// Initialize Ribbon Manager & hook prototype immediately before any ribbon buttons are created
 		this.ribbonManager = new RibbonManager(this.app, this);
@@ -594,35 +607,49 @@ export default class PakCLITablePlugin extends Plugin {
 			}
 		}, true);
 
-		// ── VS Code Style Scrollable Workspace & Table Tabs ──────────
-		if (this.settings.enableVsCodeTabs !== false) {
-			document.body.classList.add('pakcli-vscode-tabs');
+		// ── VS Code Style Scrollable Workspace & Table Tabs (Center Workspace ONLY) ──
+		this.applyVsCodeTabsClass();
 
-			// 1. Mouse wheel horizontal scroll on .workspace-tab-header-container (like VS Code tab bar)
-			this.registerDomEvent(window, 'wheel', (evt: WheelEvent) => {
-				const container = (evt.target as HTMLElement)?.closest('.workspace-tab-header-container') as HTMLElement | null;
-				if (!container) return;
-				if (evt.deltaY !== 0 && evt.deltaX === 0) {
-					if (container.scrollWidth > container.clientWidth) {
-						container.scrollLeft += evt.deltaY;
-						evt.preventDefault();
-					}
+		this.addCommand({
+			id: 'toggle-center-workspace-tabs',
+			name: 'Toggle Center Workspace Tabs: Default / Active',
+			callback: async () => {
+				const current = this.isVsCodeTabsActive() ? 'active' : 'default';
+				const next = current === 'active' ? 'default' : 'active';
+				this.settings.vscodeTabsMode = next;
+				this.settings.enableVsCodeTabs = (next === 'active');
+				this.applyVsCodeTabsClass();
+				await this.saveSettings();
+				new Notice(`Center Workspace Tabs: ${next.toUpperCase()}`);
+			}
+		});
+
+		// 1. Mouse wheel horizontal scroll on .mod-root .workspace-tab-header-container (Center only!)
+		this.registerDomEvent(window, 'wheel', (evt: WheelEvent) => {
+			if (!this.isVsCodeTabsActive()) return;
+			const container = (evt.target as HTMLElement)?.closest('.mod-root .workspace-tab-header-container') as HTMLElement | null;
+			if (!container) return;
+			if (evt.deltaY !== 0 && evt.deltaX === 0) {
+				if (container.scrollWidth > container.clientWidth) {
+					container.scrollLeft += evt.deltaY;
+					evt.preventDefault();
 				}
-			}, { passive: false });
+			}
+		}, { passive: false });
 
-			// 2. Active Tab Auto Scroll-Into-View on tab / leaf change
-			const scrollActiveTabIntoView = () => {
-				setTimeout(() => {
-					const activeTab = document.querySelector('.workspace-tabs .workspace-tab-header.is-active') as HTMLElement | null;
-					if (activeTab) {
-						activeTab.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
-					}
-				}, 60);
-			};
+		// 2. Active Tab Auto Scroll-Into-View on center tab / leaf change
+		const scrollActiveTabIntoView = () => {
+			if (!this.isVsCodeTabsActive()) return;
+			setTimeout(() => {
+				const activeTab = document.querySelector('.mod-root .workspace-tabs .workspace-tab-header.is-active') as HTMLElement | null;
+				if (activeTab) {
+					activeTab.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
+				}
+			}, 60);
+		};
 
-			this.registerEvent(this.app.workspace.on('active-leaf-change', scrollActiveTabIntoView));
-			this.registerEvent(this.app.workspace.on('layout-change', scrollActiveTabIntoView));
-		}
+		this.registerEvent(this.app.workspace.on('active-leaf-change', scrollActiveTabIntoView));
+		this.registerEvent(this.app.workspace.on('layout-change', scrollActiveTabIntoView));
 
 		this.registerEvent(
 			this.app.vault.on('create', () => {
@@ -4038,6 +4065,23 @@ export default class PakCLITablePlugin extends Plugin {
 							.onChange(async (v) => {
 								this.settings.gridTheme = v;
 								await this.saveSettings();
+							});
+					});
+
+				new Setting(containerEl)
+					.setName('Center Workspace Tabs Style')
+					.setDesc('VS Code style horizontal scrollable tabs with max 15 char titles. Strictly applies to center workspace only (leaves left and right sidebars unaffected).')
+					.addDropdown((d) => {
+						d.addOption('active', 'Active (VS Code Scrollable & Max 15 Chars)')
+							.addOption('default', 'Default (Standard Obsidian Tabs)')
+							.setValue(this.settings.vscodeTabsMode || (this.settings.enableVsCodeTabs !== false ? 'active' : 'default'))
+							.onChange(async (v: string) => {
+								const mode = v === 'default' ? 'default' : 'active';
+								this.settings.vscodeTabsMode = mode;
+								this.settings.enableVsCodeTabs = (mode === 'active');
+								this.applyVsCodeTabsClass();
+								await this.saveSettings();
+								new Notice(`Center Workspace Tabs: ${mode.toUpperCase()}`);
 							});
 					});
 
