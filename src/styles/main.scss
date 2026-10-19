@@ -3625,12 +3625,12 @@ body.pakcli-ctrl-pressed {
    VS Code Style Workspace & Table Tabs (Center Workspace ONLY)
    Selector: div.workspace-tab-header.tappable.is-active
    Strictly scoped to .mod-root (Center). Left & Right sidebars remain untouched!
+   Constraint: ONLY adjust width, ZERO height / vertical / text-height impact!
    ========================================================================== */
 
-/* 1. Center workspace scrollable tab header container: ONLY horizontal scroll, ZERO height impact */
+/* 1. Center workspace scrollable tab header container: horizontal scroll only */
 body.pakcli-vscode-tabs .mod-root .workspace-tabs .workspace-tab-header-container {
   overflow-x: auto !important;
-  overflow-y: hidden !important;
   scrollbar-width: none !important;
   -ms-overflow-style: none !important;
 
@@ -3641,23 +3641,15 @@ body.pakcli-vscode-tabs .mod-root .workspace-tabs .workspace-tab-header-containe
   }
 }
 
-body.pakcli-vscode-tabs .mod-root .workspace-tabs .workspace-tab-header-container-inner {
-  flex-shrink: 0 !important;
-  width: max-content !important;
-}
-
-/* 2. Individual center tab header: preserve native height/padding/borders, only prevent horizontal shrink */
+/* 2. Individual center tab header: only prevent shrinking horizontally */
 body.pakcli-vscode-tabs .mod-root div.workspace-tab-header.tappable {
-  flex: 0 0 auto !important;
+  flex-shrink: 0 !important;
 }
 
 /* 3. Center tab Inner Title (All & Active tabs): ONLY adjust width (max 15 characters) */
 body.pakcli-vscode-tabs .mod-root div.workspace-tab-header.tappable .workspace-tab-header-inner-title,
 body.pakcli-vscode-tabs .mod-root div.workspace-tab-header.tappable.is-active .workspace-tab-header-inner-title {
   max-width: 15ch !important;
-  overflow: hidden !important;
-  text-overflow: ellipsis !important;
-  white-space: nowrap !important;
 }
 
 
