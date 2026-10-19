@@ -3627,72 +3627,37 @@ body.pakcli-ctrl-pressed {
    Strictly scoped to .mod-root (Center). Left & Right sidebars remain untouched!
    ========================================================================== */
 
-/* 1. Center workspace scrollable tab header container: prevents tabs from being squished */
+/* 1. Center workspace scrollable tab header container: ONLY horizontal scroll, ZERO height impact */
 body.pakcli-vscode-tabs .mod-root .workspace-tabs .workspace-tab-header-container {
-  display: flex !important;
-  flex-wrap: nowrap !important;
   overflow-x: auto !important;
   overflow-y: hidden !important;
-  scroll-behavior: smooth !important;
-  scrollbar-width: thin !important;
-  scrollbar-color: var(--scrollbar-thumb-bg, rgba(128, 128, 128, 0.25)) transparent !important;
-}
+  scrollbar-width: none !important;
+  -ms-overflow-style: none !important;
 
-body.pakcli-vscode-tabs .mod-root .workspace-tabs .workspace-tab-header-container::-webkit-scrollbar {
-  height: 3px !important;
-  display: block !important;
-}
-
-body.pakcli-vscode-tabs .mod-root .workspace-tabs .workspace-tab-header-container::-webkit-scrollbar-track {
-  background: transparent !important;
-}
-
-body.pakcli-vscode-tabs .mod-root .workspace-tabs .workspace-tab-header-container::-webkit-scrollbar-thumb {
-  background: var(--scrollbar-thumb-bg, rgba(128, 128, 128, 0.25)) !important;
-  border-radius: 2px !important;
-}
-
-body.pakcli-vscode-tabs .mod-root .workspace-tabs .workspace-tab-header-container:hover::-webkit-scrollbar-thumb {
-  background: var(--interactive-accent, rgba(128, 128, 128, 0.5)) !important;
+  &::-webkit-scrollbar {
+    display: none !important;
+    width: 0 !important;
+    height: 0 !important;
+  }
 }
 
 body.pakcli-vscode-tabs .mod-root .workspace-tabs .workspace-tab-header-container-inner {
-  display: flex !important;
-  flex-wrap: nowrap !important;
   flex-shrink: 0 !important;
+  width: max-content !important;
 }
 
-/* 2. Individual center tab header: fixed readable width like VS Code tabs */
+/* 2. Individual center tab header: preserve native height/padding/borders, only prevent horizontal shrink */
 body.pakcli-vscode-tabs .mod-root div.workspace-tab-header.tappable {
   flex: 0 0 auto !important;
-  min-width: 80px !important;
-  max-width: 200px !important;
-  position: relative !important;
-  box-sizing: border-box !important;
-  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease !important;
 }
 
-/* 3. Center tab Inner Title: Fit text to max 15 characters with clean ellipsis */
-body.pakcli-vscode-tabs .mod-root div.workspace-tab-header.tappable .workspace-tab-header-inner-title {
+/* 3. Center tab Inner Title (All & Active tabs): ONLY adjust width (max 15 characters) */
+body.pakcli-vscode-tabs .mod-root div.workspace-tab-header.tappable .workspace-tab-header-inner-title,
+body.pakcli-vscode-tabs .mod-root div.workspace-tab-header.tappable.is-active .workspace-tab-header-inner-title {
   max-width: 15ch !important;
   overflow: hidden !important;
   text-overflow: ellipsis !important;
   white-space: nowrap !important;
-  display: inline-block !important;
-  vertical-align: middle !important;
-}
-
-/* 4. Active Tab in Center Workspace: div.workspace-tab-header.tappable.is-active */
-body.pakcli-vscode-tabs .mod-root div.workspace-tab-header.tappable.is-active {
-  background: var(--background-primary) !important;
-  border-bottom: 2px solid var(--interactive-accent) !important;
-  font-weight: 500 !important;
-  z-index: 2 !important;
-}
-
-body.pakcli-vscode-tabs .mod-root div.workspace-tab-header.tappable.is-active .workspace-tab-header-inner-title {
-  max-width: 16ch !important;
-  color: var(--text-normal) !important;
 }
 
 

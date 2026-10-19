@@ -23,12 +23,13 @@
 1. **Strictly Scoped to Center Workspace (`.mod-root`)**:
    - All tab styling is prefixed with `body.pakcli-vscode-tabs .mod-root`.
    - Sidebars (`.mod-left-split` and `.mod-right-split`) are 100% excluded and retain native styling.
-2. **VS Code Style Tab Header Sizing & Max 15 Chars**:
-   - Limit center tab title text (`.mod-root div.workspace-tab-header.tappable .workspace-tab-header-inner-title`) to `max-width: 15ch` with `overflow: hidden`, `text-overflow: ellipsis`, and `white-space: nowrap`.
-   - Keep center tab items with `flex: 0 0 auto`, `min-width: 80px`, and `max-width: 200px` so tabs never shrink into tiny boxes.
+2. **VS Code Style Tab Header Sizing & Max 15 Chars (Width-Only Constraint)**:
+   - **Zero Height Adjustments**: No modifications to height, line-height, padding, margins, or borders. Native vertical footprint is 100% preserved.
+   - Limit center tab title text (`.mod-root div.workspace-tab-header.tappable .workspace-tab-header-inner-title`) and active tab title text (`.mod-root div.workspace-tab-header.tappable.is-active .workspace-tab-header-inner-title`) to `max-width: 15ch` with `overflow: hidden`, `text-overflow: ellipsis`, and `white-space: nowrap`.
+   - Center tab headers have `flex: 0 0 auto` so they scroll horizontally instead of collapsing into narrow slivers.
 3. **Scrollable Center Tab Container (`overflow-x: auto`)**:
-   - Container `.mod-root .workspace-tabs .workspace-tab-header-container` set to `display: flex !important; flex-wrap: nowrap !important; overflow-x: auto !important; scroll-behavior: smooth !important;`.
-   - Subtle scrollbar that appears on hover and keeps the interface clean.
+   - Container `.mod-root .workspace-tabs .workspace-tab-header-container` set to `overflow-x: auto !important; overflow-y: hidden !important;`.
+   - Scrollbar set to `scrollbar-width: none !important;` and `display: none !important; height: 0 !important;` so that 0px vertical height is consumed.
 4. **Mouse-Wheel Horizontal Scrolling**:
    - Register a wheel listener in `main.ts` strictly on `.mod-root .workspace-tab-header-container` to map vertical scroll wheel (`deltaY`) to horizontal scroll (`scrollLeft`), exactly like VS Code tab bar behavior.
 5. **Active Tab Auto-Scroll into View**:
