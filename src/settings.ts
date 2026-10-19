@@ -243,6 +243,8 @@ export interface PakCLITableSettings extends
     htmlSnapshotMode?: HtmlSnapshotMode;
     todoListSettings?: TodoListSettings;
     stringSanitizerSettings?: StringSanitizerSettings;
+    enableVsCodeTabs?: boolean;
+    tabTitleMaxChars?: number;
     [key: string]: unknown;
 }
 
@@ -383,5 +385,7 @@ export const DEFAULT_TABLE_SETTINGS: PakCLITableSettings = {
     todoListSettings: DEFAULT_TODOLIST_SETTINGS,
     stringSanitizerSettings: DEFAULT_STRING_SANITIZER_SETTINGS,
     tierListSettings: DEFAULT_TIERLIST_SETTINGS,
+    enableVsCodeTabs: true,
+    tabTitleMaxChars: 15,
 };
 

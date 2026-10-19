@@ -3621,5 +3621,79 @@ body.pakcli-ctrl-pressed {
   }
 }
 
+/* ==========================================================================
+   VS Code Style Workspace & Table Tabs (Scrollable & Max 15 Chars)
+   Selector: div.workspace-tab-header.tappable.is-active
+   ========================================================================== */
+
+/* 1. Scrollable tab header container: prevents tabs from being squished */
+.workspace-tabs .workspace-tab-header-container {
+  display: flex !important;
+  flex-wrap: nowrap !important;
+  overflow-x: auto !important;
+  overflow-y: hidden !important;
+  scroll-behavior: smooth !important;
+  scrollbar-width: thin !important;
+  scrollbar-color: var(--scrollbar-thumb-bg, rgba(128, 128, 128, 0.25)) transparent !important;
+}
+
+.workspace-tabs .workspace-tab-header-container::-webkit-scrollbar {
+  height: 3px !important;
+  display: block !important;
+}
+
+.workspace-tabs .workspace-tab-header-container::-webkit-scrollbar-track {
+  background: transparent !important;
+}
+
+.workspace-tabs .workspace-tab-header-container::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb-bg, rgba(128, 128, 128, 0.25)) !important;
+  border-radius: 2px !important;
+}
+
+.workspace-tabs .workspace-tab-header-container:hover::-webkit-scrollbar-thumb {
+  background: var(--interactive-accent, rgba(128, 128, 128, 0.5)) !important;
+}
+
+.workspace-tabs .workspace-tab-header-container-inner {
+  display: flex !important;
+  flex-wrap: nowrap !important;
+  flex-shrink: 0 !important;
+}
+
+/* 2. Individual tab header: fixed readable width like VS Code tabs */
+div.workspace-tab-header.tappable {
+  flex: 0 0 auto !important;
+  min-width: 80px !important;
+  max-width: 200px !important;
+  position: relative !important;
+  box-sizing: border-box !important;
+  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease !important;
+}
+
+/* 3. Tab Inner Title: Fit text to max 15 characters with clean ellipsis */
+div.workspace-tab-header.tappable .workspace-tab-header-inner-title {
+  max-width: 15ch !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+  display: inline-block !important;
+  vertical-align: middle !important;
+}
+
+/* 4. Active Tab: div.workspace-tab-header.tappable.is-active */
+div.workspace-tab-header.tappable.is-active {
+  background: var(--background-primary) !important;
+  border-bottom: 2px solid var(--interactive-accent) !important;
+  font-weight: 500 !important;
+  z-index: 2 !important;
+}
+
+div.workspace-tab-header.tappable.is-active .workspace-tab-header-inner-title {
+  max-width: 16ch !important;
+  color: var(--text-normal) !important;
+}
+
+
 
 

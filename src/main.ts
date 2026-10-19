@@ -594,6 +594,36 @@ export default class PakCLITablePlugin extends Plugin {
 			}
 		}, true);
 
+		// ── VS Code Style Scrollable Workspace & Table Tabs ──────────
+		if (this.settings.enableVsCodeTabs !== false) {
+			document.body.classList.add('pakcli-vscode-tabs');
+
+			// 1. Mouse wheel horizontal scroll on .workspace-tab-header-container (like VS Code tab bar)
+			this.registerDomEvent(window, 'wheel', (evt: WheelEvent) => {
+				const container = (evt.target as HTMLElement)?.closest('.workspace-tab-header-container') as HTMLElement | null;
+				if (!container) return;
+				if (evt.deltaY !== 0 && evt.deltaX === 0) {
+					if (container.scrollWidth > container.clientWidth) {
+						container.scrollLeft += evt.deltaY;
+						evt.preventDefault();
+					}
+				}
+			}, { passive: false });
+
+			// 2. Active Tab Auto Scroll-Into-View on tab / leaf change
+			const scrollActiveTabIntoView = () => {
+				setTimeout(() => {
+					const activeTab = document.querySelector('.workspace-tabs .workspace-tab-header.is-active') as HTMLElement | null;
+					if (activeTab) {
+						activeTab.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
+					}
+				}, 60);
+			};
+
+			this.registerEvent(this.app.workspace.on('active-leaf-change', scrollActiveTabIntoView));
+			this.registerEvent(this.app.workspace.on('layout-change', scrollActiveTabIntoView));
+		}
+
 		this.registerEvent(
 			this.app.vault.on('create', () => {
 				if (this.settings.sfxPaperSlideEnabled === false) return;
@@ -1930,6 +1960,9 @@ export default class PakCLITablePlugin extends Plugin {
 	}
 
 	async onunload() {
+		// Clean up VS Code tabs class
+		document.body.classList.remove('pakcli-vscode-tabs');
+
 		// Clean up Ribbon Manager
 		if (this.ribbonManager) {
 			this.ribbonManager.destroy();

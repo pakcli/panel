@@ -1,6 +1,6 @@
 # 📌 Master Brief: VS Code Style Scrollable Workspace & Table Tabs (pakcli-panel)
 
-> **Feature Status**: `0` (Draft / Pending Implementation)  
+> **Feature Status**: `1` (Implemented & Verified)  
 > **Target Module**: `panel/src/styles/main.scss` & `panel/src/main.ts`  
 > **Platform**: Desktop & Mobile  
 > **Date**: 2026-10-19  
@@ -35,19 +35,19 @@
 ## 3. Implementation Plan & Target Files
 | File | Status | Description |
 | :--- | :---: | :--- |
-| `docs/brief-workspace-tabs-vscode-style-scrollable.md` | ⏳ | Master brief (Status 0 -> 1) |
-| `src/settings.ts` | ⏳ | Add `enableVsCodeTabs` & `tabTitleMaxChars` to settings |
-| `src/styles/main.scss` | ⏳ | Add CSS rules for scrollable tab bar, max 15ch title, and active tab indicator |
-| `src/main.ts` | ⏳ | Add horizontal wheel scroll and active tab scroll-into-view listener |
+| `docs/brief-workspace-tabs-vscode-style-scrollable.md` | ✅ | Master brief (Status 0 -> 1) |
+| `src/settings.ts` | ✅ | Add `enableVsCodeTabs` & `tabTitleMaxChars` to settings |
+| `src/styles/main.scss` | ✅ | Add CSS rules for scrollable tab bar, max 15ch title, and active tab indicator |
+| `src/main.ts` | ✅ | Add horizontal wheel scroll and active tab scroll-into-view listener |
 
 ---
 
 ## 4. Acceptance Criteria Checklist
-- [ ] Status 0 brief created and committed
-- [ ] Tab title text capped at max 15 characters with clean ellipsis (`max-width: 15ch`)
-- [ ] Tab headers never compress into unreadable narrow boxes when many tabs are open
-- [ ] Tab header bar is smoothly scrollable horizontally (`overflow-x: auto`)
-- [ ] Mouse wheel on tab bar scrolls tabs horizontally like VS Code
-- [ ] Active tab (`div.workspace-tab-header.tappable.is-active`) is clearly styled and scrolls into view on selection
-- [ ] Production build (`npm run build`) passes with 0 errors and bundle size < 5.0 MB
-- [ ] Status 1 brief updated and committed
+- [x] Status 0 brief created and committed
+- [x] Tab title text capped at max 15 characters with clean ellipsis (`max-width: 15ch`)
+- [x] Tab headers never compress into unreadable narrow boxes when many tabs are open
+- [x] Tab header bar is smoothly scrollable horizontally (`overflow-x: auto`)
+- [x] Mouse wheel on tab bar scrolls tabs horizontally like VS Code
+- [x] Active tab (`div.workspace-tab-header.tappable.is-active`) is clearly styled and scrolls into view on selection
+- [x] Production build (`npm run build`) passes with 0 errors and bundle size < 5.0 MB
+- [x] Status 1 brief updated and committed
