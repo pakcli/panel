@@ -624,15 +624,51 @@ export default class PakCLITablePlugin extends Plugin {
 			}
 		});
 
-		// 1. Mouse wheel horizontal scroll on .mod-root .workspace-tab-header-container (Center only!)
+		// 1. Mouse wheel horizontal LINEAR scroll on .mod-root tabs (Center only!)
+		let tabScrollTarget: HTMLElement | null = null;
+		let tabTargetScrollLeft = 0;
+		let tabScrollRafId: number | null = null;
+
+		const runLinearTabScroll = () => {
+			if (!tabScrollTarget) return;
+			const maxScroll = tabScrollTarget.scrollWidth - tabScrollTarget.clientWidth;
+			tabTargetScrollLeft = Math.max(0, Math.min(maxScroll, tabTargetScrollLeft));
+			const current = tabScrollTarget.scrollLeft;
+			const diff = tabTargetScrollLeft - current;
+
+			if (Math.abs(diff) > 0.5) {
+				// Pure linear step without deceleration curves or snapping
+				const speed = Math.max(12, Math.abs(diff) / 6);
+				tabScrollTarget.scrollLeft = current + Math.sign(diff) * Math.min(Math.abs(diff), speed);
+				tabScrollRafId = requestAnimationFrame(runLinearTabScroll);
+			} else {
+				tabScrollTarget.scrollLeft = tabTargetScrollLeft;
+				tabScrollRafId = null;
+			}
+		};
+
 		this.registerDomEvent(window, 'wheel', (evt: WheelEvent) => {
 			if (!this.isVsCodeTabsActive()) return;
-			const container = (evt.target as HTMLElement)?.closest('.mod-root .workspace-tab-header-container') as HTMLElement | null;
-			if (!container) return;
+			const rootContainer = (evt.target as HTMLElement)?.closest('.mod-root .workspace-tab-header-container') as HTMLElement | null;
+			if (!rootContainer) return;
+			const scrollable = (rootContainer.querySelector('.workspace-tab-header-container-inner') as HTMLElement) || rootContainer;
 			if (evt.deltaY !== 0 && evt.deltaX === 0) {
-				if (container.scrollWidth > container.clientWidth) {
-					container.scrollLeft += evt.deltaY;
+				if (scrollable.scrollWidth > scrollable.clientWidth) {
 					evt.preventDefault();
+					const maxScroll = scrollable.scrollWidth - scrollable.clientWidth;
+					tabScrollTarget = scrollable;
+
+					// If not actively animating, synchronize with real DOM position
+					if (tabScrollRafId === null) {
+						tabTargetScrollLeft = scrollable.scrollLeft;
+					}
+
+					const delta = evt.deltaMode === 1 ? evt.deltaY * 30 : evt.deltaY;
+					tabTargetScrollLeft = Math.max(0, Math.min(maxScroll, tabTargetScrollLeft + delta));
+
+					if (tabScrollRafId === null) {
+						tabScrollRafId = requestAnimationFrame(runLinearTabScroll);
+					}
 				}
 			}
 		}, { passive: false });

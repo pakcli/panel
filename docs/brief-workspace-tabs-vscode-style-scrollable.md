@@ -27,12 +27,13 @@
    - **Zero Height / Text Height Adjustments**: No modifications to height, line-height, font-size, display, vertical-align, padding, margins, or borders. Native vertical footprint and font rendering are 100% preserved.
    - Limit center tab title text (`.mod-root div.workspace-tab-header.tappable .workspace-tab-header-inner-title`) and active tab title text (`.mod-root div.workspace-tab-header.tappable.is-active .workspace-tab-header-inner-title`) to `max-width: 15ch !important;` (leaves all text line-height, ellipsis, and baseline to Obsidian native).
    - Center tab headers have `flex: 0 0 auto !important; width: auto !important;` so tabs take their natural content width without being squished into narrow pills.
-3. **Scrollable Center Tab Container (`overflow-x: auto`)**:
-   - Container `.mod-root .workspace-tab-header-container` set to `overflow-x: auto !important; overflow-y: hidden !important;`.
-   - Inner container `.mod-root .workspace-tab-header-container-inner` set to `width: max-content !important; height: 100% !important;` to allow horizontal scrolling without altering height.
-   - Scrollbar set to `scrollbar-width: none !important;` and `display: none !important; height: 0 !important;` so that 0px vertical height is consumed.
-4. **Mouse-Wheel Horizontal Scrolling**:
-   - Register a wheel listener in `main.ts` strictly on `.mod-root .workspace-tab-header-container` to map vertical scroll wheel (`deltaY`) to horizontal scroll (`scrollLeft`), exactly like VS Code tab bar behavior.
+3. **Scrollable Center Tab Inner Container & Sticky Right Buttons**:
+   - Container `.mod-root .workspace-tab-header-container` set to fixed row layout (`overflow: hidden !important; width: 100% !important;`).
+   - Inner container `.mod-root .workspace-tab-header-container-inner` set to `flex: 1 1 auto !important; min-width: 0 !important; overflow-x: auto !important; overflow-y: hidden !important;` so only tabs scroll.
+   - Right action buttons (`+` new tab, dropdown `v`, and right sidebar toggle) set to `position: sticky !important; right: 0 !important; flex: 0 0 auto !important; z-index: 15 !important;` so they remain permanently pinned and completely unaffected by tab scrolling.
+   - Scrollbar set to `scrollbar-width: none !important;` and `display: none !important; height: 0 !important;` (0px vertical height impact).
+4. **Mouse-Wheel 60fps RAF Momentum Smooth Scrolling**:
+   - Register a wheel listener in `main.ts` with a `requestAnimationFrame` momentum easing loop (`diff * 0.22`) on `.mod-root .workspace-tab-header-container-inner`. Maps wheel delta to silky-smooth 60/120fps interpolated horizontal glide, exactly like VS Code tab bar physics.
 5. **Active Tab Auto-Scroll into View**:
    - On `active-leaf-change`, smooth scroll the active center tab header (`div.workspace-tab-header.tappable.is-active`) into view if it is partially or completely offscreen.
 6. **Toggleable: Default / Active**:
