@@ -3629,8 +3629,9 @@ body.pakcli-ctrl-pressed {
    ========================================================================== */
 
 /* 1. Center workspace scrollable tab header container: horizontal scroll only */
-body.pakcli-vscode-tabs .mod-root .workspace-tabs .workspace-tab-header-container {
+body.pakcli-vscode-tabs .mod-root .workspace-tab-header-container {
   overflow-x: auto !important;
+  overflow-y: hidden !important;
   scrollbar-width: none !important;
   -ms-overflow-style: none !important;
 
@@ -3641,12 +3642,23 @@ body.pakcli-vscode-tabs .mod-root .workspace-tabs .workspace-tab-header-containe
   }
 }
 
-/* 2. Individual center tab header: only prevent shrinking horizontally */
-body.pakcli-vscode-tabs .mod-root div.workspace-tab-header.tappable {
-  flex-shrink: 0 !important;
+/* 2. Inner container: allow tabs to extend horizontally without squishing */
+body.pakcli-vscode-tabs .mod-root .workspace-tab-header-container-inner {
+  display: flex !important;
+  flex: 0 0 auto !important;
+  width: max-content !important;
+  min-width: 100% !important;
+  height: 100% !important;
 }
 
-/* 3. Center tab Inner Title (All & Active tabs): ONLY adjust width (max 15 characters) */
+/* 3. Individual center tab header: natural content width (zero height/padding/border impact) */
+body.pakcli-vscode-tabs .mod-root div.workspace-tab-header.tappable,
+body.pakcli-vscode-tabs .mod-root div.workspace-tab-header.tappable.is-active {
+  flex: 0 0 auto !important;
+  width: auto !important;
+}
+
+/* 4. Center tab Inner Title (All & Active tabs): ONLY adjust width (max 15 characters) */
 body.pakcli-vscode-tabs .mod-root div.workspace-tab-header.tappable .workspace-tab-header-inner-title,
 body.pakcli-vscode-tabs .mod-root div.workspace-tab-header.tappable.is-active .workspace-tab-header-inner-title {
   max-width: 15ch !important;

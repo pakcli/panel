@@ -26,9 +26,10 @@
 2. **VS Code Style Tab Header Sizing & Max 15 Chars (Strict Width-Only Constraint)**:
    - **Zero Height / Text Height Adjustments**: No modifications to height, line-height, font-size, display, vertical-align, padding, margins, or borders. Native vertical footprint and font rendering are 100% preserved.
    - Limit center tab title text (`.mod-root div.workspace-tab-header.tappable .workspace-tab-header-inner-title`) and active tab title text (`.mod-root div.workspace-tab-header.tappable.is-active .workspace-tab-header-inner-title`) to `max-width: 15ch !important;` (leaves all text line-height, ellipsis, and baseline to Obsidian native).
-   - Center tab headers have `flex-shrink: 0 !important;` so they maintain natural width without squishing or altering heights.
+   - Center tab headers have `flex: 0 0 auto !important; width: auto !important;` so tabs take their natural content width without being squished into narrow pills.
 3. **Scrollable Center Tab Container (`overflow-x: auto`)**:
-   - Container `.mod-root .workspace-tabs .workspace-tab-header-container` set to `overflow-x: auto !important;`.
+   - Container `.mod-root .workspace-tab-header-container` set to `overflow-x: auto !important; overflow-y: hidden !important;`.
+   - Inner container `.mod-root .workspace-tab-header-container-inner` set to `width: max-content !important; height: 100% !important;` to allow horizontal scrolling without altering height.
    - Scrollbar set to `scrollbar-width: none !important;` and `display: none !important; height: 0 !important;` so that 0px vertical height is consumed.
 4. **Mouse-Wheel Horizontal Scrolling**:
    - Register a wheel listener in `main.ts` strictly on `.mod-root .workspace-tab-header-container` to map vertical scroll wheel (`deltaY`) to horizontal scroll (`scrollLeft`), exactly like VS Code tab bar behavior.
