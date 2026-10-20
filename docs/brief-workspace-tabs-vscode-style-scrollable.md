@@ -26,7 +26,7 @@
 2. **VS Code Style Tab Header Sizing & Max 15 Chars (Strict Width-Only Constraint)**:
    - **Zero Height / Text Height Adjustments**: No modifications to height, line-height, font-size, display, vertical-align, padding, margins, or borders. Native vertical footprint and font rendering are 100% preserved.
    - Limit center tab title text (`.mod-root div.workspace-tab-header.tappable .workspace-tab-header-inner-title`) and active tab title text (`.mod-root div.workspace-tab-header.tappable.is-active .workspace-tab-header-inner-title`) to `max-width: 15ch !important;` (leaves all text line-height, ellipsis, and baseline to Obsidian native).
-   - Center tab headers have `flex: 0 0 auto !important; width: auto !important;` so tabs take their natural content width without being squished into narrow pills.
+   - Center tab headers dynamically scale their width based on text char count using `width: fit-content !important; min-width: fit-content !important; max-width: fit-content !important;` so short titles stay compact, titles up to 15ch fit cleanly, and active tabs with the close button expand without truncating title text.
 3. **Scrollable Center Tab Inner Container & Sticky Right Buttons**:
    - Container `.mod-root .workspace-tab-header-container` set to fixed row layout (`overflow: hidden !important; width: 100% !important;`).
    - Inner container `.mod-root .workspace-tab-header-container-inner` set to `flex: 1 1 auto !important; min-width: 0 !important; overflow-x: auto !important; overflow-y: hidden !important;` so only tabs scroll.

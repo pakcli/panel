@@ -3656,21 +3656,33 @@ body.pakcli-vscode-tabs .mod-root {
   }
 }
 
-/* 4. Individual center tab header: readable width like VS Code (zero height/padding/border impact) */
+/* 3. Individual center tab header: width changes dynamically based on text char count */
 body.pakcli-vscode-tabs .mod-root div.workspace-tab-header.tappable,
 body.pakcli-vscode-tabs .mod-root div.workspace-tab-header.tappable.is-active {
   flex: 0 0 auto !important;
-  width: auto !important;
-  min-width: 80px !important;
-  max-width: 200px !important;
+  width: fit-content !important;
+  min-width: fit-content !important;
+  max-width: fit-content !important;
 }
 
-/* 5. Center tab Inner Title (All & Active tabs): ONLY adjust width (max 15 characters) */
+body.pakcli-vscode-tabs .mod-root div.workspace-tab-header.tappable .workspace-tab-header-inner,
+body.pakcli-vscode-tabs .mod-root div.workspace-tab-header.tappable.is-active .workspace-tab-header-inner {
+  display: flex !important;
+  flex: 0 0 auto !important;
+  width: fit-content !important;
+  max-width: fit-content !important;
+}
+
+/* 4. Center tab Inner Title: width changes based on text char count up to max 15 characters */
 body.pakcli-vscode-tabs .mod-root div.workspace-tab-header.tappable .workspace-tab-header-inner-title,
 body.pakcli-vscode-tabs .mod-root div.workspace-tab-header.tappable.is-active .workspace-tab-header-inner-title {
+  flex: 0 0 auto !important;
+  width: fit-content !important;
   max-width: 15ch !important;
+  min-width: 0 !important;
 }
 
-
-
-
+body.pakcli-vscode-tabs .mod-root div.workspace-tab-header.tappable .workspace-tab-header-inner-close-button,
+body.pakcli-vscode-tabs .mod-root div.workspace-tab-header.tappable.is-active .workspace-tab-header-inner-close-button {
+  flex: 0 0 auto !important;
+}
