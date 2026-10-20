@@ -3623,19 +3623,26 @@ body.pakcli-ctrl-pressed {
 
 /* ==========================================================================
    VS Code Style Workspace & Table Tabs (Center Workspace ONLY)
-   Selector: div.workspace-tab-header.tappable.is-active
    Strictly scoped to .mod-root (Center). Left & Right sidebars remain untouched!
    Constraint: ONLY adjust width, ZERO height / vertical / text-height impact!
+   Vintage Computer theme: Never touch height, margin, box-shadow, or vertical overflow!
    ========================================================================== */
 
-/* 1. Inner container: horizontal scroll for tabs ONLY, leaving right buttons fixed */
+/* 1. Container: flex row, overflow visible to preserve bottom 3D box-shadow */
+body.pakcli-vscode-tabs .mod-root .workspace-tab-header-container {
+  display: flex !important;
+  flex-direction: row !important;
+  overflow: visible !important;
+}
+
+/* 2. Inner container: horizontal scroll for tabs ONLY, leaving right buttons fixed */
 body.pakcli-vscode-tabs .mod-root .workspace-tab-header-container-inner {
   display: flex !important;
   flex-wrap: nowrap !important;
   flex: 1 1 auto !important;
   min-width: 0 !important;
-  height: 100% !important;
   overflow-x: auto !important;
+  overflow-y: visible !important;
   scrollbar-width: none !important;
   -ms-overflow-style: none !important;
 
@@ -3646,7 +3653,7 @@ body.pakcli-vscode-tabs .mod-root .workspace-tab-header-container-inner {
   }
 }
 
-/* 2. Right action buttons (+, dropdown v, and sidebar toggle): stay fixed and never shrink */
+/* 3. Right action buttons (+, dropdown v, and sidebar toggle): stay fixed and never shrink */
 body.pakcli-vscode-tabs .mod-root {
   .workspace-tab-header-new-tab,
   .workspace-tab-header-tab-list,
@@ -3656,17 +3663,13 @@ body.pakcli-vscode-tabs .mod-root {
   }
 }
 
-/* 3. Individual center tab header: width changes dynamically based on text char count */
+/* 4. Individual center tab header: width changes dynamically based on text char count */
 body.pakcli-vscode-tabs .mod-root div.workspace-tab-header.tappable {
   flex: 0 0 auto !important;
-  width: calc(var(--tab-chars, 8) * 1ch + 42px) !important;
-  min-width: 45px !important;
-  max-width: calc(15ch + 42px) !important;
-}
-
-body.pakcli-vscode-tabs .mod-root div.workspace-tab-header.tappable.is-active {
-  width: calc(var(--tab-chars, 8) * 1ch + 62px) !important;
-  max-width: calc(15ch + 62px) !important;
+  width: calc(var(--tab-chars, 8) * 1ch + 54px) !important;
+  min-width: 50px !important;
+  max-width: calc(15ch + 54px) !important;
+  box-sizing: border-box !important;
 }
 
 body.pakcli-vscode-tabs .mod-root div.workspace-tab-header.tappable .workspace-tab-header-inner {
@@ -3676,7 +3679,7 @@ body.pakcli-vscode-tabs .mod-root div.workspace-tab-header.tappable .workspace-t
   overflow: hidden !important;
 }
 
-/* 4. Center tab Inner Title: width changes based on text char count up to max 15 characters */
+/* 5. Center tab Inner Title: width changes based on text char count up to max 15 characters */
 body.pakcli-vscode-tabs .mod-root div.workspace-tab-header.tappable .workspace-tab-header-inner-title {
   flex: 1 1 auto !important;
   min-width: 0 !important;
