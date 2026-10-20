@@ -3657,32 +3657,35 @@ body.pakcli-vscode-tabs .mod-root {
 }
 
 /* 3. Individual center tab header: width changes dynamically based on text char count */
-body.pakcli-vscode-tabs .mod-root div.workspace-tab-header.tappable,
-body.pakcli-vscode-tabs .mod-root div.workspace-tab-header.tappable.is-active {
+body.pakcli-vscode-tabs .mod-root div.workspace-tab-header.tappable {
   flex: 0 0 auto !important;
-  width: fit-content !important;
-  min-width: fit-content !important;
-  max-width: fit-content !important;
+  width: calc(var(--tab-chars, 8) * 1ch + 42px) !important;
+  min-width: 45px !important;
+  max-width: calc(15ch + 42px) !important;
 }
 
-body.pakcli-vscode-tabs .mod-root div.workspace-tab-header.tappable .workspace-tab-header-inner,
-body.pakcli-vscode-tabs .mod-root div.workspace-tab-header.tappable.is-active .workspace-tab-header-inner {
+body.pakcli-vscode-tabs .mod-root div.workspace-tab-header.tappable.is-active {
+  width: calc(var(--tab-chars, 8) * 1ch + 62px) !important;
+  max-width: calc(15ch + 62px) !important;
+}
+
+body.pakcli-vscode-tabs .mod-root div.workspace-tab-header.tappable .workspace-tab-header-inner {
+  width: 100% !important;
+  max-width: 100% !important;
   display: flex !important;
-  flex: 0 0 auto !important;
-  width: fit-content !important;
-  max-width: fit-content !important;
+  overflow: hidden !important;
 }
 
 /* 4. Center tab Inner Title: width changes based on text char count up to max 15 characters */
-body.pakcli-vscode-tabs .mod-root div.workspace-tab-header.tappable .workspace-tab-header-inner-title,
-body.pakcli-vscode-tabs .mod-root div.workspace-tab-header.tappable.is-active .workspace-tab-header-inner-title {
-  flex: 0 0 auto !important;
-  width: fit-content !important;
-  max-width: 15ch !important;
+body.pakcli-vscode-tabs .mod-root div.workspace-tab-header.tappable .workspace-tab-header-inner-title {
+  flex: 1 1 auto !important;
   min-width: 0 !important;
+  max-width: 15ch !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
 }
 
-body.pakcli-vscode-tabs .mod-root div.workspace-tab-header.tappable .workspace-tab-header-inner-close-button,
-body.pakcli-vscode-tabs .mod-root div.workspace-tab-header.tappable.is-active .workspace-tab-header-inner-close-button {
+body.pakcli-vscode-tabs .mod-root div.workspace-tab-header.tappable .workspace-tab-header-inner-close-button {
   flex: 0 0 auto !important;
 }

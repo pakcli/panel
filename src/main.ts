@@ -360,11 +360,26 @@ export default class PakCLITablePlugin extends Plugin {
 			(this.settings.vscodeTabsMode !== 'default' && this.settings.enableVsCodeTabs !== false);
 	}
 
+	updateCenterTabWidths(): void {
+		if (!this.isVsCodeTabsActive()) return;
+		const tabs = document.querySelectorAll('.mod-root .workspace-tabs .workspace-tab-header');
+		tabs.forEach((tab) => {
+			const titleEl = tab.querySelector('.workspace-tab-header-inner-title');
+			if (!titleEl) return;
+			const text = (titleEl.textContent || '').trim();
+			const chars = Math.min(15, Math.max(3, text.length));
+			(tab as HTMLElement).style.setProperty('--tab-chars', chars.toString());
+		});
+	}
+
 	applyVsCodeTabsClass(): void {
 		if (this.isVsCodeTabsActive()) {
 			document.body.classList.add('pakcli-vscode-tabs');
+			this.updateCenterTabWidths();
 		} else {
 			document.body.classList.remove('pakcli-vscode-tabs');
+			const tabs = document.querySelectorAll('.mod-root .workspace-tabs .workspace-tab-header');
+			tabs.forEach((tab) => (tab as HTMLElement).style.removeProperty('--tab-chars'));
 		}
 	}
 
@@ -684,8 +699,14 @@ export default class PakCLITablePlugin extends Plugin {
 			}, 60);
 		};
 
-		this.registerEvent(this.app.workspace.on('active-leaf-change', scrollActiveTabIntoView));
-		this.registerEvent(this.app.workspace.on('layout-change', scrollActiveTabIntoView));
+		const syncCenterTabs = () => {
+			if (!this.isVsCodeTabsActive()) return;
+			this.updateCenterTabWidths();
+			scrollActiveTabIntoView();
+		};
+		this.registerEvent(this.app.workspace.on('active-leaf-change', syncCenterTabs));
+		this.registerEvent(this.app.workspace.on('layout-change', syncCenterTabs));
+		this.updateCenterTabWidths();
 
 		this.registerEvent(
 			this.app.vault.on('create', () => {
