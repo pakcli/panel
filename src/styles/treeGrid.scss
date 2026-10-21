@@ -172,43 +172,62 @@
 .pakcli-tree-row {
     display: contents;
 
-    /* Directory Header Row: NO contrasting background stripes */
+    /* Directory Header Row: Clean, no horizontal lines */
     &.is-directory > .pakcli-tree-cell {
         background: transparent !important;
         font-weight: 600;
-        border-bottom: 1px solid rgba(var(--background-modifier-border-rgb, 128, 128, 128), 0.15);
+        border-bottom: none !important;
     }
 
     /* Only opaque when cascading sticky pins to top */
     &.pakcli-tree-sticky > .pakcli-tree-cell {
         position: sticky;
         background: var(--background-primary) !important;
-        backdrop-filter: blur(6px);
-        border-bottom: 1px solid var(--background-modifier-border);
+        backdrop-filter: blur(8px);
+        box-shadow: 0 1px 0 var(--background-modifier-border);
+        border-bottom: none !important;
     }
 
-    /* File Row: Clean & transparent */
+    /* File Row: Clean & transparent, no horizontal lines */
     &.is-file > .pakcli-tree-cell {
         background: transparent !important;
-        border-bottom: 1px solid rgba(var(--background-modifier-border-rgb, 128, 128, 128), 0.12);
+        border-bottom: none !important;
     }
 
+    /* Whole row hover highlight across all columns smoothly */
     &:hover > .pakcli-tree-cell {
         background: var(--background-modifier-hover) !important;
+    }
+
+    &:hover > .pakcli-tree-cell:first-child {
+        border-top-left-radius: 4px;
+        border-bottom-left-radius: 4px;
+    }
+
+    &:hover > .pakcli-tree-cell:last-child {
+        border-top-right-radius: 4px;
+        border-bottom-right-radius: 4px;
     }
 }
 
 .pakcli-tree-cell {
-    padding: 3px 8px;
-    line-height: 1.5;
+    padding: 2px 8px;
+    line-height: 1.6;
     color: var(--text-normal);
     display: flex;
     align-items: center;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    border-right: 1px solid var(--background-modifier-border); /* Column Divider Line */
+    border-right: 1px solid rgba(var(--background-modifier-border-rgb, 128, 128, 128), 0.35); /* Subtle vertical column guideline */
+    border-bottom: none !important; /* Zero horizontal grid lines */
     box-sizing: border-box;
+    transition: background 0.08s ease;
+
+    /* Far right column has no right border */
+    &:last-child {
+        border-right: none !important;
+    }
 
     &.pakcli-tree-cell-primary {
         display: flex;

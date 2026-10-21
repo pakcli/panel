@@ -35,16 +35,20 @@
      - `<` and `>` buttons for quick one-click column shifting.
      - `+` button to add or duplicate column.
      - `-` button to delete the column across all rows and sync to note.
-  6. **Column Handle & Live Source Codeblock Spacing Sync**:
+  6. **Zero Horizontal Cell Lines & Full-Row Hover Highlight**:
+     - 0% spreadsheet borders: all horizontal row lines (`border-bottom`) eliminated so text flows naturally as a genuine codeblock.
+     - Single continuous vertical column guideline separating columns, with no outer border on the far right.
+     - Full-row hover highlight: hovering anywhere on a line highlights the entire row from left to right as a unified rounded block (`var(--background-modifier-hover)`).
+  7. **Column Handle & Live Source Codeblock Spacing Sync**:
      - The vertical column handle `│` in rendered view lets the user drag to adjust spacing.
      - Minimum Column 0 width is strictly bounded by the character width of the longest tree line (`minmimal size = chart character of the whole tree line`).
      - Releasing drag (`mouseup`) or double-clicking to auto-fit **immediately updates the source codeblock in the active markdown note** by padding spaces before `#`.
      - **No pipe `|` symbols** are written to the markdown file; only aligned spaces.
-  7. **Cascading Sticky Headers (`t -> h1 -> h2 -> h3`)**:
+  8. **Cascading Sticky Headers (`t -> h1 -> h2 -> h3`)**:
      - Visual sticky hierarchy where parent directory headers remain pinned at the top as the user scrolls down through nested children.
-  8. **Toggleable Folders**:
+  9. **Toggleable Folders**:
      - Expand/collapse chevrons on each folder node.
-  9. **Custom & Multiple Aliases in Settings**:
+  10. **Custom & Multiple Aliases in Settings**:
      - Codeblock tag renamable in settings (comma-separated).
      - Default: `panel-tree, panel-tree-structure, tree-structure`.
 
