@@ -1,111 +1,36 @@
 /* ==========================================================================
    treeGrid.scss
-   Minimalist ASCII Tree-Grid with In-Place Live Editing & Cascading Sticky
+   Raw-Style Monospace Tree-Grid (No Bloat, Pure Branch Lines & Column Dividers)
    ========================================================================== */
 
 .pakcli-tree-grid-root {
-    margin: 12px 0;
+    margin: 8px 0;
     border: 1px solid var(--background-modifier-border);
     border-radius: var(--radius-s, 4px);
-    background: var(--background-primary);
+    background: transparent !important;
     overflow: hidden;
     font-family: var(--font-monospace, monospace);
-    font-size: 0.82rem;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+    font-size: 0.85rem;
+    box-shadow: none !important;
 }
 
-/* 1. Sleek Monospace Control Toolbar */
-.pakcli-tree-toolbar {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 6px 10px;
-    background: var(--background-secondary);
-    border-bottom: 1px solid var(--background-modifier-border);
-    gap: 8px;
-    flex-wrap: wrap;
-
-    .pakcli-tree-toolbar-left {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-
-        .pakcli-tree-badge {
-            font-size: 0.70rem;
-            font-weight: 700;
-            letter-spacing: 0.06em;
-            color: var(--text-accent, var(--interactive-accent));
-            border: 1px solid var(--background-modifier-border);
-            padding: 1px 6px;
-            border-radius: 3px;
-            background: var(--background-primary);
-        }
-
-        .pakcli-tree-node-count {
-            font-size: 0.75rem;
-            color: var(--text-muted);
-        }
-    }
-
-    .pakcli-tree-toolbar-right {
-        display: flex;
-        align-items: center;
-        gap: 6px;
-
-        .pakcli-tree-search-input {
-            padding: 3px 8px;
-            font-size: 0.75rem;
-            font-family: var(--font-monospace);
-            background: var(--background-primary);
-            border: 1px solid var(--background-modifier-border);
-            border-radius: 3px;
-            color: var(--text-normal);
-            outline: none;
-            width: 110px;
-            transition: width 0.15s ease, border-color 0.15s ease;
-
-            &:focus {
-                width: 150px;
-                border-color: var(--interactive-accent);
-            }
-        }
-
-        .pakcli-tree-btn {
-            padding: 3px 7px;
-            font-size: 0.72rem;
-            font-family: var(--font-monospace);
-            background: var(--background-primary);
-            border: 1px solid var(--background-modifier-border);
-            border-radius: 3px;
-            color: var(--text-muted);
-            cursor: pointer;
-            transition: all 0.12s ease;
-
-            &:hover {
-                background: var(--background-modifier-hover);
-                color: var(--text-normal);
-                border-color: var(--text-muted);
-            }
-        }
-    }
-}
-
-/* 2. Scroll Container */
+/* 1. Scroll Container (Inherits raw codeblock background) */
 .pakcli-tree-scroll-container {
-    max-height: 540px;
+    max-height: 560px;
     overflow: auto;
     position: relative;
-    background: var(--background-primary);
+    background: transparent !important;
 }
 
-/* 3. Grid Wrapper */
+/* 2. Grid Wrapper */
 .pakcli-tree-grid-wrapper {
     display: grid;
     min-width: 100%;
     width: max-content;
+    background: transparent !important;
 }
 
-/* 4. Header Row */
+/* 3. Header Row (Subtle & Monospace) */
 .pakcli-tree-header-row {
     display: contents;
 
@@ -113,14 +38,14 @@
         position: sticky;
         top: 0;
         z-index: 40;
-        background: var(--background-secondary);
+        background: var(--background-primary);
         color: var(--text-muted);
         font-size: 0.72rem;
-        font-weight: 700;
+        font-weight: 600;
         letter-spacing: 0.05em;
         text-transform: uppercase;
-        padding: 6px 10px;
-        border-bottom: 2px solid var(--background-modifier-border);
+        padding: 4px 8px;
+        border-bottom: 1px solid var(--background-modifier-border);
         border-right: 1px solid var(--background-modifier-border);
         display: flex;
         align-items: center;
@@ -134,7 +59,7 @@
             text-overflow: ellipsis;
         }
 
-        /* Draggable Column Resizer Handle */
+        /* Draggable Column Resizer */
         .pakcli-col-resizer {
             width: 8px;
             height: 100%;
@@ -147,18 +72,17 @@
             align-items: center;
             justify-content: center;
             opacity: 0.3;
-            transition: opacity 0.12s ease, background 0.12s ease;
+            transition: opacity 0.12s ease;
 
             &::after {
                 content: '';
                 width: 2px;
-                height: 50%;
+                height: 60%;
                 background: var(--background-modifier-border);
             }
 
             &:hover {
                 opacity: 1;
-                background: rgba(var(--interactive-accent-rgb, 100, 150, 255), 0.2);
 
                 &::after {
                     background: var(--interactive-accent);
@@ -168,7 +92,7 @@
     }
 }
 
-/* 5. Body Rows & Cells */
+/* 4. Body Rows & Cells (100% Transparent, No Colored Highlight Stripes) */
 .pakcli-tree-body-container {
     display: contents;
 }
@@ -184,41 +108,42 @@
 .pakcli-tree-row {
     display: contents;
 
-    /* Directory Header Row (Cascading Sticky) */
+    /* Directory Header Row: NO contrasting background stripes */
     &.is-directory > .pakcli-tree-cell {
-        background: var(--background-secondary-alt, var(--background-secondary));
+        background: transparent !important;
         font-weight: 600;
-        border-bottom: 1px solid var(--background-modifier-border);
-        cursor: default;
+        border-bottom: 1px solid rgba(var(--background-modifier-border-rgb, 128, 128, 128), 0.15);
     }
 
+    /* Only opaque when cascading sticky pins to top */
     &.pakcli-tree-sticky > .pakcli-tree-cell {
         position: sticky;
-        backdrop-filter: blur(4px);
-        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+        background: var(--background-primary) !important;
+        backdrop-filter: blur(6px);
+        border-bottom: 1px solid var(--background-modifier-border);
     }
 
-    /* File Leaf Row */
+    /* File Row: Clean & transparent */
     &.is-file > .pakcli-tree-cell {
-        background: var(--background-primary);
-        border-bottom: 1px solid var(--background-modifier-border-hover, rgba(128, 128, 128, 0.15));
+        background: transparent !important;
+        border-bottom: 1px solid rgba(var(--background-modifier-border-rgb, 128, 128, 128), 0.12);
+    }
 
-        &:hover {
-            background: var(--background-modifier-hover);
-        }
+    &:hover > .pakcli-tree-cell {
+        background: var(--background-modifier-hover) !important;
     }
 }
 
 .pakcli-tree-cell {
-    padding: 4px 10px;
-    line-height: 1.45;
+    padding: 3px 8px;
+    line-height: 1.5;
     color: var(--text-normal);
     display: flex;
     align-items: center;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    border-right: 1px solid var(--background-modifier-border);
+    border-right: 1px solid var(--background-modifier-border); /* Column Divider Line */
     box-sizing: border-box;
 
     &.pakcli-tree-cell-primary {
@@ -226,40 +151,26 @@
         align-items: center;
     }
 
-    /* ASCII Branching Guide Rails (├──, └──, │) */
+    /* Monospace Branch Lines (├──, └──, │   ) */
     .pakcli-tree-branch-prefix {
         font-family: var(--font-monospace, monospace);
-        color: var(--text-faint);
+        color: var(--text-muted);
         white-space: pre;
         letter-spacing: 0;
         user-select: none;
         flex-shrink: 0;
     }
 
-    .pakcli-tree-file-spacer {
-        white-space: pre;
-        user-select: none;
-        flex-shrink: 0;
-    }
-
-    /* Minimalist Toggle Chevron */
-    .pakcli-tree-chevron {
-        font-size: 0.62rem;
+    /* Minimalist fold indicator */
+    .pakcli-tree-fold-indicator {
+        font-size: 0.65rem;
         color: var(--text-muted);
         cursor: pointer;
-        padding: 1px 3px;
-        margin-right: 4px;
-        border-radius: 2px;
         user-select: none;
-        transition: transform 0.12s ease, color 0.12s ease;
+        margin-right: 3px;
 
         &:hover {
             color: var(--interactive-accent);
-            background: var(--background-modifier-hover);
-        }
-
-        &.is-closed {
-            transform: rotate(-90deg);
         }
     }
 
@@ -272,15 +183,14 @@
         color: var(--text-normal);
     }
 
-    /* In-Place Live Editable Styles */
+    /* In-place Editable */
     .pakcli-editable-val {
-        padding: 1px 3px;
+        padding: 0 2px;
         border-radius: 2px;
         cursor: text;
         transition: background 0.12s ease;
 
         &:hover {
-            background: var(--background-modifier-hover);
             outline: 1px dashed var(--text-faint);
         }
 
@@ -294,7 +204,7 @@
     }
 }
 
-/* 6. Active Column Dragging */
+/* 5. Active Column Resizing */
 body.pakcli-is-col-resizing {
     cursor: col-resize !important;
     user-select: none !important;

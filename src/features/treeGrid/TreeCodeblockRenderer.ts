@@ -1,7 +1,8 @@
 /**
  * TreeCodeblockRenderer.ts
- * Interactive ASCII Tree-Grid Renderer with In-Place Live Editing,
- * ASCII L-Branching, Draggable Columns, and Cascading Sticky Headers.
+ * Raw-style Monospace ASCII Tree-Grid with In-Place Live Editing,
+ * Draggable Columns, and Cascading Sticky Headers.
+ * No extra GUI bloat above, pure codeblock aesthetic with branch and column lines.
  */
 
 import { MarkdownRenderChild, MarkdownPostProcessorContext, Notice, TFile } from 'obsidian';
@@ -14,7 +15,6 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
     private plugin: any;
     private parsed: ParsedTreeGrid;
     private columns: TreeGridColumn[] = [];
-    private filterKeyword = '';
 
     private gridWrapperEl!: HTMLElement;
     private headerRowEl!: HTMLElement;
@@ -45,8 +45,9 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
 
         for (let i = 0; i < total; i++) {
             const title = this.parsed.columnTitles[i] || (i === 0 ? 'NAME / PATH' : `COL ${i + 1}`);
-            const width = i === 0 ? 300 : 180;
-            const minWidth = i === 0 ? 120 : 70;
+            // Compact starting widths
+            const width = i === 0 ? 280 : 180;
+            const minWidth = i === 0 ? 100 : 60;
 
             this.columns.push({
                 id: i,
@@ -62,20 +63,17 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
         containerEl.empty();
         containerEl.addClass('pakcli-tree-grid-root');
 
-        // 1. Sleek Monospace Control Toolbar
-        this.renderToolbar(containerEl);
-
-        // 2. Main Scroll Container for Cascading Sticky & Tree Grid
+        // Main Scroll Container (Raw Codeblock Style, NO extra GUI toolbar above)
         const scrollContainer = containerEl.createDiv({ cls: 'pakcli-tree-scroll-container' });
 
         this.gridWrapperEl = scrollContainer.createDiv({ cls: 'pakcli-tree-grid-wrapper' });
         this.updateGridTemplate();
 
-        // 3. Header Row (Draggable & Auto-Fit)
+        // Header Row (NAME / PATH | DESCRIPTION (#) | ...)
         this.headerRowEl = this.gridWrapperEl.createDiv({ cls: 'pakcli-tree-header-row' });
         this.renderHeaderRow();
 
-        // 4. Tree Body
+        // Tree Body
         this.bodyContainerEl = this.gridWrapperEl.createDiv({ cls: 'pakcli-tree-body-container' });
         this.renderBody();
     }
@@ -84,81 +82,6 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
         if (!this.gridWrapperEl) return;
         const template = this.columns.map((c) => `${c.width}px`).join(' ');
         this.gridWrapperEl.style.gridTemplateColumns = template;
-    }
-
-    private renderToolbar(parentEl: HTMLElement): void {
-        const toolbar = parentEl.createDiv({ cls: 'pakcli-tree-toolbar' });
-
-        const leftGroup = toolbar.createDiv({ cls: 'pakcli-tree-toolbar-left' });
-        leftGroup.createSpan({ cls: 'pakcli-tree-badge', text: 'TREE' });
-        leftGroup.createSpan({
-            cls: 'pakcli-tree-node-count text-muted',
-            text: `${this.countTotalNodes(this.parsed.rootNodes)} nodes`,
-        });
-
-        const rightGroup = toolbar.createDiv({ cls: 'pakcli-tree-toolbar-right' });
-
-        // Search Filter Input
-        const searchInput = rightGroup.createEl('input', {
-            cls: 'pakcli-tree-search-input',
-            attr: { type: 'text', placeholder: 'filter...', spellcheck: 'false' },
-        });
-        searchInput.addEventListener('input', () => {
-            this.filterKeyword = searchInput.value.trim().toLowerCase();
-            this.renderBody();
-        });
-
-        // Expand All
-        const expandBtn = rightGroup.createEl('button', {
-            cls: 'pakcli-tree-btn',
-            text: 'Expand All',
-            attr: { type: 'button' },
-        });
-        expandBtn.addEventListener('click', () => {
-            this.setAllExpanded(this.parsed.rootNodes, true);
-            this.renderBody();
-        });
-
-        // Collapse All
-        const collapseBtn = rightGroup.createEl('button', {
-            cls: 'pakcli-tree-btn',
-            text: 'Collapse All',
-            attr: { type: 'button' },
-        });
-        collapseBtn.addEventListener('click', () => {
-            this.setAllExpanded(this.parsed.rootNodes, false);
-            this.renderBody();
-        });
-
-        // Copy Plain Indented Source
-        const copyBtn = rightGroup.createEl('button', {
-            cls: 'pakcli-tree-btn',
-            text: 'Copy',
-            attr: { type: 'button' },
-        });
-        copyBtn.addEventListener('click', () => {
-            navigator.clipboard.writeText(this.source);
-            new Notice('Tree source copied to clipboard!');
-            copyBtn.setText('Copied!');
-            window.setTimeout(() => copyBtn.setText('Copy'), 1200);
-        });
-    }
-
-    private countTotalNodes(nodes: TreeGridNode[]): number {
-        let count = 0;
-        for (const n of nodes) {
-            count += 1 + this.countTotalNodes(n.children);
-        }
-        return count;
-    }
-
-    private setAllExpanded(nodes: TreeGridNode[], expanded: boolean): void {
-        for (const n of nodes) {
-            if (n.isDirectory) {
-                n.isExpanded = expanded;
-                this.setAllExpanded(n.children, expanded);
-            }
-        }
     }
 
     private renderHeaderRow(): void {
@@ -170,7 +93,7 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
 
             th.createSpan({ cls: 'pakcli-tree-th-title', text: col.title });
 
-            // Resizer handle
+            // Draggable column divider handle
             const resizer = th.createDiv({ cls: 'pakcli-col-resizer' });
             resizer.title = 'Drag to resize, double-click to auto-fit width';
 
@@ -222,13 +145,13 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
 
         colCells.forEach((cell) => {
             const contentSpan = cell.querySelector<HTMLElement>('.pakcli-editable-val') || cell;
-            const width = contentSpan.scrollWidth + 36;
+            const width = contentSpan.scrollWidth + 24;
             if (width > maxContentWidth) {
                 maxContentWidth = width;
             }
         });
 
-        const fittedWidth = Math.min(750, Math.max(this.columns[colIndex].minWidth, maxContentWidth));
+        const fittedWidth = Math.min(800, Math.max(this.columns[colIndex].minWidth, maxContentWidth));
         this.columns[colIndex].width = fittedWidth;
         this.updateGridTemplate();
     }
@@ -249,56 +172,49 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
 
     /**
      * Renders a tree node with ASCII L-branching (`├──`, `└──`, `│`),
-     * cascading sticky directory headers, and in-place live editable cells.
+     * vertical column divider lines, and live in-place editable cells.
      */
     private renderNode(parentContainer: HTMLElement, node: TreeGridNode, depth: number): void {
-        const matchesSelf = !this.filterKeyword || node.name.toLowerCase().includes(this.filterKeyword);
-        const matchesChildren = this.hasMatchingDescendant(node, this.filterKeyword);
-
-        if (!matchesSelf && !matchesChildren) {
-            return;
-        }
-
-        // Compute exact ASCII tree branches (├──, └──, │   )
         const asciiBranch = getAsciiBranchPrefix(node, this.parsed.rootNodes);
 
         if (node.isDirectory) {
             const dirBlock = parentContainer.createDiv({ cls: 'pakcli-tree-dir-block' });
             dirBlock.style.setProperty('--tree-depth', String(depth));
 
-            // Cascading sticky header for folder
             const row = dirBlock.createDiv({
                 cls: `pakcli-tree-row is-directory ${depth <= 4 ? 'pakcli-tree-sticky' : ''}`,
             });
 
-            row.style.top = `${depth * 28}px`;
+            row.style.top = `${depth * 25}px`;
             row.style.zIndex = `${30 - depth}`;
 
-            // Column 0: Tree path with ASCII branching and toggle chevron
+            // Column 0
             const col0 = row.createDiv({ cls: 'pakcli-tree-cell pakcli-tree-cell-primary' });
             col0.dataset.colIndex = '0';
 
-            // ASCII Branch Prefix (fixed monospace)
+            // Monospace ASCII Branch Prefix (├──, └──, │   )
             if (asciiBranch) {
-                const branchSpan = col0.createSpan({ cls: 'pakcli-tree-branch-prefix', text: asciiBranch });
+                col0.createSpan({ cls: 'pakcli-tree-branch-prefix', text: asciiBranch });
             }
 
-            // Minimalist Toggle Indicator (▼/▶)
-            const chevron = col0.createSpan({
-                cls: `pakcli-tree-chevron ${node.isExpanded ? 'is-open' : 'is-closed'}`,
-                text: node.isExpanded ? '▼' : '▶',
-            });
-            chevron.addEventListener('click', (e) => {
-                e.stopPropagation();
-                node.isExpanded = !node.isExpanded;
-                this.renderBody();
-            });
+            // Minimalist Fold Toggle (▾/▸) only if has children
+            if (node.children.length > 0) {
+                const foldBtn = col0.createSpan({
+                    cls: 'pakcli-tree-fold-indicator',
+                    text: node.isExpanded ? '▾ ' : '▸ ',
+                });
+                foldBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    node.isExpanded = !node.isExpanded;
+                    this.renderBody();
+                });
+            }
 
             // Live Editable Folder Name
             const nameSpan = col0.createSpan({
                 cls: 'pakcli-editable-val pakcli-folder-name',
                 text: node.name,
-                attr: { title: 'Double click to edit folder name' },
+                attr: { title: 'Double-click to edit' },
             });
             this.makeCellEditable(nameSpan, (newVal) => {
                 node.name = newVal;
@@ -314,7 +230,7 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
                 const valSpan = cell.createSpan({
                     cls: 'pakcli-editable-val text-muted',
                     text: val,
-                    attr: { title: 'Click or double click to edit' },
+                    attr: { title: 'Double-click to edit' },
                 });
                 this.makeCellEditable(valSpan, (newVal) => {
                     while (node.columns.length < c) node.columns.push('');
@@ -323,7 +239,7 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
                 });
             }
 
-            // Recursive Children
+            // Children Container
             if (node.isExpanded) {
                 const childrenContainer = dirBlock.createDiv({ cls: 'pakcli-tree-children' });
                 for (const child of node.children) {
@@ -334,23 +250,19 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
             // Leaf File Node Row
             const row = parentContainer.createDiv({ cls: 'pakcli-tree-row is-file' });
 
-            // Column 0: ASCII Branching + Clean File Name
+            // Column 0
             const col0 = row.createDiv({ cls: 'pakcli-tree-cell pakcli-tree-cell-primary' });
             col0.dataset.colIndex = '0';
 
-            // ASCII Branch Prefix (fixed monospace)
             if (asciiBranch) {
                 col0.createSpan({ cls: 'pakcli-tree-branch-prefix', text: asciiBranch });
             }
-
-            // Small spacer where chevron would be
-            col0.createSpan({ cls: 'pakcli-tree-file-spacer', text: '  ' });
 
             // Live Editable File Name
             const nameSpan = col0.createSpan({
                 cls: 'pakcli-editable-val pakcli-file-name',
                 text: node.name,
-                attr: { title: 'Double click to edit file name' },
+                attr: { title: 'Double-click to edit' },
             });
             this.makeCellEditable(nameSpan, (newVal) => {
                 node.name = newVal;
@@ -366,7 +278,7 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
                 const valSpan = cell.createSpan({
                     cls: 'pakcli-editable-val',
                     text: val,
-                    attr: { title: 'Click or double click to edit' },
+                    attr: { title: 'Double-click to edit' },
                 });
                 this.makeCellEditable(valSpan, (newVal) => {
                     while (node.columns.length < c) node.columns.push('');
@@ -377,10 +289,6 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
         }
     }
 
-    /**
-     * Attaches live in-place editable behavior to an element.
-     * When user finishes editing (Enter or blur), onChange callback is triggered.
-     */
     private makeCellEditable(element: HTMLElement, onChange: (newVal: string) => void): void {
         element.addEventListener('dblclick', (e) => {
             e.stopPropagation();
@@ -430,10 +338,6 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
         element.addEventListener('blur', onBlur);
     }
 
-    /**
-     * Serializes tree in memory back to plain indented markdown source (NO ASCII branches)
-     * and modifies the active note file in the vault.
-     */
     private async syncChangesToNote(): Promise<void> {
         const app = this.plugin?.app;
         if (!app?.vault || !this.ctx?.sourcePath) return;
@@ -447,24 +351,14 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
 
             const fileContent = await app.vault.read(file);
 
-            // Replace the old source block
             if (fileContent.includes(this.source)) {
                 const updatedContent = fileContent.replace(this.source, newSource);
                 this.source = newSource;
                 await app.vault.modify(file, updatedContent);
-                new Notice('✓ Saved tree changes to note');
+                new Notice('✓ Updated codeblock');
             }
         } catch (err) {
             console.warn('[TreeGrid] Failed to sync changes to note:', err);
         }
-    }
-
-    private hasMatchingDescendant(node: TreeGridNode, keyword: string): boolean {
-        if (!keyword) return true;
-        for (const child of node.children) {
-            if (child.name.toLowerCase().includes(keyword)) return true;
-            if (this.hasMatchingDescendant(child, keyword)) return true;
-        }
-        return false;
     }
 }
