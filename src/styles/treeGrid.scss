@@ -12,6 +12,8 @@
     font-family: var(--font-monospace, monospace);
     font-size: 0.85rem;
     box-shadow: none !important;
+    user-select: text !important;
+    -webkit-user-select: text !important;
 }
 
 /* 1. Scroll Container (Inherits raw codeblock background) */
@@ -158,7 +160,7 @@
         color: var(--text-muted);
         white-space: pre;
         letter-spacing: 0;
-        user-select: none;
+        user-select: text;
         flex-shrink: 0;
     }
 

@@ -7,7 +7,7 @@
 
 import { MarkdownRenderChild, MarkdownPostProcessorContext, Notice, TFile } from 'obsidian';
 import { ParsedTreeGrid, TreeGridColumn, TreeGridNode } from './types';
-import { parseTreeGrid, getAsciiBranchPrefix, serializeTreeToSource } from './treeParser';
+import { parseTreeGrid, getAsciiBranchPrefix, serializeTreeToSource, getMaxCol0Length } from './treeParser';
 
 export class TreeCodeblockRenderer extends MarkdownRenderChild {
     private source: string;
@@ -85,8 +85,10 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
 
             // Monospace font char width is approx 8.5px at 0.85rem
             // Add padding (16px) + resizer buffer (16px) = 32px
+            const maxTreeChars = getMaxCol0Length(this.parsed.rootNodes);
+            const treeMinPx = Math.ceil((maxTreeChars + 2) * 8.6) + 24;
+            const minWidth = i === 0 ? Math.max(80, treeMinPx) : 50;
             const snugWidth = Math.ceil(maxChars * 8.6) + 32;
-            const minWidth = i === 0 ? 80 : 50;
             const width = Math.max(minWidth, Math.min(800, snugWidth));
 
             this.columns.push({
@@ -109,7 +111,7 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
         this.gridWrapperEl = scrollContainer.createDiv({ cls: 'pakcli-tree-grid-wrapper' });
         this.updateGridTemplate();
 
-        // Header Row (NAME / PATH | # | ## | ...)
+        // Header Row (Column 0 | Column 1 | Column 2 ...)
         this.headerRowEl = this.gridWrapperEl.createDiv({ cls: 'pakcli-tree-header-row' });
         this.renderHeaderRow();
 
@@ -176,6 +178,8 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
                 document.body.removeClass('pakcli-is-col-resizing');
                 window.removeEventListener('mousemove', onMouseMove);
                 window.removeEventListener('mouseup', onMouseUp);
+                // Immediately sync padded spaces to active note's raw markdown
+                this.syncChangesToNote();
             };
 
             window.addEventListener('mousemove', onMouseMove);
@@ -221,6 +225,7 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
         const fittedWidth = Math.min(1000, Math.max(this.columns[colIndex].minWidth, maxContentWidth));
         this.columns[colIndex].width = fittedWidth;
         this.updateGridTemplate();
+        this.syncChangesToNote();
     }
 
     public autoFitAllColumns(): void {
@@ -271,11 +276,11 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
                 col0.createSpan({ cls: 'pakcli-tree-branch-prefix', text: asciiBranch });
             }
 
-            // Minimalist Fold Toggle (▾/▸) only if has children
+            // Minimalist Fold Toggle (v / >) only if has children
             if (node.children.length > 0) {
                 const foldBtn = col0.createSpan({
                     cls: 'pakcli-tree-fold-indicator',
-                    text: node.isExpanded ? '▾ ' : '▸ ',
+                    text: node.isExpanded ? 'v ' : '> ',
                 });
                 foldBtn.addEventListener('click', (e) => {
                     e.stopPropagation();
@@ -471,16 +476,56 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
             const file = app.vault.getAbstractFileByPath(this.ctx.sourcePath);
             if (!(file instanceof TFile)) return;
 
-            const newLines = serializeTreeToSource(this.parsed.rootNodes);
+            // Convert pixel width of col 0 to character width (approx 8.6px per char)
+            const col0WidthPx = this.columns[0]?.width || 200;
+            const col0TargetChars = Math.max(10, Math.round((col0WidthPx - 24) / 8.6));
+
+            // Col 1..N character spacing
+            const colWidthsTargetChars: number[] = [];
+            for (let i = 1; i < this.columns.length; i++) {
+                const w = this.columns[i]?.width || 120;
+                colWidthsTargetChars[i] = Math.max(4, Math.round((w - 24) / 8.6));
+            }
+
+            const newLines = serializeTreeToSource(
+                this.parsed.rootNodes,
+                col0TargetChars,
+                colWidthsTargetChars
+            );
             const newSource = newLines.join('\n');
 
             const fileContent = await app.vault.read(file);
 
-            if (fileContent.includes(this.source)) {
-                const updatedContent = fileContent.replace(this.source, newSource);
+            let updatedContent = '';
+            let replaced = false;
+
+            // 1. Try exact sectionInfo line range replacement
+            const sectionInfo = this.ctx.getSectionInfo?.(this.containerEl);
+            if (sectionInfo && sectionInfo.lineStart !== undefined && sectionInfo.lineEnd !== undefined) {
+                const lines = fileContent.split(/\r?\n/);
+                if (sectionInfo.lineStart < lines.length && sectionInfo.lineEnd < lines.length) {
+                    const before = lines.slice(0, sectionInfo.lineStart + 1);
+                    const after = lines.slice(sectionInfo.lineEnd);
+                    updatedContent = [...before, ...newLines, ...after].join('\n');
+                    replaced = true;
+                }
+            }
+
+            // 2. Fallback: normalize line endings and replace exact source
+            if (!replaced) {
+                const normFile = fileContent.replace(/\r\n/g, '\n');
+                const normSource = this.source.replace(/\r\n/g, '\n').trim();
+
+                if (normFile.includes(normSource)) {
+                    updatedContent = normFile.replace(normSource, newSource);
+                    replaced = true;
+                }
+            }
+
+            if (replaced) {
                 this.source = newSource;
                 await app.vault.modify(file, updatedContent);
-                new Notice('✓ Updated codeblock');
+                new Notice('✓ Updated codeblock lines');
             }
         } catch (err) {
             console.warn('[TreeGrid] Failed to sync changes to note:', err);

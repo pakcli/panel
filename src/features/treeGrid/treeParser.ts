@@ -84,92 +84,69 @@ function getIndentationLevel(line: string): number {
 }
 
 /**
- * Parses up to 10 columns from comment text after '#'.
- * Supports '# col1 ## col2 ### col3 ...' or comma/hash splits.
+ * Extracts node name and comment columns from a raw trimmed line.
+ * Rule: any "space + #" or "| #" creates a column.
+ * Also supports multiple columns: "#col1 #col2".
  */
-export function parseCommentColumns(rawComment: string): string[] {
-    if (!rawComment) return [];
+export function extractNameAndColumns(rawTrimmed: string): { name: string; rawName: string; columns: string[] } {
+    let trimmed = rawTrimmed.trim();
 
-    // Split on ' ##', '###', etc. or sequential '#'
-    const parts = rawComment.split(/\s*##+\s*/);
-    const cols: string[] = [];
+    // Strip leading ASCII symbols if user wrote V, >, L, ├──, └──, │
+    trimmed = trimmed.replace(/^[Vv>▼▶]\s*/, '');
+    trimmed = trimmed.replace(/^[L├└│]\s*/, '');
+    trimmed = trimmed.replace(/^[│\s]*[├└]──\s*/, '');
 
-    for (const part of parts) {
-        const cleaned = part.replace(/^#+\s*/, '').trim();
-        if (cleaned) {
-            cols.push(cleaned);
+    // Check if line has columns marked by "space + #" or "| #" or "##"
+    const colSplitRegex = /(?:[ \t]+\|[ \t]*|[ \t]+)#|\s+##+\s*/;
+    const firstMatch = colSplitRegex.exec(trimmed);
+
+    if (firstMatch) {
+        const namePart = trimmed.slice(0, firstMatch.index).trim().replace(/\|\s*$/, '').trim();
+        const rest = trimmed.slice(firstMatch.index).trim();
+
+        // Split all columns by (space + #) or (| + #) or (##)
+        const rawCols = rest.split(/(?:[ \t]+\|[ \t]*|[ \t]+)#|\s+##+\s*/);
+        const columns: string[] = [];
+
+        for (const col of rawCols) {
+            const cleaned = col.replace(/^[|#\s]+/, '').trim();
+            if (cleaned) {
+                columns.push(cleaned);
+            }
         }
+
+        return {
+            name: namePart.replace(/[\/\\]$/, ''),
+            rawName: namePart,
+            columns: columns.slice(0, 10),
+        };
     }
 
-    return cols.slice(0, 10);
+    // Check for pipe delimited columns without # (e.g. name | col1 | col2)
+    if (trimmed.includes('|')) {
+        const parts = trimmed.split(/\s*\|\s*/);
+        const namePart = parts[0].trim();
+        const columns: string[] = [];
+        for (let i = 1; i < parts.length; i++) {
+            const c = parts[i].trim().replace(/^[|#\s]+/, '').trim();
+            if (c) columns.push(c);
+        }
+        return {
+            name: namePart.replace(/[\/\\]$/, ''),
+            rawName: namePart,
+            columns: columns.slice(0, 10),
+        };
+    }
+
+    return {
+        name: trimmed.replace(/[\/\\]$/, ''),
+        rawName: trimmed,
+        columns: [],
+    };
 }
 
 /**
- * Checks if a node is the last child among its siblings.
- */
-export function isLastChild(node: TreeGridNode, rootNodes: TreeGridNode[]): boolean {
-    if (!node.parent) {
-        const idx = rootNodes.indexOf(node);
-        return idx === rootNodes.length - 1;
-    }
-    const siblings = node.parent.children;
-    const idx = siblings.indexOf(node);
-    return idx === siblings.length - 1;
-}
-
-/**
- * Computes ASCII L-branching prefix for rendering.
- * In source mode, no branch chars are present; they are dynamically computed for display.
- */
-export function getAsciiBranchPrefix(node: TreeGridNode, rootNodes: TreeGridNode[]): string {
-    if (node.depth === 0) {
-        return '';
-    }
-
-    const rails: string[] = [];
-    let curr = node.parent;
-
-    while (curr && curr.depth > 0) {
-        const hasNext = !isLastChild(curr, rootNodes);
-        rails.unshift(hasNext ? '│   ' : '    ');
-        curr = curr.parent;
-    }
-
-    const isLast = isLastChild(node, rootNodes);
-    const branch = isLast ? '└── ' : '├── ';
-
-    return rails.join('') + branch;
-}
-
-/**
- * Serializes TreeGridNodes back to clean plain-text source without any branch characters.
- */
-export function serializeTreeToSource(nodes: TreeGridNode[], indentLevel = 0): string[] {
-    const lines: string[] = [];
-    for (const node of nodes) {
-        const indent = '\t'.repeat(indentLevel);
-        let line = indent + node.name;
-        if (node.isDirectory && node.rawName.endsWith('/')) {
-            line += '/';
-        }
-        if (node.columns && node.columns.length > 0) {
-            const formattedCols = node.columns.map((c, i) => {
-                const prefix = i === 0 ? '#' : '#'.repeat(i + 1);
-                const clean = c.replace(/^#+\s*/, '').trim();
-                return `${prefix} ${clean}`;
-            }).join(' ');
-            line += `    ${formattedCols}`;
-        }
-        lines.push(line);
-        if (node.children && node.children.length > 0) {
-            lines.push(...serializeTreeToSource(node.children, indentLevel + 1));
-        }
-    }
-    return lines;
-}
-
-/**
- * Main parser: converts raw markdown codeblock source to a hierarchical TreeGridNode structure.
+ * Parses tab/space-indented tree structures with multi-column (#) comments.
  */
 export function parseTreeGrid(source: string): ParsedTreeGrid {
     const lines = source.split(/\r?\n/);
@@ -184,45 +161,22 @@ export function parseTreeGrid(source: string): ParsedTreeGrid {
         // Skip markdown comments or metadata tags if any
         if (rawLine.trim().startsWith('<!--')) continue;
 
-        // Strip any existing ASCII branch prefix if user pasted ASCII tree (├──, └──, │)
-        // so source mode remains pure
-        const cleanedLine = rawLine.replace(/^[│\s]*[├└]──\s*/, (match) => {
-            // Keep rough indentation if needed
-            return '';
-        });
-
         const depth = getIndentationLevel(rawLine);
-        const trimmedLine = rawLine.trim().replace(/^[│\s]*[├└]──\s*/, '');
+        const trimmedLine = rawLine.trim();
 
-        // Separate node name from comment columns
-        // e.g. "player.csv # Roster atlet ## Tabular"
-        let namePart = trimmedLine;
-        let commentPart = '';
-
-        const hashIndex = trimmedLine.indexOf('#');
-        if (hashIndex !== -1) {
-            namePart = trimmedLine.slice(0, hashIndex).trim();
-            commentPart = trimmedLine.slice(hashIndex + 1).trim();
-        }
-
-        // If line is just a pure comment without name
-        if (!namePart && commentPart) {
-            namePart = `# ${commentPart}`;
-            commentPart = '';
-        }
-
-        const isDir = !isFileName(namePart);
-        const extension = isDir ? undefined : getExtension(namePart);
-        const columns = parseCommentColumns(commentPart);
+        const { name, rawName, columns } = extractNameAndColumns(trimmedLine);
 
         if (columns.length > maxCols) {
             maxCols = columns.length;
         }
 
+        const isDir = !isFileName(name);
+        const extension = isDir ? undefined : getExtension(name);
+
         const node: TreeGridNode = {
             id: `tree-node-${++idCounter}`,
-            name: namePart.replace(/[\/\\]$/, ''), // strip trailing slash for clean title
-            rawName: namePart,
+            name,
+            rawName,
             rawLine,
             depth,
             isDirectory: isDir,
@@ -263,4 +217,112 @@ export function parseTreeGrid(source: string): ParsedTreeGrid {
         totalColumns,
         columnTitles,
     };
+}
+
+/**
+ * Checks if a node is the last child among its siblings.
+ */
+export function isLastChild(node: TreeGridNode, rootNodes: TreeGridNode[]): boolean {
+    if (!node.parent) {
+        const idx = rootNodes.indexOf(node);
+        return idx === rootNodes.length - 1;
+    }
+    const siblings = node.parent.children;
+    const idx = siblings.indexOf(node);
+    return idx === siblings.length - 1;
+}
+
+/**
+ * Computes authentic ASCII branching prefix (├──, └──, │   ) for rendering.
+ */
+export function getAsciiBranchPrefix(node: TreeGridNode, rootNodes: TreeGridNode[]): string {
+    if (node.depth === 0) {
+        return '';
+    }
+
+    const rails: string[] = [];
+    let curr = node.parent;
+
+    while (curr && curr.depth > 0) {
+        const hasNext = !isLastChild(curr, rootNodes);
+        rails.unshift(hasNext ? '│   ' : '    ');
+        curr = curr.parent;
+    }
+
+    const isLast = isLastChild(node, rootNodes);
+    const branch = isLast ? '└── ' : '├── ';
+
+    return rails.join('') + branch;
+}
+
+/**
+ * Computes maximum visual character length of Column 0 across all nodes.
+ */
+export function getMaxCol0Length(nodes: TreeGridNode[]): number {
+    let max = 0;
+    const traverse = (list: TreeGridNode[]) => {
+        for (const n of list) {
+            const len = (n.depth * 4) + n.name.length;
+            if (len > max) max = len;
+            if (n.children && n.children.length > 0) {
+                traverse(n.children);
+            }
+        }
+    };
+    traverse(nodes);
+    return max;
+}
+
+/**
+ * Serializes TreeGridNodes back to clean plain-text source without any pipe symbols.
+ * Pure indentation, item names, and padded spaces aligning the # comments.
+ */
+export function serializeTreeToSource(
+    nodes: TreeGridNode[],
+    col0Target = 0,
+    colWidthsTarget: number[] = []
+): string[] {
+    const lines: string[] = [];
+    const maxCol0 = getMaxCol0Length(nodes);
+    const effectiveCol0 = Math.max(maxCol0 + 2, col0Target);
+
+    const serializeNode = (node: TreeGridNode) => {
+        const indent = '\t'.repeat(node.depth);
+        let line = indent + node.name;
+        if (node.isDirectory && node.rawName.endsWith('/')) {
+            line += '/';
+        }
+
+        if (node.columns && node.columns.length > 0) {
+            const itemVisualLength = (node.depth * 4) + node.name.length;
+            const spacesCount = Math.max(2, effectiveCol0 - itemVisualLength);
+            line += ' '.repeat(spacesCount);
+
+            for (let c = 0; c < node.columns.length; c++) {
+                const colVal = node.columns[c];
+                const clean = colVal.replace(/^#+\s*/, '').trim();
+                const formattedCol = `#${clean}`;
+
+                if (c > 0) {
+                    const colPad = colWidthsTarget[c] ? Math.max(4, colWidthsTarget[c]) : 6;
+                    line += ' '.repeat(colPad);
+                }
+                line += formattedCol;
+            }
+        }
+
+        lines.push(line);
+
+        if (node.children && node.children.length > 0) {
+            for (const child of node.children) {
+                serializeNode(child);
+            }
+        }
+    };
+
+    for (const root of nodes) {
+        serializeNode(root);
+    }
+
+    return lines;
 }

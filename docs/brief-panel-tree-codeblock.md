@@ -13,22 +13,22 @@
   1. **Extension-based Rule**:
      - Items with file extension (`.json`, `.csv`, `.webp`, `.md`, `.js`, `.html`, `.css`, etc.) or known dotfiles (`.env`, `.gitignore`) are rendered as **Row Items (File Nodes)**.
      - Items without extension (`data`, `src`, `modules`, `menu`) or with trailing slash (`player/`) are rendered as **Directory Columns / Container Headers**.
-  2. **Minimalist ASCII L-Branching (No Bloat in Source Mode)**:
+  2. **Authentic Monospace ASCII Branching (`├── `, `└── `) & Chevron Fold (`v ` / `> `)**:
      - In **Source Mode**: Users write pure plain indentation (tabs/spaces) without manual branch characters.
-     - In **Rendered View**: Dynamically renders authentic monospace ASCII guide branches (`├── `, `└── `, `│   `) with clean pixel alignment.
+     - In **Rendered View**: Dynamically renders authentic monospace ASCII guide branches (`├── `, `└── `, `│   `).
+     - Fold indicators use minimalist chevron `v ` when open and `> ` when closed.
+     - 100% naturally selectable text across all lines.
   3. **In-Place Live Editable**:
-     - Double-click any cell (file/folder name or `#` metadata columns) to edit in-place.
+     - Double-click any line/cell to edit in-place.
      - Pressing Enter or clicking outside saves changes directly back to the active note's raw codeblock via Obsidian Vault API.
-  4. **Multi-Column `#` Alignment (Max 10 Columns)**:
-     - Parses `# col1`, `## col2`, `### col3` up to `########## col10`.
-     - Automatically aligns all `#` comments into a clean vertical grid line (`clean # sejajar on that one line`).
-     - Minimalist `#`, `##`, `###` headers without extra bloat.
-  5. **Column Line as Divider & Dynamic Auto-Fit Spacing**:
-     - The vertical column line acts as the spacing boundary between the file/directory item and its comment.
-     - Initial column widths are computed dynamically to fit tree contents snugly instead of arbitrary fixed widths.
-     - Draggable column resizer on the divider line.
-     - Double-clicking the line auto-fits the column to its left (`fit the column di kirina`).
-     - Full DOM measuring on render with minimum width safeguards.
+  4. **Multi-Column Alignment via `space + #` (Max 10 Columns)**:
+     - Each occurrence of `space + #` creates a column (`#note1 #note2 ...`).
+     - Automatically aligns all `#` comments into clean vertical lines (`clean # sejajar on that one line`).
+  5. **Column Handle & Live Source Codeblock Spacing Sync**:
+     - The vertical column handle `│` in rendered view lets the user drag to adjust spacing.
+     - Minimum Column 0 width is strictly bounded by the character width of the longest tree line (`minmimal size = chart character of the whole tree line`).
+     - Releasing drag (`mouseup`) or double-clicking to auto-fit **immediately updates the source codeblock in the active markdown note** by padding spaces before `#`.
+     - **No pipe `|` symbols** are written to the markdown file; only aligned spaces.
   6. **Cascading Sticky Headers (`t -> h1 -> h2 -> h3`)**:
      - Visual sticky hierarchy where parent directory headers remain pinned at the top as the user scrolls down through nested children.
   7. **Toggleable Folders**:
