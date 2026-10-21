@@ -1,22 +1,25 @@
 /* ==========================================================================
    treeGrid.scss
-   Raw-Style Monospace Tree-Grid (No Bloat, Pure Branch Lines & Column Dividers)
+   Pure Monospace Codeblock with Floating GUI Overlay Layer
+   100% Not a Table: Zero CSS Grid cells, zero horizontal lines, zero empty boxes
    ========================================================================== */
 
-.pakcli-tree-grid-root {
+/* 1. Root Codeblock Container */
+.pakcli-tree-codeblock-root {
     margin: 8px 0;
-    border: 1px solid var(--background-modifier-border);
+    padding: 6px 10px;
+    border: 1px solid var(--code-border, var(--background-modifier-border));
     border-radius: var(--radius-s, 4px);
-    background: transparent !important;
-    overflow: hidden;
+    background: var(--code-background, var(--background-primary-alt)) !important;
     font-family: var(--font-monospace, monospace);
     font-size: 0.85rem;
+    overflow-x: auto;
     box-shadow: none !important;
     user-select: text !important;
     -webkit-user-select: text !important;
 }
 
-/* 1. Scroll Container (Inherits raw codeblock background) */
+/* 2. Scroll Container */
 .pakcli-tree-scroll-container {
     max-height: 560px;
     overflow: auto;
@@ -24,45 +27,44 @@
     background: transparent !important;
 }
 
-/* 2. Grid Wrapper */
-.pakcli-tree-grid-wrapper {
-    display: grid;
-    min-width: 100%;
-    width: max-content;
+/* 3. Top Ruler Overlay Bar */
+.pakcli-tree-ruler-overlay {
+    display: flex;
+    align-items: center;
+    border-bottom: 1px solid rgba(var(--background-modifier-border-rgb, 128, 128, 128), 0.35);
+    padding: 2px 0 4px 0;
+    margin-bottom: 4px;
     background: transparent !important;
-}
+    user-select: none;
+    -webkit-user-select: none;
 
-/* 3. Header Row (Subtle & Monospace) */
-.pakcli-tree-header-row {
-    display: contents;
-
-    .pakcli-tree-th {
-        position: sticky;
-        top: 0;
-        z-index: 40;
-        background: var(--background-primary);
-        color: var(--text-muted);
-        font-size: 0.72rem;
-        font-weight: 600;
-        letter-spacing: 0.05em;
-        text-transform: uppercase;
-        padding: 4px 8px;
-        border-bottom: 1px solid var(--background-modifier-border);
-        border-right: 1px solid var(--background-modifier-border);
+    .pakcli-ruler-col {
         display: flex;
         align-items: center;
         justify-content: space-between;
-        user-select: none;
-        backdrop-filter: blur(4px);
+        padding: 2px 6px;
+        box-sizing: border-box;
+        font-size: 0.72rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        color: var(--text-muted);
+        letter-spacing: 0.05em;
+        border-right: 1px solid rgba(var(--background-modifier-border-rgb, 128, 128, 128), 0.25);
+        flex-shrink: 0;
+        background: transparent !important;
 
-        .pakcli-tree-th-title {
+        &:last-child {
+            border-right: none;
+        }
+
+        .pakcli-ruler-title {
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
             font-weight: 700;
         }
 
-        .pakcli-th-drag-handle {
+        .pakcli-ruler-drag-handle {
             cursor: grab;
             color: var(--text-faint);
             font-size: 0.72rem;
@@ -82,7 +84,7 @@
             }
         }
 
-        .pakcli-th-btn {
+        .pakcli-ruler-btn {
             cursor: pointer;
             font-size: 0.72rem;
             padding: 0 2px;
@@ -103,12 +105,12 @@
                 pointer-events: none;
             }
 
-            &.pakcli-th-btn-del:hover {
+            &.pakcli-ruler-btn-del:hover {
                 color: var(--text-error, #f44336);
                 background: rgba(244, 67, 54, 0.15);
             }
 
-            &.pakcli-th-btn-add:hover {
+            &.pakcli-ruler-btn-add:hover {
                 color: var(--interactive-accent);
                 background: rgba(var(--interactive-accent-rgb, 128, 128, 255), 0.15);
             }
@@ -121,115 +123,104 @@
         &.drag-over {
             border-left: 2px solid var(--interactive-accent) !important;
         }
-
-        /* Draggable Column Resizer */
-        .pakcli-col-resizer {
-            width: 10px;
-            height: 100%;
-            cursor: col-resize;
-            position: absolute;
-            right: -5px;
-            top: 0;
-            bottom: 0;
-            z-index: 50;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            opacity: 0.3;
-            transition: opacity 0.12s ease;
-
-            &::after {
-                content: '';
-                width: 2px;
-                height: 70%;
-                background: var(--background-modifier-border);
-            }
-
-            &:hover {
-                opacity: 1;
-
-                &::after {
-                    background: var(--interactive-accent);
-                }
-            }
-        }
     }
 }
 
-/* 4. Body Rows & Cells (100% Transparent, No Colored Highlight Stripes) */
-.pakcli-tree-body-container {
-    display: contents;
+/* 4. Content Wrapper & Draggable Guideline Wires */
+.pakcli-tree-content-wrapper {
+    position: relative;
+    width: max-content;
+    min-width: 100%;
+    background: transparent !important;
 }
 
-.pakcli-tree-dir-block {
-    display: contents;
+.pakcli-tree-guidelines-overlay {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    pointer-events: none;
+    z-index: 10;
 }
 
-.pakcli-tree-children {
-    display: contents;
-}
+.pakcli-col-guideline {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 9px;
+    margin-left: -4px;
+    pointer-events: auto;
+    cursor: col-resize;
+    z-index: 20;
 
-.pakcli-tree-row {
-    display: contents;
-
-    /* Directory Header Row: Clean, no horizontal lines */
-    &.is-directory > .pakcli-tree-cell {
-        background: transparent !important;
-        font-weight: 600;
-        border-bottom: none !important;
+    &::after {
+        content: '';
+        position: absolute;
+        left: 4px;
+        top: 0;
+        bottom: 0;
+        width: 1px;
+        background: rgba(var(--background-modifier-border-rgb, 128, 128, 128), 0.35);
+        transition: background 0.12s ease;
     }
 
-    /* Only opaque when cascading sticky pins to top */
-    &.pakcli-tree-sticky > .pakcli-tree-cell {
-        position: sticky;
-        background: var(--background-primary) !important;
-        backdrop-filter: blur(8px);
-        box-shadow: 0 1px 0 var(--background-modifier-border);
-        border-bottom: none !important;
-    }
-
-    /* File Row: Clean & transparent, no horizontal lines */
-    &.is-file > .pakcli-tree-cell {
-        background: transparent !important;
-        border-bottom: none !important;
-    }
-
-    /* Whole row hover highlight across all columns smoothly */
-    &:hover > .pakcli-tree-cell {
-        background: var(--background-modifier-hover) !important;
-    }
-
-    &:hover > .pakcli-tree-cell:first-child {
-        border-top-left-radius: 4px;
-        border-bottom-left-radius: 4px;
-    }
-
-    &:hover > .pakcli-tree-cell:last-child {
-        border-top-right-radius: 4px;
-        border-bottom-right-radius: 4px;
+    &:hover::after,
+    &.is-dragging::after {
+        background: var(--interactive-accent);
+        width: 2px;
     }
 }
 
-.pakcli-tree-cell {
-    padding: 2px 8px;
-    line-height: 1.6;
-    color: var(--text-normal);
+/* 5. Lines Container & Single Continuous Rows (Zero Table, Zero Horizontal Lines) */
+.pakcli-tree-lines-container {
+    display: flex;
+    flex-direction: column;
+    width: max-content;
+    min-width: 100%;
+    background: transparent !important;
+}
+
+.pakcli-tree-line {
     display: flex;
     align-items: center;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    border-right: 1px solid rgba(var(--background-modifier-border-rgb, 128, 128, 128), 0.35); /* Subtle vertical column guideline */
-    border-bottom: none !important; /* Zero horizontal grid lines */
-    box-sizing: border-box;
+    line-height: 1.5;
+    min-height: 24px;
+    padding: 1px 0;
+    border: none !important;
+    border-bottom: none !important;
+    box-shadow: none !important;
+    background: transparent !important;
     transition: background 0.08s ease;
 
-    /* Far right column has no right border */
-    &:last-child {
-        border-right: none !important;
+    /* Seamless Whole-Row Hover Highlight */
+    &:hover {
+        background: var(--background-modifier-hover) !important;
+        border-radius: 4px;
     }
 
-    &.pakcli-tree-cell-primary {
+    .pakcli-tree-col-0 {
+        flex-shrink: 0;
+        box-sizing: border-box;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: pre;
+        border: none !important;
+        background: transparent !important;
+        padding: 0 4px;
+        display: flex;
+        align-items: center;
+    }
+
+    .pakcli-tree-col-meta {
+        flex-shrink: 0;
+        box-sizing: border-box;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: pre;
+        border: none !important;
+        background: transparent !important;
+        padding: 0 4px;
         display: flex;
         align-items: center;
     }
@@ -266,7 +257,11 @@
         color: var(--text-normal);
     }
 
-    /* In-place Editable */
+    .pakcli-tree-comment {
+        color: var(--text-muted);
+    }
+
+    /* In-place Editable Text */
     .pakcli-editable-val {
         padding: 0 2px;
         border-radius: 2px;
@@ -287,7 +282,7 @@
     }
 }
 
-/* 5. Active Column Resizing */
+/* 6. Active Column Resizing */
 body.pakcli-is-col-resizing {
     cursor: col-resize !important;
     user-select: none !important;

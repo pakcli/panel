@@ -3693,3 +3693,51 @@ body.pakcli-vscode-tabs .mod-root div.workspace-tab-header.tappable .workspace-t
 body.pakcli-vscode-tabs .mod-root div.workspace-tab-header.tappable .workspace-tab-header-inner-close-button {
   flex: 0 0 auto !important;
 }
+
+/* ==========================================================================
+   Cascading Sticky Headers on Markdown Content Page (t -> h1 -> h2 -> h3)
+   ========================================================================== */
+.markdown-rendered {
+  .inline-title {
+    position: sticky;
+    top: 0;
+    z-index: 15;
+    background: var(--background-primary);
+  }
+
+  h1 {
+    position: sticky;
+    top: 0;
+    z-index: 14;
+    background: var(--background-primary);
+    padding-top: 4px;
+    padding-bottom: 4px;
+  }
+
+  h2 {
+    position: sticky;
+    top: 36px;
+    z-index: 13;
+    background: var(--background-primary);
+    padding-top: 4px;
+    padding-bottom: 4px;
+  }
+
+  h3 {
+    position: sticky;
+    top: 68px;
+    z-index: 12;
+    background: var(--background-primary);
+    padding-top: 4px;
+    padding-bottom: 4px;
+  }
+
+  h4 {
+    position: sticky;
+    top: 96px;
+    z-index: 11;
+    background: var(--background-primary);
+    padding-top: 2px;
+    padding-bottom: 2px;
+  }
+}

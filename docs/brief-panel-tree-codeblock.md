@@ -1,6 +1,6 @@
 # 📌 Master Brief: `panel-tree` Codeblock Renderer (Pure Monospace Codeblock + Floating GUI Overlay Layer)
 
-> **Feature Status**: `0` (Draft / Pending Pure Codeblock Re-Architecture)  
+> **Feature Status**: `1` (Implemented & Verified)  
 > **Target Module**: `pakcli-panel` (`panel`)  
 > **Platform**: Obsidian Desktop & Mobile  
 > **Date**: 2026-10-21  
@@ -8,11 +8,18 @@
 ---
 
 ## 1. Problem & Root Cause of Table-Alike Look
-- **Root Cause**: Previous revisions still relied on a CSS Grid layout with individual cell containers (`.pakcli-tree-cell`) for every column on every row. Even when rows had no `#` comments, empty metadata cells were rendered on the right with vertical right-borders, creating visible spreadsheet-like cell grids and horizontal dividers.
-- **Goal (Zero Table Structure)**: Eradicate all cell divs and table/grid structures. Re-architect as a **Pure Codeblock with Floating GUI Overlay Layer**:
-  1. **Base Layer (Codeblock)**: Genuine `<pre><code>` text block where each row is a single, continuous `.pakcli-codeblock-line`. Zero horizontal borders. Rows without comments have no empty cell divs on the right.
-  2. **Overlay Layer (GUI Controls)**: Independent floating top ruler for column controls (`::`, `<`, `>`, `+`, `-`) and vertical draggable guideline wires (`position: absolute`) that adjust the maximum distance / space padding before `#` comments.
-  3. **Whole-Row Hover Highlight**: Hovering anywhere on a row highlights the entire line seamlessly across the codeblock like a modern code editor line highlight.
+- **Root Cause**: Previous revisions still relied on a CSS Grid layout with individual cell containers (`.pakcli-tree-cell`) for every column on every row. Even when rows had no `#` comments, empty metadata cells were rendered on the right with vertical right-borders, creating visible spreadsheet-like cell grids and horizontal dividers. Furthermore, sticky headers were mistakenly applied to directory lines inside the codeblock, creating sticky box-shadow borders.
+- **Fixed (100% Pure Codeblock Architecture)**:
+  1. **Base Layer (Codeblock)**: Genuine `<pre class="pakcli-tree-codeblock-root">` text container where each row is a single, continuous `.pakcli-tree-line`.
+     - Zero CSS grid cells.
+     - Zero horizontal divider lines (`border: none !important; border-bottom: none !important; box-shadow: none !important`).
+     - Rows without comments have no empty cell divs on the right.
+     - Whole-row hover highlight (`.pakcli-tree-line:hover { background: var(--background-modifier-hover); border-radius: 4px; }`).
+  2. **Zero Sticky Headers in Codeblock**: Removed all sticky positioning (`stickyTop`, `pakcli-tree-sticky`, `z-index`) from the tree codeblock. Directories scroll naturally. (Cascading Sticky Headers `t -> h1 -> h2 -> h3` properly applied to markdown document content pages instead).
+  3. **Overlay Layer (GUI Controls)**: Independent floating top ruler for column controls (`::`, `<`, `>`, `+`, `-`).
+  4. **Draggable Vertical Guideline Wires**: Free-floating vertical draggable guidelines (`.pakcli-col-guideline` with `position: absolute; top: 0; bottom: 0; width: 9px; cursor: col-resize;`) that adjust the maximum distance / space padding before `#` comments without writing pipe symbols to the note.
+  5. **Natural Codeblock Typing UX**: In-place text editing, `Enter`, `Tab`, `Shift+Tab`, `ArrowUp`, `ArrowDown`, and chevron `v ` / `> ` folding.
+
 
 ---
 

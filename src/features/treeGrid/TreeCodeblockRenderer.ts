@@ -1,8 +1,13 @@
 /**
  * TreeCodeblockRenderer.ts
- * Raw-style Monospace ASCII Tree-Grid with In-Place Live Editing,
- * Draggable Columns, and Cascading Sticky Headers.
- * No extra GUI bloat above, pure codeblock aesthetic with branch and column lines.
+ * Pure Monospace Codeblock with Floating GUI Overlay Layer.
+ * 100% Not a Table: Zero CSS grid cells, zero horizontal divider lines, zero empty right boxes.
+ * Features:
+ * - Base Codeblock Layer: Monospace ASCII branching (├──, └──, │   ), fold chevrons (v / >), full-row hover highlight.
+ * - Floating Overlay GUI: Top column ruler with :: drag reorder, < > shift, + add/duplicate, - delete.
+ * - Draggable Vertical Guidelines: Overlay wires (position: absolute) to adjust column space padding without pipe symbols.
+ * - Live in-place click-to-type editing with Enter, Tab, Shift-Tab, and Arrow navigation.
+ * - Zero sticky headers inside codeblock.
  */
 
 import { MarkdownRenderChild, MarkdownPostProcessorContext, Notice, TFile } from 'obsidian';
@@ -16,9 +21,11 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
     private parsed: ParsedTreeGrid;
     private columns: TreeGridColumn[] = [];
 
-    private gridWrapperEl!: HTMLElement;
-    private headerRowEl!: HTMLElement;
-    private bodyContainerEl!: HTMLElement;
+    private scrollContainerEl!: HTMLElement;
+    private rulerOverlayEl!: HTMLElement;
+    private contentWrapperEl!: HTMLElement;
+    private guidelinesOverlayEl!: HTMLElement;
+    private linesContainerEl!: HTMLElement;
 
     constructor(
         containerEl: HTMLElement,
@@ -37,7 +44,6 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
 
     onload(): void {
         this.render();
-        // Fine-tune column widths after DOM is attached
         requestAnimationFrame(() => {
             this.autoFitAllColumns();
         });
@@ -63,7 +69,7 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
         const allNodes = this.getAllNodes(this.parsed.rootNodes);
 
         for (let i = 0; i < total; i++) {
-            const title = this.parsed.columnTitles[i] || (i === 0 ? 'NAME / PATH' : '#'.repeat(i));
+            const title = this.parsed.columnTitles[i] || (i === 0 ? 'PATH' : '#'.repeat(i));
 
             let maxChars = title.length;
             if (i === 0) {
@@ -77,14 +83,12 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
                 for (const node of allNodes) {
                     const val = node.columns[i - 1] || '';
                     if (val) {
-                        const len = i + 1 + val.length; // '#' repeat + space + text
+                        const len = i + 1 + val.length;
                         if (len > maxChars) maxChars = len;
                     }
                 }
             }
 
-            // Monospace font char width is approx 8.5px at 0.85rem
-            // Add padding (16px) + resizer buffer (16px) = 32px
             const maxTreeChars = getMaxCol0Length(this.parsed.rootNodes);
             const treeMinPx = Math.ceil((maxTreeChars + 2) * 8.6) + 24;
             const minWidth = i === 0 ? Math.max(80, treeMinPx) : 50;
@@ -103,54 +107,53 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
     private render(): void {
         const { containerEl } = this;
         containerEl.empty();
-        containerEl.addClass('pakcli-tree-grid-root');
+        containerEl.addClass('pakcli-tree-codeblock-root');
 
-        // Main Scroll Container (Raw Codeblock Style, NO extra GUI toolbar above)
-        const scrollContainer = containerEl.createDiv({ cls: 'pakcli-tree-scroll-container' });
+        // Scroll Container
+        this.scrollContainerEl = containerEl.createDiv({ cls: 'pakcli-tree-scroll-container' });
 
-        this.gridWrapperEl = scrollContainer.createDiv({ cls: 'pakcli-tree-grid-wrapper' });
-        this.updateGridTemplate();
+        // 1. Top Ruler Overlay (Column markers, reorder, shift, add, delete)
+        this.rulerOverlayEl = this.scrollContainerEl.createDiv({ cls: 'pakcli-tree-ruler-overlay' });
+        this.renderRulerOverlay();
 
-        // Header Row (Column 0 | Column 1 | Column 2 ...)
-        this.headerRowEl = this.gridWrapperEl.createDiv({ cls: 'pakcli-tree-header-row' });
-        this.renderHeaderRow();
+        // 2. Content Wrapper (Holds lines and draggable guideline wires)
+        this.contentWrapperEl = this.scrollContainerEl.createDiv({ cls: 'pakcli-tree-content-wrapper' });
 
-        // Tree Body
-        this.bodyContainerEl = this.gridWrapperEl.createDiv({ cls: 'pakcli-tree-body-container' });
-        this.renderBody();
+        // 3. Guidelines Overlay (Draggable vertical wires)
+        this.guidelinesOverlayEl = this.contentWrapperEl.createDiv({ cls: 'pakcli-tree-guidelines-overlay' });
+
+        // 4. Codeblock Lines Container (Pure text lines, NO GRID, NO CELLS, NO BORDERS)
+        this.linesContainerEl = this.contentWrapperEl.createDiv({ cls: 'pakcli-tree-lines-container' });
+
+        this.renderLines();
+        this.renderGuidelines();
     }
 
-    private updateGridTemplate(): void {
-        if (!this.gridWrapperEl) return;
-        const template = this.columns.map((c) => `${c.width}px`).join(' ');
-        this.gridWrapperEl.style.gridTemplateColumns = template;
-    }
-
-    private renderHeaderRow(): void {
-        this.headerRowEl.empty();
+    private renderRulerOverlay(): void {
+        this.rulerOverlayEl.empty();
 
         for (let i = 0; i < this.columns.length; i++) {
             const col = this.columns[i];
-            const th = this.headerRowEl.createDiv({ cls: 'pakcli-tree-th' });
-            th.dataset.colIndex = String(i);
+            const colEl = this.rulerOverlayEl.createDiv({ cls: 'pakcli-ruler-col' });
+            colEl.dataset.colIndex = String(i);
+            colEl.style.width = `${col.width}px`;
 
             if (i === 0) {
-                // Column 0: PATH / NAME
-                th.createSpan({ cls: 'pakcli-tree-th-title', text: col.title });
+                // Column 0: PATH and + button
+                colEl.createSpan({ cls: 'pakcli-ruler-title', text: col.title });
 
-                // Quick add first comment column if desired
-                const addBtn = th.createSpan({ cls: 'pakcli-th-btn pakcli-th-btn-add', text: '+' });
+                const addBtn = colEl.createSpan({ cls: 'pakcli-ruler-btn pakcli-ruler-btn-add', text: '+' });
                 addBtn.title = 'Add comment column (#)';
                 addBtn.addEventListener('click', (e) => {
                     e.stopPropagation();
                     this.addColumn(0);
                 });
             } else {
-                // Column 1..N: Reorder handle (::), Shift (< and >), Title, Duplicate (+), Delete (-)
-                const dragHandle = th.createSpan({ cls: 'pakcli-th-drag-handle', text: '::' });
+                // Column 1..N: Reorder handle (::), Shift (< >), Title, Add (+), Delete (-)
+                const dragHandle = colEl.createSpan({ cls: 'pakcli-ruler-drag-handle', text: '::' });
                 dragHandle.title = 'Drag :: to reorder column';
 
-                const leftBtn = th.createSpan({ cls: 'pakcli-th-btn pakcli-th-btn-move', text: '<' });
+                const leftBtn = colEl.createSpan({ cls: 'pakcli-ruler-btn pakcli-ruler-btn-move', text: '<' });
                 leftBtn.title = 'Move column left';
                 if (i === 1) leftBtn.addClass('is-disabled');
                 leftBtn.addEventListener('click', (e) => {
@@ -158,7 +161,7 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
                     if (i > 1) this.moveColumn(i, i - 1);
                 });
 
-                const rightBtn = th.createSpan({ cls: 'pakcli-th-btn pakcli-th-btn-move', text: '>' });
+                const rightBtn = colEl.createSpan({ cls: 'pakcli-ruler-btn pakcli-ruler-btn-move', text: '>' });
                 rightBtn.title = 'Move column right';
                 if (i === this.columns.length - 1) rightBtn.addClass('is-disabled');
                 rightBtn.addEventListener('click', (e) => {
@@ -166,44 +169,42 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
                     if (i < this.columns.length - 1) this.moveColumn(i, i + 1);
                 });
 
-                th.createSpan({ cls: 'pakcli-tree-th-title', text: col.title });
+                colEl.createSpan({ cls: 'pakcli-ruler-title', text: col.title });
 
-                // + Add / Duplicate Column
-                const addBtn = th.createSpan({ cls: 'pakcli-th-btn pakcli-th-btn-add', text: '+' });
+                const addBtn = colEl.createSpan({ cls: 'pakcli-ruler-btn pakcli-ruler-btn-add', text: '+' });
                 addBtn.title = 'Add new column (Alt+click to duplicate)';
                 addBtn.addEventListener('click', (e) => {
                     e.stopPropagation();
                     this.addColumn(i, e.altKey);
                 });
 
-                // - Delete Column
-                const delBtn = th.createSpan({ cls: 'pakcli-th-btn pakcli-th-btn-del', text: '-' });
+                const delBtn = colEl.createSpan({ cls: 'pakcli-ruler-btn pakcli-ruler-btn-del', text: '-' });
                 delBtn.title = 'Delete this column';
                 delBtn.addEventListener('click', (e) => {
                     e.stopPropagation();
                     this.deleteColumn(i);
                 });
 
-                // HTML5 Drag-and-drop column reordering
-                th.setAttribute('draggable', 'true');
-                th.addEventListener('dragstart', (e) => {
+                // HTML5 Drag-and-drop
+                colEl.setAttribute('draggable', 'true');
+                colEl.addEventListener('dragstart', (e) => {
                     e.dataTransfer?.setData('text/plain', String(i));
-                    th.addClass('is-dragging');
+                    colEl.addClass('is-dragging');
                 });
-                th.addEventListener('dragend', () => {
-                    th.removeClass('is-dragging');
-                    this.headerRowEl.querySelectorAll('.pakcli-tree-th').forEach((el) => el.removeClass('drag-over'));
+                colEl.addEventListener('dragend', () => {
+                    colEl.removeClass('is-dragging');
+                    this.rulerOverlayEl.querySelectorAll('.pakcli-ruler-col').forEach((el) => el.removeClass('drag-over'));
                 });
-                th.addEventListener('dragover', (e) => {
+                colEl.addEventListener('dragover', (e) => {
                     e.preventDefault();
-                    th.addClass('drag-over');
+                    colEl.addClass('drag-over');
                 });
-                th.addEventListener('dragleave', () => {
-                    th.removeClass('drag-over');
+                colEl.addEventListener('dragleave', () => {
+                    colEl.removeClass('drag-over');
                 });
-                th.addEventListener('drop', (e) => {
+                colEl.addEventListener('drop', (e) => {
                     e.preventDefault();
-                    th.removeClass('drag-over');
+                    colEl.removeClass('drag-over');
                     const fromStr = e.dataTransfer?.getData('text/plain');
                     if (fromStr !== undefined) {
                         const fromIdx = parseInt(fromStr, 10);
@@ -214,24 +215,95 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
                 });
             }
 
-            // Draggable column divider handle (Resizer)
-            const resizer = th.createDiv({ cls: 'pakcli-col-resizer' });
-            resizer.title = 'Drag to resize • Double-click to auto-fit';
-
-            this.wireColumnResizer(resizer, i);
-
-            resizer.addEventListener('dblclick', (e) => {
-                e.stopPropagation();
-                e.preventDefault();
-                this.autoFitColumn(i);
-            });
-
-            th.addEventListener('dblclick', (e) => {
-                if ((e.target as HTMLElement).classList.contains('pakcli-tree-th-title') || e.target === th) {
+            colEl.addEventListener('dblclick', (e) => {
+                if ((e.target as HTMLElement).classList.contains('pakcli-ruler-title') || e.target === colEl) {
                     e.stopPropagation();
                     this.autoFitColumn(i);
                 }
             });
+        }
+    }
+
+    private renderGuidelines(): void {
+        this.guidelinesOverlayEl.empty();
+
+        let currentLeft = 0;
+        for (let i = 0; i < this.columns.length - 1; i++) {
+            currentLeft += this.columns[i].width;
+
+            const guideline = this.guidelinesOverlayEl.createDiv({ cls: 'pakcli-col-guideline' });
+            guideline.style.left = `${currentLeft}px`;
+            guideline.title = 'Drag to adjust column width • Double-click to auto-fit';
+
+            this.wireGuidelineResizer(guideline, i);
+
+            guideline.addEventListener('dblclick', (e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                this.autoFitColumn(i);
+            });
+        }
+    }
+
+    private wireGuidelineResizer(guidelineEl: HTMLElement, colIndex: number): void {
+        guidelineEl.addEventListener('mousedown', (e: MouseEvent) => {
+            e.preventDefault();
+            e.stopPropagation();
+
+            const startX = e.clientX;
+            const startWidth = this.columns[colIndex].width;
+            const colDef = this.columns[colIndex];
+            const minWidth = colDef.minWidth;
+
+            document.body.addClass('pakcli-is-col-resizing');
+            guidelineEl.addClass('is-dragging');
+
+            const onMouseMove = (moveEvent: MouseEvent) => {
+                const deltaX = moveEvent.clientX - startX;
+                const newWidth = Math.max(minWidth, startWidth + deltaX);
+                colDef.width = newWidth;
+
+                // Live update DOM widths without full re-render
+                this.updateColumnWidthsInDOM(colIndex, newWidth);
+            };
+
+            const onMouseUp = () => {
+                document.body.removeClass('pakcli-is-col-resizing');
+                guidelineEl.removeClass('is-dragging');
+                document.removeEventListener('mousemove', onMouseMove);
+                document.removeEventListener('mouseup', onMouseUp);
+
+                this.renderGuidelines();
+                this.syncChangesToNote();
+            };
+
+            document.addEventListener('mousemove', onMouseMove);
+            document.addEventListener('mouseup', onMouseUp);
+        });
+    }
+
+    private updateColumnWidthsInDOM(colIndex: number, newWidth: number): void {
+        // Update ruler header
+        const rulerCol = this.rulerOverlayEl.querySelector<HTMLElement>(`.pakcli-ruler-col[data-col-index="${colIndex}"]`);
+        if (rulerCol) rulerCol.style.width = `${newWidth}px`;
+
+        // Update all line spans for this column
+        const selector = colIndex === 0
+            ? '.pakcli-tree-line .pakcli-tree-col-0'
+            : `.pakcli-tree-line .pakcli-tree-col-meta[data-col-index="${colIndex}"]`;
+
+        this.linesContainerEl.querySelectorAll<HTMLElement>(selector).forEach((el) => {
+            el.style.width = `${newWidth}px`;
+        });
+
+        // Reposition guidelines
+        let currentLeft = 0;
+        const allGuidelines = this.guidelinesOverlayEl.querySelectorAll<HTMLElement>('.pakcli-col-guideline');
+        for (let i = 0; i < this.columns.length - 1; i++) {
+            currentLeft += this.columns[i].width;
+            if (allGuidelines[i]) {
+                allGuidelines[i].style.left = `${currentLeft}px`;
+            }
         }
     }
 
@@ -296,75 +368,27 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
         this.render();
     }
 
-    private wireColumnResizer(resizerEl: HTMLElement, colIndex: number): void {
-        resizerEl.addEventListener('mousedown', (e: MouseEvent) => {
-            e.preventDefault();
-            e.stopPropagation();
-
-            const startX = e.clientX;
-            const startWidth = this.columns[colIndex].width;
-            const minWidth = this.columns[colIndex].minWidth;
-
-            document.body.addClass('pakcli-is-col-resizing');
-
-            const onMouseMove = (moveEvt: MouseEvent) => {
-                const deltaX = moveEvt.clientX - startX;
-                const newWidth = Math.max(minWidth, startWidth + deltaX);
-                this.columns[colIndex].width = newWidth;
-                this.updateGridTemplate();
-            };
-
-            const onMouseUp = () => {
-                document.body.removeClass('pakcli-is-col-resizing');
-                window.removeEventListener('mousemove', onMouseMove);
-                window.removeEventListener('mouseup', onMouseUp);
-                // Immediately sync padded spaces to active note's raw markdown
-                this.syncChangesToNote();
-            };
-
-            window.addEventListener('mousemove', onMouseMove);
-            window.addEventListener('mouseup', onMouseUp);
-        });
-    }
-
     public autoFitColumn(colIndex: number): void {
-        if (!this.bodyContainerEl || !this.columns[colIndex]) return;
+        if (colIndex < 0 || colIndex >= this.columns.length) return;
 
-        const colCells = this.bodyContainerEl.querySelectorAll<HTMLElement>(
-            `.pakcli-tree-row > .pakcli-tree-cell[data-col-index="${colIndex}"]`
-        );
+        let maxContentWidth = 0;
+        const selector = colIndex === 0
+            ? '.pakcli-tree-line .pakcli-tree-col-0'
+            : `.pakcli-tree-line .pakcli-tree-col-meta[data-col-index="${colIndex}"] .pakcli-tree-comment`;
 
-        let maxContentWidth = this.columns[colIndex].minWidth;
-
-        // Account for header title width
-        const th = this.headerRowEl?.children[colIndex] as HTMLElement | undefined;
-        if (th) {
-            const titleSpan = th.querySelector<HTMLElement>('.pakcli-tree-th-title');
-            if (titleSpan) {
-                maxContentWidth = Math.max(maxContentWidth, titleSpan.scrollWidth + 32);
-            }
-        }
-
-        colCells.forEach((cell) => {
-            let cellContentWidth = 0;
-            const children = Array.from(cell.children) as HTMLElement[];
-            if (children.length > 0) {
-                for (const child of children) {
-                    cellContentWidth += child.scrollWidth || child.offsetWidth;
-                }
-            } else {
-                cellContentWidth = cell.scrollWidth;
-            }
-            // Add padding (16px) + small safety buffer (12px) = 28px
-            const width = cellContentWidth + 28;
-            if (width > maxContentWidth) {
-                maxContentWidth = width;
+        this.linesContainerEl.querySelectorAll<HTMLElement>(selector).forEach((el) => {
+            const text = el.textContent || '';
+            if (text.trim()) {
+                const width = Math.ceil(text.length * 8.6) + 24;
+                if (width > maxContentWidth) maxContentWidth = width;
             }
         });
 
         const fittedWidth = Math.min(1000, Math.max(this.columns[colIndex].minWidth, maxContentWidth));
         this.columns[colIndex].width = fittedWidth;
-        this.updateGridTemplate();
+
+        this.updateColumnWidthsInDOM(colIndex, fittedWidth);
+        this.renderGuidelines();
         this.syncChangesToNote();
     }
 
@@ -374,189 +398,101 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
         }
     }
 
-    private renderBody(): void {
-        this.bodyContainerEl.empty();
+    private renderLines(): void {
+        this.linesContainerEl.empty();
 
         if (this.parsed.rootNodes.length === 0) {
-            const emptyEl = this.bodyContainerEl.createDiv({ cls: 'pakcli-tree-empty text-muted' });
+            const emptyEl = this.linesContainerEl.createDiv({ cls: 'pakcli-tree-empty text-muted' });
             emptyEl.setText('Empty tree.');
             return;
         }
 
         for (const rootNode of this.parsed.rootNodes) {
-            this.renderNode(this.bodyContainerEl, rootNode, 0);
+            this.renderNodeLines(this.linesContainerEl, rootNode, 0);
         }
     }
 
     /**
-     * Renders a tree node with ASCII L-branching (`├──`, `└──`, `│`),
-     * vertical column divider lines, and live in-place editable cells.
+     * Renders a tree node as a single .pakcli-tree-line element.
+     * ZERO table structures, ZERO horizontal borders, ZERO sticky headers.
      */
-    private renderNode(parentContainer: HTMLElement, node: TreeGridNode, depth: number): void {
+    private renderNodeLines(parentContainer: HTMLElement, node: TreeGridNode, depth: number): void {
         const asciiBranch = getAsciiBranchPrefix(node, this.parsed.rootNodes);
-        const stickyTop = `${25 + depth * 25}px`;
-        const stickyZIndex = String(Math.max(10, 35 - depth));
 
-        if (node.isDirectory) {
-            const dirBlock = parentContainer.createDiv({ cls: 'pakcli-tree-dir-block' });
-            dirBlock.style.setProperty('--tree-depth', String(depth));
+        // A single continuous line container
+        const lineEl = parentContainer.createDiv({
+            cls: `pakcli-tree-line ${node.isDirectory ? 'is-directory' : 'is-file'}`,
+        });
+        lineEl.dataset.nodeId = node.id;
 
-            const row = dirBlock.createDiv({
-                cls: `pakcli-tree-row is-directory ${depth <= 4 ? 'pakcli-tree-sticky' : ''}`,
+        // Column 0 Container (Tree branch + fold chevron + item name)
+        const col0Span = lineEl.createDiv({ cls: 'pakcli-tree-col-0' });
+        col0Span.dataset.colIndex = '0';
+        col0Span.style.width = `${this.columns[0].width}px`;
+
+        // ASCII Branch prefix (├──, └──, │   )
+        if (asciiBranch) {
+            col0Span.createSpan({ cls: 'pakcli-tree-branch-prefix', text: asciiBranch });
+        }
+
+        // Minimalist fold toggle (v / >) only for directories with children
+        if (node.isDirectory && node.children.length > 0) {
+            const foldBtn = col0Span.createSpan({
+                cls: 'pakcli-tree-fold-indicator',
+                text: node.isExpanded ? 'v ' : '> ',
             });
-            row.dataset.nodeId = node.id;
-
-            // Column 0
-            const col0 = row.createDiv({ cls: 'pakcli-tree-cell pakcli-tree-cell-primary' });
-            col0.dataset.colIndex = '0';
-            col0.style.top = stickyTop;
-            col0.style.zIndex = stickyZIndex;
-
-            // Monospace ASCII Branch Prefix (├──, └──, │   )
-            if (asciiBranch) {
-                col0.createSpan({ cls: 'pakcli-tree-branch-prefix', text: asciiBranch });
-            }
-
-            // Minimalist Fold Toggle (v / >) only if has children
-            if (node.children.length > 0) {
-                const foldBtn = col0.createSpan({
-                    cls: 'pakcli-tree-fold-indicator',
-                    text: node.isExpanded ? 'v ' : '> ',
-                });
-                foldBtn.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    node.isExpanded = !node.isExpanded;
-                    this.renderBody();
-                    requestAnimationFrame(() => {
-                        this.autoFitColumn(0);
-                    });
-                });
-            }
-
-            // Live Editable Folder Name
-            const nameSpan = col0.createSpan({
-                cls: 'pakcli-editable-val pakcli-folder-name',
-                text: node.name,
-                attr: { title: 'Click to type / Enter for new line / Tab to indent' },
+            foldBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                node.isExpanded = !node.isExpanded;
+                this.renderLines();
+                this.renderGuidelines();
             });
-            this.makeCellEditable(nameSpan, (newVal) => {
-                node.name = newVal.trim();
-                nameSpan.textContent = node.name;
+        }
+
+        // Editable Item Name
+        const nameSpan = col0Span.createSpan({
+            cls: `pakcli-editable-val ${node.isDirectory ? 'pakcli-folder-name' : 'pakcli-file-name'}`,
+            text: node.name,
+            attr: { title: 'Click to type / Enter for new line / Tab to indent' },
+        });
+        this.makeCellEditable(nameSpan, (newVal) => {
+            node.name = newVal.trim();
+            nameSpan.textContent = node.name;
+            this.syncChangesToNote();
+            this.autoFitColumn(0);
+        }, node, 0);
+
+        // Columns 1 to N: Metadata comments (#, ##, ...)
+        for (let c = 1; c < this.columns.length; c++) {
+            const rawVal = node.columns[c - 1] || '';
+            const prefix = '#'.repeat(c);
+            const cleanVal = rawVal.replace(/^#+\s*/, '').trim();
+            const displayText = cleanVal ? `${prefix} ${cleanVal}` : '';
+
+            const colMeta = lineEl.createDiv({ cls: 'pakcli-tree-col-meta' });
+            colMeta.dataset.colIndex = String(c);
+            colMeta.style.width = `${this.columns[c].width}px`;
+
+            const valSpan = colMeta.createSpan({
+                cls: 'pakcli-editable-val pakcli-tree-comment text-muted',
+                text: displayText,
+                attr: { title: 'Click to type comment' },
+            });
+
+            this.makeCellEditable(valSpan, (newVal) => {
+                const cleaned = newVal.replace(/^#+\s*/, '').trim();
+                while (node.columns.length < c) node.columns.push('');
+                node.columns[c - 1] = cleaned;
+                valSpan.textContent = cleaned ? `${prefix} ${cleaned}` : '';
                 this.syncChangesToNote();
-                this.autoFitColumn(0);
-            }, node, 0);
+                this.autoFitColumn(c);
+            }, node, c);
+        }
 
-            col0.addEventListener('dblclick', (e) => {
-                if (e.target === col0) {
-                    e.stopPropagation();
-                    this.autoFitColumn(0);
-                }
-            });
-
-            // Metadata Columns 1 to N
-            for (let c = 1; c < this.columns.length; c++) {
-                const cell = row.createDiv({ cls: 'pakcli-tree-cell pakcli-tree-cell-meta' });
-                cell.dataset.colIndex = String(c);
-                cell.style.top = stickyTop;
-                cell.style.zIndex = stickyZIndex;
-
-                const rawVal = node.columns[c - 1] || '';
-                const prefix = '#'.repeat(c);
-                const cleanVal = rawVal.replace(/^#+\s*/, '').trim();
-                const displayText = cleanVal ? `${prefix} ${cleanVal}` : '';
-
-                const valSpan = cell.createSpan({
-                    cls: 'pakcli-editable-val text-muted',
-                    text: displayText,
-                    attr: { title: 'Click to type comment' },
-                });
-                this.makeCellEditable(valSpan, (newVal) => {
-                    const cleaned = newVal.replace(/^#+\s*/, '').trim();
-                    while (node.columns.length < c) node.columns.push('');
-                    node.columns[c - 1] = cleaned;
-                    valSpan.textContent = cleaned ? `${prefix} ${cleaned}` : '';
-                    this.syncChangesToNote();
-                    this.autoFitColumn(c);
-                }, node, c);
-
-                cell.addEventListener('dblclick', (e) => {
-                    if (e.target === cell) {
-                        e.stopPropagation();
-                        this.autoFitColumn(c);
-                    }
-                });
-            }
-
-            // Children Container
-            if (node.isExpanded) {
-                const childrenContainer = dirBlock.createDiv({ cls: 'pakcli-tree-children' });
-                for (const child of node.children) {
-                    this.renderNode(childrenContainer, child, depth + 1);
-                }
-            }
-        } else {
-            // Leaf File Node Row
-            const row = parentContainer.createDiv({ cls: 'pakcli-tree-row is-file' });
-            row.dataset.nodeId = node.id;
-
-            // Column 0
-            const col0 = row.createDiv({ cls: 'pakcli-tree-cell pakcli-tree-cell-primary' });
-            col0.dataset.colIndex = '0';
-
-            if (asciiBranch) {
-                col0.createSpan({ cls: 'pakcli-tree-branch-prefix', text: asciiBranch });
-            }
-
-            // Live Editable File Name
-            const nameSpan = col0.createSpan({
-                cls: 'pakcli-editable-val pakcli-file-name',
-                text: node.name,
-                attr: { title: 'Click to type / Enter for new line / Tab to indent' },
-            });
-            this.makeCellEditable(nameSpan, (newVal) => {
-                node.name = newVal.trim();
-                nameSpan.textContent = node.name;
-                this.syncChangesToNote();
-                this.autoFitColumn(0);
-            }, node, 0);
-
-            col0.addEventListener('dblclick', (e) => {
-                if (e.target === col0) {
-                    e.stopPropagation();
-                    this.autoFitColumn(0);
-                }
-            });
-
-            // Metadata Columns 1 to N
-            for (let c = 1; c < this.columns.length; c++) {
-                const cell = row.createDiv({ cls: 'pakcli-tree-cell pakcli-tree-cell-meta' });
-                cell.dataset.colIndex = String(c);
-
-                const rawVal = node.columns[c - 1] || '';
-                const prefix = '#'.repeat(c);
-                const cleanVal = rawVal.replace(/^#+\s*/, '').trim();
-                const displayText = cleanVal ? `${prefix} ${cleanVal}` : '';
-
-                const valSpan = cell.createSpan({
-                    cls: 'pakcli-editable-val',
-                    text: displayText,
-                    attr: { title: 'Click to type comment' },
-                });
-                this.makeCellEditable(valSpan, (newVal) => {
-                    const cleaned = newVal.replace(/^#+\s*/, '').trim();
-                    while (node.columns.length < c) node.columns.push('');
-                    node.columns[c - 1] = cleaned;
-                    valSpan.textContent = cleaned ? `${prefix} ${cleaned}` : '';
-                    this.syncChangesToNote();
-                    this.autoFitColumn(c);
-                }, node, c);
-
-                cell.addEventListener('dblclick', (e) => {
-                    if (e.target === cell) {
-                        e.stopPropagation();
-                        this.autoFitColumn(c);
-                    }
-                });
+        // Render visible children if folder is expanded
+        if (node.isDirectory && node.isExpanded && node.children.length > 0) {
+            for (const child of node.children) {
+                this.renderNodeLines(parentContainer, child, depth + 1);
             }
         }
     }
@@ -635,7 +571,7 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
     private indentNode(node: TreeGridNode): void {
         const siblings = node.parent ? node.parent.children : this.parsed.rootNodes;
         const idx = siblings.indexOf(node);
-        if (idx <= 0) return; // Cannot indent first sibling
+        if (idx <= 0) return;
 
         const prevSibling = siblings[idx - 1];
         siblings.splice(idx, 1);
@@ -655,7 +591,7 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
     }
 
     private unindentNode(node: TreeGridNode): void {
-        if (!node.parent) return; // Already at root level
+        if (!node.parent) return;
 
         const parent = node.parent;
         const grandparent = parent.parent;
@@ -685,8 +621,11 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
     }
 
     private focusCell(nodeId: string, colIndex: number): void {
-        const selector = `.pakcli-tree-row[data-node-id="${nodeId}"] .pakcli-tree-cell[data-col-index="${colIndex}"] .pakcli-editable-val`;
-        const cell = this.bodyContainerEl.querySelector<HTMLElement>(selector);
+        const selector = colIndex === 0
+            ? `.pakcli-tree-line[data-node-id="${nodeId}"] .pakcli-tree-col-0 .pakcli-editable-val`
+            : `.pakcli-tree-line[data-node-id="${nodeId}"] .pakcli-tree-col-meta[data-col-index="${colIndex}"] .pakcli-editable-val`;
+
+        const cell = this.linesContainerEl.querySelector<HTMLElement>(selector);
         if (cell) {
             cell.click();
         }
@@ -737,7 +676,6 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
         element.addClass('is-editing');
         element.focus();
 
-        // Place cursor at the end of the text
         const range = document.createRange();
         range.selectNodeContents(element);
         range.collapse(false);
@@ -829,11 +767,9 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
             const file = app.vault.getAbstractFileByPath(this.ctx.sourcePath);
             if (!(file instanceof TFile)) return;
 
-            // Convert pixel width of col 0 to character width (approx 8.6px per char)
             const col0WidthPx = this.columns[0]?.width || 200;
             const col0TargetChars = Math.max(10, Math.round((col0WidthPx - 24) / 8.6));
 
-            // Col 1..N character spacing
             const colWidthsTargetChars: number[] = [];
             for (let i = 1; i < this.columns.length; i++) {
                 const w = this.columns[i]?.width || 120;
@@ -852,7 +788,6 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
             let updatedContent = '';
             let replaced = false;
 
-            // 1. Try exact sectionInfo line range replacement
             const sectionInfo = this.ctx.getSectionInfo?.(this.containerEl);
             if (sectionInfo && sectionInfo.lineStart !== undefined && sectionInfo.lineEnd !== undefined) {
                 const lines = fileContent.split(/\r?\n/);
@@ -864,7 +799,6 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
                 }
             }
 
-            // 2. Fallback: normalize line endings and replace exact source
             if (!replaced) {
                 const normFile = fileContent.replace(/\r\n/g, '\n');
                 const normSource = this.source.replace(/\r\n/g, '\n').trim();
