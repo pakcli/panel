@@ -64,23 +64,21 @@ export function getExtension(name: string): string | undefined {
 }
 
 /**
- * Computes indentation level from leading tabs and spaces.
+ * Computes raw indentation width (spaces and tabs).
  */
-function getIndentationLevel(line: string): number {
-    let tabs = 0;
+export function getRawLeadingWhitespace(line: string): number {
     let spaces = 0;
     for (let i = 0; i < line.length; i++) {
         const c = line[i];
         if (c === '\t') {
-            tabs++;
+            spaces += 4;
         } else if (c === ' ') {
-            spaces++;
+            spaces += 1;
         } else {
             break;
         }
     }
-    // 2 or 4 spaces per tab equivalent
-    return tabs + Math.floor(spaces / 2);
+    return spaces;
 }
 
 /**
@@ -151,7 +149,8 @@ export function extractNameAndColumns(rawTrimmed: string): { name: string; rawNa
 export function parseTreeGrid(source: string): ParsedTreeGrid {
     const lines = source.split(/\r?\n/);
     const rootNodes: TreeGridNode[] = [];
-    const stack: { node: TreeGridNode; depth: number }[] = [];
+    const nodeStack: { node: TreeGridNode; depth: number }[] = [];
+    const indentStack: number[] = [0];
     let maxCols = 0;
     let idCounter = 0;
 
@@ -161,7 +160,18 @@ export function parseTreeGrid(source: string): ParsedTreeGrid {
         // Skip markdown comments or metadata tags if any
         if (rawLine.trim().startsWith('<!--')) continue;
 
-        const depth = getIndentationLevel(rawLine);
+        const rawIndent = getRawLeadingWhitespace(rawLine);
+
+        // Normalize depth via indentStack so any indentation style (2-space, 4-space, 6-space, tabs) works seamlessly
+        if (rawIndent > indentStack[indentStack.length - 1]) {
+            indentStack.push(rawIndent);
+        } else {
+            while (indentStack.length > 1 && rawIndent < indentStack[indentStack.length - 1]) {
+                indentStack.pop();
+            }
+        }
+        const depth = indentStack.length - 1;
+
         const trimmedLine = rawLine.trim();
 
         const { name, rawName, columns } = extractNameAndColumns(trimmedLine);
@@ -187,20 +197,20 @@ export function parseTreeGrid(source: string): ParsedTreeGrid {
         };
 
         // Stack-based hierarchical tree assembly
-        while (stack.length > 0 && stack[stack.length - 1].depth >= depth) {
-            stack.pop();
+        while (nodeStack.length > 0 && nodeStack[nodeStack.length - 1].depth >= depth) {
+            nodeStack.pop();
         }
 
-        if (stack.length === 0) {
+        if (nodeStack.length === 0) {
             rootNodes.push(node);
         } else {
-            const parent = stack[stack.length - 1].node;
+            const parent = nodeStack[nodeStack.length - 1].node;
             node.parent = parent;
             parent.children.push(node);
         }
 
         if (isDir) {
-            stack.push({ node, depth });
+            nodeStack.push({ node, depth });
         }
     }
 
@@ -262,7 +272,9 @@ export function getMaxCol0Length(nodes: TreeGridNode[]): number {
     let max = 0;
     const traverse = (list: TreeGridNode[]) => {
         for (const n of list) {
-            const len = (n.depth * 4) + 2 + n.name.length;
+            const prefix = getAsciiBranchPrefix(n, nodes);
+            const chevronLen = n.isDirectory ? 2 : (n.depth === 0 ? 2 : 0);
+            const len = prefix.length + chevronLen + n.name.length;
             if (len > max) max = len;
             if (n.children && n.children.length > 0) {
                 traverse(n.children);

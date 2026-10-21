@@ -742,6 +742,11 @@ export default class PakCLITablePlugin extends Plugin {
 			ctx.addChild(new DiagramRenderer(this, source, el, ctx));
 		});
 
+		this.registerMarkdownCodeBlockProcessor('tree-interactive', async (source, el, ctx) => {
+			const interactiveSource = source.includes('-interactive:') ? source : ('-interactive:true\n' + source);
+			ctx.addChild(new DiagramRenderer(this, interactiveSource, el, ctx));
+		});
+
 		this.registerMarkdownCodeBlockProcessor('timeline-narrative', async (source, el, ctx) => {
 			ctx.addChild(new TimelineNarrativeRenderer(this.app, source, el, ctx));
 		});

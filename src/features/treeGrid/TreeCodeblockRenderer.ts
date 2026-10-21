@@ -14,7 +14,7 @@
 
 import { MarkdownRenderChild, MarkdownPostProcessorContext, Notice, TFile } from 'obsidian';
 import { ParsedTreeGrid, TreeGridColumn, TreeGridNode } from './types';
-import { parseTreeGrid, serializeTreeToSource, getMaxCol0Length } from './treeParser';
+import { parseTreeGrid, serializeTreeToSource, getMaxCol0Length, getAsciiBranchPrefix } from './treeParser';
 
 export class TreeCodeblockRenderer extends MarkdownRenderChild {
     private source: string;
@@ -102,8 +102,9 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
             let maxChars = title.length;
             if (i === 0) {
                 for (const node of allNodes) {
-                    const indent = (node.depth * 4) + 2;
-                    const len = indent + node.name.length;
+                    const prefix = getAsciiBranchPrefix(node, this.parsed.rootNodes);
+                    const chevronLen = node.isDirectory ? 2 : (node.depth === 0 ? 2 : 0);
+                    const len = prefix.length + chevronLen + node.name.length;
                     if (len > maxChars) maxChars = len;
                 }
             } else {
@@ -159,12 +160,40 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
         const copyBtn = this.cardContainerEl.createEl('button', {
             cls: 'pakcli-tree-copy-btn',
             text: '📋',
-            attr: { title: 'Copy clean codeblock content' },
+            attr: { title: 'Copy clean formatted tree' },
         });
         copyBtn.addEventListener('click', (e) => {
             e.stopPropagation();
-            navigator.clipboard.writeText(this.source);
-            new Notice('✓ Copied codeblock to clipboard');
+            const lines: string[] = [];
+            const flatNodes = this.getFlattenedVisibleNodes();
+            for (const node of flatNodes) {
+                const branchPrefix = getAsciiBranchPrefix(node, this.parsed.rootNodes);
+                const chevronPrefix = node.isDirectory
+                    ? (node.children.length > 0 ? (node.isExpanded ? 'v ' : '> ') : '  ')
+                    : (node.depth === 0 ? '  ' : '');
+                const pathSegment = branchPrefix + chevronPrefix + node.name;
+                let lineStr = pathSegment;
+                let curChars = pathSegment.length;
+
+                for (let c = 1; c < this.columns.length; c++) {
+                    const rawVal = node.columns[c - 1] || '';
+                    const cleanVal = rawVal.replace(/^#+\s*/, '').trim();
+
+                    let targetColStartChars = 0;
+                    for (let k = 0; k < c; k++) {
+                        targetColStartChars += Math.max(4, Math.round(this.columns[k].width / this.charWidthPx));
+                    }
+                    const spacesCount = Math.max(2, targetColStartChars - curChars);
+                    curChars += spacesCount;
+                    if (cleanVal) {
+                        lineStr += ' '.repeat(spacesCount) + cleanVal;
+                        curChars += cleanVal.length;
+                    }
+                }
+                lines.push(lineStr);
+            }
+            navigator.clipboard.writeText(lines.join('\n'));
+            new Notice('✓ Copied tree to clipboard');
         });
 
         // Main Tree Body (relative wrapper for overlay and code lines)
@@ -219,10 +248,17 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
                 lineEl.removeClass('cm-active');
             });
 
-            // Build pure text line with leading indentation spaces and offset spaces for comments
-            const leadingSpacesCount = (node.depth * 4) + 2;
-            let fullLineText = ' '.repeat(leadingSpacesCount) + node.name;
-            let currentCursorChars = leadingSpacesCount + node.name.length;
+            // Authentic ASCII tree branch prefix: ├── , └── , │   
+            const branchPrefix = getAsciiBranchPrefix(node, this.parsed.rootNodes);
+
+            // Folder chevron indicator: v  or >  (or empty for root/leaf files)
+            const chevronPrefix = node.isDirectory
+                ? (node.children.length > 0 ? (node.isExpanded ? 'v ' : '> ') : '  ')
+                : (node.depth === 0 ? '  ' : '');
+
+            const pathSegment = branchPrefix + chevronPrefix + node.name;
+            let fullLineText = pathSegment;
+            let currentCursorChars = pathSegment.length;
 
             for (let c = 1; c < this.columns.length; c++) {
                 const rawVal = node.columns[c - 1] || '';
@@ -243,7 +279,7 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
                 }
             }
 
-            // PURE TEXT ELEMENT ONLY: Plain text node!
+            // PURE TEXT ELEMENT ONLY: 100% Copy-pasteable authentic tree!
             lineEl.textContent = fullLineText;
         }
     }
@@ -335,68 +371,20 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
             });
         }
 
-        // 2. Render SVG Continuous Tree Branches & Chevrons (Matching Blue User Guide)
-        this.renderTreeBranchesAndChevrons();
+        // 2. Render Interactive Chevrons (v / >) matching character position
+        this.renderInteractiveChevrons();
     }
 
-    private renderTreeBranchesAndChevrons(): void {
+    private renderInteractiveChevrons(): void {
         const visibleNodes = this.getFlattenedVisibleNodes();
-        const nodeIndexMap = new Map<TreeGridNode, number>();
-        visibleNodes.forEach((node, idx) => nodeIndexMap.set(node, idx));
 
-        const getMidY = (idx: number) => this.paddingTopPx + (idx * this.ROW_HEIGHT_PX) + (this.ROW_HEIGHT_PX / 2);
-
-        // Recursively draw branches for parent nodes
-        const drawBranches = (nodes: TreeGridNode[]) => {
-            for (const parent of nodes) {
-                if (parent.children && parent.children.length > 0 && parent.isExpanded) {
-                    const firstChild = parent.children[0];
-                    const lastChild = parent.children[parent.children.length - 1];
-
-                    const firstIdx = nodeIndexMap.get(firstChild);
-                    const lastIdx = nodeIndexMap.get(lastChild);
-                    const parentIdx = nodeIndexMap.get(parent);
-
-                    if (firstIdx !== undefined && lastIdx !== undefined) {
-                        const trunkX = this.paddingLeftPx + (((parent.depth * 4) + 1) * this.charWidthPx) + (this.charWidthPx / 2);
-                        const startY = parentIdx !== undefined ? getMidY(parentIdx) + 8 : getMidY(firstIdx);
-                        const endY = getMidY(lastIdx);
-
-                        // Vertical Trunk Line connecting children
-                        const trunkPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-                        trunkPath.setAttribute('d', `M ${trunkX} ${startY} V ${endY}`);
-                        trunkPath.setAttribute('class', 'pakcli-svg-branch');
-                        this.svgOverlayEl.appendChild(trunkPath);
-
-                        // Horizontal Branch Ticks (├── and └──) into each child
-                        for (const child of parent.children) {
-                            const cIdx = nodeIndexMap.get(child);
-                            if (cIdx !== undefined) {
-                                const cMidY = getMidY(cIdx);
-                                const childIndentX = this.paddingLeftPx + (((child.depth * 4) + 2) * this.charWidthPx);
-                                const tickEndX = childIndentX - 3;
-
-                                const tickPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-                                tickPath.setAttribute('d', `M ${trunkX} ${cMidY} H ${tickEndX}`);
-                                tickPath.setAttribute('class', 'pakcli-svg-branch');
-                                this.svgOverlayEl.appendChild(tickPath);
-                            }
-                        }
-                    }
-
-                    drawBranches(parent.children);
-                }
-            }
-        };
-
-        drawBranches(this.parsed.rootNodes);
-
-        // 3. Render Chevrons (v / >) in front of folder items
         for (let i = 0; i < visibleNodes.length; i++) {
             const node = visibleNodes[i];
             if (node.isDirectory && node.children.length > 0) {
-                const chevronX = this.paddingLeftPx + ((node.depth * 4) * this.charWidthPx);
-                const chevronY = this.paddingTopPx + (i * this.ROW_HEIGHT_PX) + 4;
+                const branchPrefix = getAsciiBranchPrefix(node, this.parsed.rootNodes);
+                const chevronCharOffset = branchPrefix.length;
+                const chevronX = this.paddingLeftPx + (chevronCharOffset * this.charWidthPx);
+                const chevronY = this.paddingTopPx + (i * this.ROW_HEIGHT_PX) + 3;
 
                 const chevronEl = this.controlsContainerEl.createSpan({
                     cls: 'pakcli-overlay-chevron',
@@ -526,8 +514,9 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
 
         if (colIndex === 0) {
             for (const node of visibleNodes) {
-                const indent = (node.depth * 4) + 2;
-                const len = indent + node.name.length;
+                const prefix = getAsciiBranchPrefix(node, this.parsed.rootNodes);
+                const chevronLen = node.isDirectory ? 2 : (node.depth === 0 ? 2 : 0);
+                const len = prefix.length + chevronLen + node.name.length;
                 if (len > maxChars) maxChars = len;
             }
         } else {
