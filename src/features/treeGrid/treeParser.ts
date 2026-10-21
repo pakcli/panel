@@ -105,6 +105,69 @@ export function parseCommentColumns(rawComment: string): string[] {
 }
 
 /**
+ * Checks if a node is the last child among its siblings.
+ */
+export function isLastChild(node: TreeGridNode, rootNodes: TreeGridNode[]): boolean {
+    if (!node.parent) {
+        const idx = rootNodes.indexOf(node);
+        return idx === rootNodes.length - 1;
+    }
+    const siblings = node.parent.children;
+    const idx = siblings.indexOf(node);
+    return idx === siblings.length - 1;
+}
+
+/**
+ * Computes ASCII L-branching prefix for rendering.
+ * In source mode, no branch chars are present; they are dynamically computed for display.
+ */
+export function getAsciiBranchPrefix(node: TreeGridNode, rootNodes: TreeGridNode[]): string {
+    if (node.depth === 0) {
+        return '';
+    }
+
+    const rails: string[] = [];
+    let curr = node.parent;
+
+    while (curr && curr.depth > 0) {
+        const hasNext = !isLastChild(curr, rootNodes);
+        rails.unshift(hasNext ? '│   ' : '    ');
+        curr = curr.parent;
+    }
+
+    const isLast = isLastChild(node, rootNodes);
+    const branch = isLast ? '└── ' : '├── ';
+
+    return rails.join('') + branch;
+}
+
+/**
+ * Serializes TreeGridNodes back to clean plain-text source without any branch characters.
+ */
+export function serializeTreeToSource(nodes: TreeGridNode[], indentLevel = 0): string[] {
+    const lines: string[] = [];
+    for (const node of nodes) {
+        const indent = '\t'.repeat(indentLevel);
+        let line = indent + node.name;
+        if (node.isDirectory && node.rawName.endsWith('/')) {
+            line += '/';
+        }
+        if (node.columns && node.columns.length > 0) {
+            const formattedCols = node.columns.map((c, i) => {
+                const prefix = i === 0 ? '#' : '#'.repeat(i + 1);
+                return `${prefix} ${c}`;
+            }).join(' ');
+            line += `    ${formattedCols}`;
+        }
+        lines.push(line);
+        if (node.children && node.children.length > 0) {
+            lines.push(...serializeTreeToSource(node.children, indentLevel + 1));
+        }
+    }
+    return lines;
+}
+
+/**
  * Main parser: converts raw markdown codeblock source to a hierarchical TreeGridNode structure.
  */
 export function parseTreeGrid(source: string): ParsedTreeGrid {
@@ -120,8 +183,15 @@ export function parseTreeGrid(source: string): ParsedTreeGrid {
         // Skip markdown comments or metadata tags if any
         if (rawLine.trim().startsWith('<!--')) continue;
 
+        // Strip any existing ASCII branch prefix if user pasted ASCII tree (├──, └──, │)
+        // so source mode remains pure
+        const cleanedLine = rawLine.replace(/^[│\s]*[├└]──\s*/, (match) => {
+            // Keep rough indentation if needed
+            return '';
+        });
+
         const depth = getIndentationLevel(rawLine);
-        const trimmedLine = rawLine.trim();
+        const trimmedLine = rawLine.trim().replace(/^[│\s]*[├└]──\s*/, '');
 
         // Separate node name from comment columns
         // e.g. "player.csv # Roster atlet ## Tabular"
@@ -181,13 +251,13 @@ export function parseTreeGrid(source: string): ParsedTreeGrid {
 
     // Total columns = Name column (0) + comment columns
     const totalColumns = Math.max(1, maxCols + 1);
-    const columnTitles: string[] = ['Name / Path'];
+    const columnTitles: string[] = ['NAME / PATH'];
 
     for (let i = 1; i < totalColumns; i++) {
-        if (i === 1) columnTitles.push('Description (#)');
-        else if (i === 2) columnTitles.push('Category (##)');
-        else if (i === 3) columnTitles.push('Details (###)');
-        else columnTitles.push(`Column ${i + 1}`);
+        if (i === 1) columnTitles.push('DESCRIPTION (#)');
+        else if (i === 2) columnTitles.push('CATEGORY (##)');
+        else if (i === 3) columnTitles.push('DETAILS (###)');
+        else columnTitles.push(`COLUMN ${i + 1}`);
     }
 
     return {

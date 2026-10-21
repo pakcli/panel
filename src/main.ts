@@ -6991,7 +6991,7 @@ export default class PakCLITablePlugin extends Plugin {
 		for (const alias of aliases) {
 			try {
 				this.registerMarkdownCodeBlockProcessor(alias, (source, el, ctx) => {
-					ctx.addChild(new TreeCodeblockRenderer(el, source, ctx));
+					ctx.addChild(new TreeCodeblockRenderer(el, source, ctx, this));
 				});
 			} catch {
 				// Prevent crashing if already registered
