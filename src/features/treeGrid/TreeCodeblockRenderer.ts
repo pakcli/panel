@@ -1,25 +1,26 @@
 /**
  * TreeCodeblockRenderer.ts
- * Authentic Unreplaced Codeblock with Extra GUI Overlay.
- * 100% Not a Table: Native <pre><code> lines, zero cell grid, zero horizontal lines.
- *
- * Layer 1 (Base Codeblock):
- * - Native <pre><code> text flow.
- * - Monospace font, codeblock background.
+ * Authentic Native Codeblock Frame with Seamless Continuous CSS Tree Branches & Extra GUI Overlay.
+ * 
+ * 100% Native Codeblock Look:
+ * - Proper codeblock card frame (border, rounded corners, native code background, padding).
+ * - Native Copy Code button (📋) in top-right copying clean indented source text.
+ * - Gap-Free Continuous CSS Tree Branches (├──, └──, │) via 100% height vector lines.
+ * - Minimalist fold chevrons (v / >) for directories.
  * - Dynamic column width offset for #note comments.
- * - Zero empty cell divs on lines without comments.
+ * - Zero empty cell boxes on lines without comments.
  * - Smooth whole-row hover highlight.
- *
- * Layer 2 (Extra GUI Overlay):
- * - Baris Pohon (ASCII branches: ├──, └──, │   ) and Chevron fold toggles (v / >).
- * - Floating Header Ruler with column controls (::, <, >, #, +, -).
- * - Draggable Vertical Guideline Wires (position: absolute) to adjust column spacing.
- * - Bi-directional markdown note sync without pipe symbols.
+ * - Draggable guideline wires and floating top ruler.
  */
 
 import { MarkdownRenderChild, MarkdownPostProcessorContext, Notice, TFile } from 'obsidian';
 import { ParsedTreeGrid, TreeGridColumn, TreeGridNode } from './types';
-import { parseTreeGrid, getAsciiBranchPrefix, serializeTreeToSource, getMaxCol0Length } from './treeParser';
+import { parseTreeGrid, serializeTreeToSource, getMaxCol0Length, isLastChild } from './treeParser';
+
+interface BranchRails {
+    ancestors: boolean[];
+    isLast: boolean;
+}
 
 export class TreeCodeblockRenderer extends MarkdownRenderChild {
     private source: string;
@@ -28,11 +29,9 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
     private parsed: ParsedTreeGrid;
     private columns: TreeGridColumn[] = [];
 
-    private rootContainerEl!: HTMLElement;
-    private scrollWrapperEl!: HTMLElement;
+    private cardPreEl!: HTMLElement;
+    private codeEl!: HTMLElement;
     private rulerOverlayEl!: HTMLElement;
-    private codeblockPreEl!: HTMLElement;
-    private codeblockCodeEl!: HTMLElement;
     private guidelinesOverlayEl!: HTMLElement;
     private linesContainerEl!: HTMLElement;
 
@@ -83,9 +82,9 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
             let maxChars = title.length;
             if (i === 0) {
                 for (const node of allNodes) {
-                    const branch = getAsciiBranchPrefix(node, this.parsed.rootNodes);
+                    const indentChars = node.depth * 2;
                     const fold = node.children.length > 0 ? 2 : 0;
-                    const len = branch.length + fold + node.name.length;
+                    const len = indentChars + fold + node.name.length;
                     if (len > maxChars) maxChars = len;
                 }
             } else {
@@ -99,9 +98,9 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
             }
 
             const maxTreeChars = getMaxCol0Length(this.parsed.rootNodes);
-            const treeMinPx = Math.ceil((maxTreeChars + 2) * 8.6) + 24;
-            const minWidth = i === 0 ? Math.max(80, treeMinPx) : 50;
-            const snugWidth = Math.ceil(maxChars * 8.6) + 32;
+            const treeMinPx = Math.ceil((maxTreeChars + 2) * 8.6) + 40;
+            const minWidth = i === 0 ? Math.max(100, treeMinPx) : 50;
+            const snugWidth = Math.ceil(maxChars * 8.6) + 40;
             const width = Math.max(minWidth, Math.min(800, snugWidth));
 
             this.columns.push({
@@ -118,25 +117,66 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
         containerEl.empty();
         containerEl.addClass('pakcli-tree-container-root');
 
-        // Scrollable Wrapper
-        this.scrollWrapperEl = containerEl.createDiv({ cls: 'pakcli-tree-scroll-wrapper' });
+        // Authentic Native Codeblock Container (<pre class="HyperMD-codeblock"><code>)
+        this.cardPreEl = containerEl.createEl('pre', {
+            cls: 'pakcli-tree-native-codeblock HyperMD-codeblock',
+        });
+
+        // Native Copy Button (📋)
+        const copyBtn = this.cardPreEl.createEl('button', {
+            cls: 'pakcli-tree-copy-btn',
+            attr: { title: 'Copy code' },
+        });
+        copyBtn.setText('📋');
+        copyBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            this.copyCleanSource(copyBtn);
+        });
 
         // Layer 2A: Floating Header Ruler Overlay
-        this.rulerOverlayEl = this.scrollWrapperEl.createDiv({ cls: 'pakcli-tree-ruler-overlay' });
+        this.rulerOverlayEl = this.cardPreEl.createDiv({ cls: 'pakcli-tree-ruler-overlay' });
         this.renderRulerOverlay();
 
-        // Layer 1: Native Codeblock Element (<pre><code>)
-        this.codeblockPreEl = this.scrollWrapperEl.createEl('pre', { cls: 'pakcli-tree-native-codeblock' });
-        this.codeblockCodeEl = this.codeblockPreEl.createEl('code', { cls: 'pakcli-tree-code-content' });
+        // Code Content Wrapper
+        this.codeEl = this.cardPreEl.createEl('code', { cls: 'pakcli-tree-code-content' });
 
-        // Layer 2B: Draggable Guidelines Overlay
-        this.guidelinesOverlayEl = this.codeblockPreEl.createDiv({ cls: 'pakcli-tree-guidelines-overlay' });
+        // Layer 2B: Draggable Guidelines Overlay (position: absolute)
+        this.guidelinesOverlayEl = this.cardPreEl.createDiv({ cls: 'pakcli-tree-guidelines-overlay' });
 
         // Codeblock Lines Container
-        this.linesContainerEl = this.codeblockCodeEl.createDiv({ cls: 'pakcli-codeblock-lines' });
+        this.linesContainerEl = this.codeEl.createDiv({ cls: 'pakcli-codeblock-lines' });
 
         this.renderLines();
         this.renderGuidelines();
+    }
+
+    private copyCleanSource(btnEl: HTMLElement): void {
+        const col0WidthPx = this.columns[0]?.width || 200;
+        const col0TargetChars = Math.max(10, Math.round((col0WidthPx - 24) / 8.6));
+
+        const colWidthsTargetChars: number[] = [];
+        for (let i = 1; i < this.columns.length; i++) {
+            const w = this.columns[i]?.width || 120;
+            colWidthsTargetChars[i] = Math.max(4, Math.round((w - 24) / 8.6));
+        }
+
+        const lines = serializeTreeToSource(
+            this.parsed.rootNodes,
+            col0TargetChars,
+            colWidthsTargetChars
+        );
+        const textToCopy = lines.join('\n');
+
+        navigator.clipboard.writeText(textToCopy).then(() => {
+            btnEl.setText('✓');
+            new Notice('✓ Copied tree text to clipboard');
+            setTimeout(() => {
+                btnEl.setText('📋');
+            }, 1500);
+        }).catch((err) => {
+            console.warn('Copy failed:', err);
+            new Notice('Failed to copy');
+        });
     }
 
     private renderRulerOverlay(): void {
@@ -149,7 +189,7 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
             colEl.style.width = `${col.width}px`;
 
             if (i === 0) {
-                // Column 0 Header
+                // Column 0: PATH and + button
                 colEl.createSpan({ cls: 'pakcli-ruler-title', text: col.title });
 
                 const addBtn = colEl.createSpan({ cls: 'pakcli-ruler-btn pakcli-ruler-btn-add', text: '+' });
@@ -159,7 +199,7 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
                     this.addColumn(0);
                 });
             } else {
-                // Column 1..N Header: :: drag handle, < >, title, +, -
+                // Column 1..N: Reorder ::, Shift < >, Title, +, -
                 const dragHandle = colEl.createSpan({ cls: 'pakcli-ruler-drag-handle', text: '::' });
                 dragHandle.title = 'Drag :: to reorder column';
 
@@ -195,7 +235,7 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
                     this.deleteColumn(i);
                 });
 
-                // HTML5 Drag-and-drop
+                // Drag and drop reordering
                 colEl.setAttribute('draggable', 'true');
                 colEl.addEventListener('dragstart', (e) => {
                     e.dataTransfer?.setData('text/plain', String(i));
@@ -292,11 +332,9 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
     }
 
     private updateColumnWidthsInDOM(colIndex: number, newWidth: number): void {
-        // Update ruler header
         const rulerCol = this.rulerOverlayEl.querySelector<HTMLElement>(`.pakcli-ruler-col[data-col-index="${colIndex}"]`);
         if (rulerCol) rulerCol.style.width = `${newWidth}px`;
 
-        // Update all line spans for this column
         const selector = colIndex === 0
             ? '.pakcli-codeblock-line .pakcli-tree-item-area'
             : `.pakcli-codeblock-line .pakcli-tree-note-area[data-col-index="${colIndex}"]`;
@@ -305,7 +343,6 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
             el.style.width = `${newWidth}px`;
         });
 
-        // Reposition guidelines
         let currentLeft = 0;
         const allGuidelines = this.guidelinesOverlayEl.querySelectorAll<HTMLElement>('.pakcli-col-guideline');
         for (let i = 0; i < this.columns.length - 1; i++) {
@@ -388,7 +425,7 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
         this.linesContainerEl.querySelectorAll<HTMLElement>(selector).forEach((el) => {
             const text = el.textContent || '';
             if (text.trim()) {
-                const width = Math.ceil(text.length * 8.6) + 24;
+                const width = Math.ceil(text.length * 8.6) + 40;
                 if (width > maxContentWidth) maxContentWidth = width;
             }
         });
@@ -421,32 +458,57 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
         }
     }
 
+    private getBranchRails(node: TreeGridNode): BranchRails {
+        if (node.depth === 0) {
+            return { ancestors: [], isLast: false };
+        }
+
+        const ancestors: boolean[] = [];
+        let curr = node.parent;
+
+        while (curr && curr.depth > 0) {
+            const hasNext = !isLastChild(curr, this.parsed.rootNodes);
+            ancestors.unshift(hasNext);
+            curr = curr.parent;
+        }
+
+        const isLast = isLastChild(node, this.parsed.rootNodes);
+        return { ancestors, isLast };
+    }
+
     /**
-     * Renders a single codeblock line:
-     * - Column 0 Area: Extra GUI Baris Pohon (├──, └──) + Chevron (v / >) + Item Name.
-     * - Columns 1..N: Only rendered if comments exist, offset by column width.
-     * - Zero table cells, zero horizontal lines, zero empty right boxes!
+     * Renders a single codeblock line with seamless CSS continuous branches (zero gaps)
      */
     private renderNodeLine(parentContainer: HTMLElement, node: TreeGridNode, depth: number): void {
-        const asciiBranch = getAsciiBranchPrefix(node, this.parsed.rootNodes);
-
-        // A single continuous line of codeblock text
         const lineEl = parentContainer.createDiv({
             cls: `pakcli-codeblock-line ${node.isDirectory ? 'is-directory' : 'is-file'}`,
         });
         lineEl.dataset.nodeId = node.id;
 
-        // Column 0 Item Area (Tree Baris Pohon + Fold Chevron + Item Name)
+        // Column 0 Item Area
         const col0Area = lineEl.createDiv({ cls: 'pakcli-tree-item-area' });
         col0Area.dataset.colIndex = '0';
         col0Area.style.width = `${this.columns[0].width}px`;
 
-        // Extra GUI Layer: Baris Pohon (├──, └──, │   )
-        if (asciiBranch) {
-            col0Area.createSpan({ cls: 'pakcli-tree-gui-branch', text: asciiBranch });
+        // Seamless CSS Vector Tree Branches (100% gap-free connectors)
+        if (node.depth > 0) {
+            const { ancestors, isLast } = this.getBranchRails(node);
+            const branchContainer = col0Area.createSpan({ cls: 'pakcli-branch-container' });
+
+            // Ancestor continuous vertical trunks
+            for (const hasTrunk of ancestors) {
+                branchContainer.createSpan({
+                    cls: `pakcli-branch-seg ${hasTrunk ? 'trunk' : 'empty'}`,
+                });
+            }
+
+            // Current node connector (corner └── vs tee ├──)
+            branchContainer.createSpan({
+                cls: `pakcli-branch-seg ${isLast ? 'corner' : 'tee'}`,
+            });
         }
 
-        // Extra GUI Layer: Minimalist Fold Chevron (v / >) only for directories with children
+        // Minimalist fold chevron (v / >) for directories with children
         if (node.isDirectory && node.children.length > 0) {
             const foldBtn = col0Area.createSpan({
                 cls: 'pakcli-tree-gui-fold',
@@ -460,7 +522,7 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
             });
         }
 
-        // Item Name (Editable in place)
+        // Item Name
         const nameSpan = col0Area.createSpan({
             cls: `pakcli-editable-val ${node.isDirectory ? 'pakcli-folder-name' : 'pakcli-file-name'}`,
             text: node.name,
@@ -473,8 +535,7 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
             this.autoFitColumn(0);
         }, node, 0);
 
-        // Columns 1 to N: Offset #note## areas
-        // Notice: If line has no comments, col0Area is all that exists! No empty boxes on the right!
+        // Columns 1 to N: Offset #note## comments
         for (let c = 1; c < this.columns.length; c++) {
             const rawVal = node.columns[c - 1] || '';
             const prefix = '#'.repeat(c);
@@ -501,7 +562,7 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
             }, node, c);
         }
 
-        // Render visible children if folder is expanded
+        // Render visible children if expanded
         if (node.isDirectory && node.isExpanded && node.children.length > 0) {
             for (const child of node.children) {
                 this.renderNodeLine(parentContainer, child, depth + 1);

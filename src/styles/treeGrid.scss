@@ -1,12 +1,13 @@
 /* ==========================================================================
    treeGrid.scss
-   Authentic Unreplaced Codeblock with Extra GUI Overlay
+   Authentic Native Codeblock Frame with Seamless Continuous CSS Tree Branches & Extra GUI Overlay
    100% Not a Table: Native <pre><code> lines, zero cell grid, zero horizontal lines
    ========================================================================== */
 
 /* 1. Root Container */
 .pakcli-tree-container-root {
-    margin: 8px 0;
+    margin: 1em 0;
+    position: relative;
     background: transparent !important;
     font-family: var(--font-monospace, monospace);
     font-size: 0.85rem;
@@ -15,21 +16,61 @@
     -webkit-user-select: text !important;
 }
 
-/* 2. Scrollable Wrapper */
-.pakcli-tree-scroll-wrapper {
-    max-height: 560px;
-    overflow: auto;
-    position: relative;
-    background: transparent !important;
+/* 2. Authentic Native Codeblock Container (<pre class="HyperMD-codeblock"><code>) */
+.pakcli-tree-native-codeblock {
+    margin: 0 !important;
+    padding: 10px 14px !important;
+    border: 1px solid var(--code-border, var(--background-modifier-border)) !important;
+    border-radius: var(--radius-m, 8px) !important;
+    background: var(--code-background, var(--background-primary-alt)) !important;
+    font-family: var(--font-monospace, monospace) !important;
+    font-size: 0.85rem !important;
+    line-height: 1.5 !important;
+    position: relative !important;
+    box-shadow: none !important;
+    overflow-x: auto !important;
+
+    .pakcli-tree-code-content {
+        background: transparent !important;
+        border: none !important;
+        padding: 0 !important;
+        display: block;
+    }
 }
 
-/* 3. Layer 2A: Floating Header Ruler Overlay */
+/* 3. Native Copy Button (📋) */
+.pakcli-tree-copy-btn {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    z-index: 30;
+    padding: 4px 6px;
+    font-size: 0.78rem;
+    line-height: 1;
+    background: var(--background-primary);
+    color: var(--text-muted);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 4px;
+    cursor: pointer;
+    opacity: 0.7;
+    transition: all 0.15s ease;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+
+    &:hover {
+        opacity: 1;
+        color: var(--text-normal);
+        background: var(--background-modifier-hover);
+        border-color: var(--interactive-accent);
+    }
+}
+
+/* 4. Layer 2A: Floating Header Ruler Overlay */
 .pakcli-tree-ruler-overlay {
     display: flex;
     align-items: center;
     border-bottom: 1px solid rgba(var(--background-modifier-border-rgb, 128, 128, 128), 0.35);
-    padding: 2px 0 4px 0;
-    margin-bottom: 4px;
+    padding: 0 0 6px 0;
+    margin-bottom: 6px;
     background: transparent !important;
     user-select: none;
     -webkit-user-select: none;
@@ -122,32 +163,10 @@
     }
 }
 
-/* 4. Layer 1: Native Codeblock Element (<pre><code>) */
-.pakcli-tree-native-codeblock {
-    margin: 0 !important;
-    padding: 6px 10px !important;
-    border: 1px solid var(--code-border, var(--background-modifier-border)) !important;
-    border-radius: var(--radius-s, 4px) !important;
-    background: var(--code-background, var(--background-primary-alt)) !important;
-    font-family: var(--font-monospace, monospace) !important;
-    font-size: 0.85rem !important;
-    line-height: 1.5 !important;
-    position: relative !important;
-    box-shadow: none !important;
-    overflow-x: auto !important;
-
-    .pakcli-tree-code-content {
-        background: transparent !important;
-        border: none !important;
-        padding: 0 !important;
-        display: block;
-    }
-}
-
 /* 5. Layer 2B: Draggable Guidelines Overlay */
 .pakcli-tree-guidelines-overlay {
     position: absolute;
-    top: 0;
+    top: 38px;
     bottom: 0;
     left: 0;
     right: 0;
@@ -194,10 +213,10 @@
 
 .pakcli-codeblock-line {
     display: flex;
-    align-items: center;
+    align-items: stretch;
     line-height: 1.5;
     min-height: 24px;
-    padding: 1px 0;
+    padding: 0;
     border: none !important;
     border-bottom: none !important;
     box-shadow: none !important;
@@ -236,14 +255,76 @@
         align-items: center;
     }
 
-    /* Extra GUI Layer: Baris Pohon (├──, └──, │   ) */
-    .pakcli-tree-gui-branch {
-        font-family: var(--font-monospace, monospace);
-        color: var(--text-muted);
-        white-space: pre;
-        letter-spacing: 0;
-        user-select: text;
+    /* Seamless Vector CSS Tree Branches (100% Gap-Free Connectors) */
+    .pakcli-branch-container {
+        display: inline-flex;
+        align-items: stretch;
+        height: 100%;
+        min-height: 24px;
         flex-shrink: 0;
+        user-select: none;
+        line-height: 1;
+    }
+
+    .pakcli-branch-seg {
+        width: 18px;
+        height: 100%;
+        min-height: 24px;
+        position: relative;
+        box-sizing: border-box;
+        flex-shrink: 0;
+
+        &.trunk::after {
+            content: '';
+            position: absolute;
+            left: 8px;
+            top: 0;
+            bottom: 0;
+            width: 1px;
+            background: rgba(var(--background-modifier-border-rgb, 128, 128, 128), 0.55);
+        }
+
+        &.tee {
+            &::before {
+                content: '';
+                position: absolute;
+                left: 8px;
+                top: 0;
+                bottom: 0;
+                width: 1px;
+                background: rgba(var(--background-modifier-border-rgb, 128, 128, 128), 0.55);
+            }
+            &::after {
+                content: '';
+                position: absolute;
+                left: 8px;
+                top: 50%;
+                width: 10px;
+                height: 1px;
+                background: rgba(var(--background-modifier-border-rgb, 128, 128, 128), 0.55);
+            }
+        }
+
+        &.corner {
+            &::before {
+                content: '';
+                position: absolute;
+                left: 8px;
+                top: 0;
+                height: 50%;
+                width: 1px;
+                background: rgba(var(--background-modifier-border-rgb, 128, 128, 128), 0.55);
+            }
+            &::after {
+                content: '';
+                position: absolute;
+                left: 8px;
+                top: 50%;
+                width: 10px;
+                height: 1px;
+                background: rgba(var(--background-modifier-border-rgb, 128, 128, 128), 0.55);
+            }
+        }
     }
 
     /* Extra GUI Layer: Minimalist Fold Chevron */
@@ -252,7 +333,8 @@
         color: var(--text-muted);
         cursor: pointer;
         user-select: none;
-        margin-right: 3px;
+        margin-right: 4px;
+        font-weight: 700;
 
         &:hover {
             color: var(--interactive-accent);
