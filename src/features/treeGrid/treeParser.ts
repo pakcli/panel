@@ -262,7 +262,7 @@ export function getMaxCol0Length(nodes: TreeGridNode[]): number {
     let max = 0;
     const traverse = (list: TreeGridNode[]) => {
         for (const n of list) {
-            const len = (n.depth * 4) + n.name.length;
+            const len = (n.depth * 4) + 2 + n.name.length;
             if (len > max) max = len;
             if (n.children && n.children.length > 0) {
                 traverse(n.children);
@@ -294,7 +294,7 @@ export function serializeTreeToSource(
         }
 
         if (node.columns && node.columns.length > 0) {
-            const itemVisualLength = (node.depth * 4) + node.name.length;
+            const itemVisualLength = (node.depth * 4) + 2 + node.name.length;
             const spacesCount = Math.max(2, effectiveCol0 - itemVisualLength);
             line += ' '.repeat(spacesCount);
 

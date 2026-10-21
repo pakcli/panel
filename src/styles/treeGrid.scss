@@ -1,49 +1,81 @@
 /* ==========================================================================
    treeGrid.scss
-   Authentic Unreplaced Native Codeblock with Floating Extra GUI Overlay
+   Authentic Native Codeblock with Floating Extra GUI Overlay
    100% Zero DOM Overwrite: Native <pre><code> untouched, GUI floats on top
    ========================================================================== */
 
-/* 1. Root Container Wrapper */
-.pakcli-tree-codeblock-wrapper {
-    position: relative;
+/* 1. Root Container */
+.pakcli-tree-root-container {
     margin: 1em 0;
+    position: relative;
+    background: transparent !important;
+    font-family: var(--font-monospace, monospace);
+    font-size: var(--code-size, 0.85rem);
     box-shadow: none !important;
+    user-select: text !important;
+    -webkit-user-select: text !important;
+}
 
-    /* Make room at top of native <pre> for the floating header ruler */
-    pre {
-        padding-top: 36px !important;
-        position: relative !important;
-        overflow-x: auto !important;
+/* 2. Authentic Native Codeblock Card (<pre class="HyperMD-codeblock"><code>) */
+.pakcli-tree-pre.HyperMD-codeblock {
+    margin: 0 !important;
+    padding: 10px 16px !important;
+    border: 1px solid var(--code-border, var(--background-modifier-border)) !important;
+    border-radius: var(--radius-m, 8px) !important;
+    background: var(--code-background, var(--background-primary-alt)) !important;
+    font-family: var(--font-monospace, monospace) !important;
+    font-size: var(--code-size, 0.85rem) !important;
+    line-height: 24px !important;
+    position: relative !important;
+    box-shadow: none !important;
+    overflow-x: auto !important;
+}
+
+/* 3. Native Copy Button (📋) in top-right */
+.pakcli-tree-copy-btn {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    z-index: 30;
+    padding: 4px 6px;
+    font-size: 0.78rem;
+    line-height: 1;
+    background: var(--background-primary);
+    color: var(--text-muted);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 4px;
+    cursor: pointer;
+    opacity: 0.7;
+    transition: all 0.15s ease;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+
+    &:hover {
+        opacity: 1;
+        color: var(--text-normal);
+        background: var(--background-modifier-hover);
+        border-color: var(--interactive-accent);
     }
 }
 
-/* 2. Floating Extra GUI Overlay (+1 Layer Above, z-index: 10) */
-.pakcli-tree-floating-overlay {
-    position: absolute;
+/* 4. Top Header Ruler Bar (Sticky above code, pointer-events: auto) */
+.pakcli-ruler-bar {
+    position: sticky;
     top: 0;
     left: 0;
-    right: 0;
-    bottom: 0;
-    pointer-events: none;
-    z-index: 10;
-}
-
-/* 3. Floating Header Ruler Bar */
-.pakcli-floating-ruler-bar {
-    position: absolute;
-    top: 6px;
-    left: 14px;
-    right: 48px;
-    height: 24px;
+    z-index: 25;
     display: flex;
     align-items: center;
     border-bottom: 1px solid rgba(var(--background-modifier-border-rgb, 128, 128, 128), 0.35);
-    background: transparent !important;
+    padding: 0 0 4px 0;
+    margin-bottom: 4px;
+    height: 28px;
+    box-sizing: border-box;
+    background: var(--code-background, var(--background-primary-alt)) !important;
     pointer-events: auto;
     user-select: none;
     -webkit-user-select: none;
-    z-index: 15;
+    width: max-content;
+    min-width: 100%;
 
     .pakcli-ruler-col {
         display: flex;
@@ -133,18 +165,36 @@
     }
 }
 
-/* 4. Draggable Column Guidelines */
-.pakcli-floating-guidelines-container {
+/* 5. Main Tree Body Wrapper */
+.pakcli-tree-body {
+    position: relative;
+    width: max-content;
+    min-width: 100%;
+}
+
+/* 6. Layer 2: Floating Extra GUI Overlay (+1 Layer Above, z-index: 10, absolute) */
+.pakcli-floating-extra-gui {
     position: absolute;
-    top: 32px;
-    bottom: 8px;
+    top: 0;
     left: 0;
     right: 0;
+    bottom: 0;
     pointer-events: none;
     z-index: 10;
 }
 
-.pakcli-col-guideline-wire {
+/* 6A. Draggable Column Guidelines */
+.pakcli-guideline-wires {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    pointer-events: none;
+    z-index: 20;
+}
+
+.pakcli-wire {
     position: absolute;
     top: 0;
     bottom: 0;
@@ -172,32 +222,216 @@
     }
 }
 
-/* 5. Minimalist Floating Fold Chevrons (v / >) */
-.pakcli-floating-chevron {
-    position: absolute;
-    font-size: 0.65rem;
-    color: var(--text-muted);
-    cursor: pointer;
-    user-select: none;
-    font-weight: 700;
-    line-height: 1;
-    pointer-events: auto;
-    z-index: 25;
-    width: 12px;
-    height: 12px;
+/* 6B. Overlay Rows for Branches & Chevrons */
+.pakcli-overlay-rows {
+    display: flex;
+    flex-direction: column;
+    width: max-content;
+    pointer-events: none;
+}
+
+.pakcli-overlay-row {
     display: flex;
     align-items: center;
-    justify-content: center;
-    border-radius: 2px;
-    transition: color 0.12s ease, background 0.12s ease;
+    height: 24px;
+    min-height: 24px;
+    box-sizing: border-box;
+    position: relative;
+    pointer-events: none;
 
-    &:hover {
-        color: var(--interactive-accent);
-        background: var(--background-modifier-hover);
+    /* Seamless Vector CSS Tree Branches (100% Gap-Free Connectors) */
+    .pakcli-branch-container {
+        display: inline-flex;
+        align-items: stretch;
+        height: 24px;
+        line-height: 24px;
+        flex-shrink: 0;
+        user-select: none;
+    }
+
+    .pakcli-branch-seg {
+        height: 24px;
+        position: relative;
+        box-sizing: border-box;
+        flex-shrink: 0;
+
+        &.trunk::after {
+            content: '';
+            position: absolute;
+            left: 50%;
+            top: 0;
+            bottom: 0;
+            width: 1px;
+            background: rgba(var(--background-modifier-border-rgb, 128, 128, 128), 0.55);
+        }
+
+        &.tee {
+            &::before {
+                content: '';
+                position: absolute;
+                left: 50%;
+                top: 0;
+                bottom: 0;
+                width: 1px;
+                background: rgba(var(--background-modifier-border-rgb, 128, 128, 128), 0.55);
+            }
+            &::after {
+                content: '';
+                position: absolute;
+                left: 50%;
+                top: 50%;
+                right: 0;
+                height: 1px;
+                background: rgba(var(--background-modifier-border-rgb, 128, 128, 128), 0.55);
+            }
+        }
+
+        &.corner {
+            &::before {
+                content: '';
+                position: absolute;
+                left: 50%;
+                top: 0;
+                height: 50%;
+                width: 1px;
+                background: rgba(var(--background-modifier-border-rgb, 128, 128, 128), 0.55);
+            }
+            &::after {
+                content: '';
+                position: absolute;
+                left: 50%;
+                top: 50%;
+                right: 0;
+                height: 1px;
+                background: rgba(var(--background-modifier-border-rgb, 128, 128, 128), 0.55);
+            }
+        }
+    }
+
+    /* Minimalist Fold Chevron */
+    .pakcli-overlay-chevron {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        height: 14px;
+        font-size: 0.65rem;
+        font-weight: 700;
+        color: var(--text-muted);
+        cursor: pointer;
+        pointer-events: auto;
+        border-radius: 2px;
+        user-select: none;
+        flex-shrink: 0;
+        transition: color 0.12s ease, background 0.12s ease;
+
+        &:hover {
+            color: var(--interactive-accent);
+            background: var(--background-modifier-hover);
+        }
+    }
+
+    .pakcli-overlay-chevron-spacer {
+        display: inline-block;
+        flex-shrink: 0;
+        height: 100%;
     }
 }
 
-/* 6. Active Column Resizing Global Cursor Guard */
+/* 7. Layer 1: Codeblock Asli Text Lines (Zero Table Cells, Zero Horizontal Lines) */
+.pakcli-tree-code {
+    display: block;
+    background: transparent !important;
+    border: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+}
+
+.pakcli-code-lines {
+    display: flex;
+    flex-direction: column;
+    width: max-content;
+    min-width: 100%;
+    background: transparent !important;
+}
+
+.pakcli-code-line {
+    display: flex;
+    align-items: center;
+    height: 24px;
+    min-height: 24px;
+    line-height: 24px;
+    padding: 0 4px;
+    border: none !important;
+    border-bottom: none !important;
+    box-shadow: none !important;
+    background: transparent !important;
+    white-space: pre;
+    font-family: var(--font-monospace, monospace) !important;
+    font-size: var(--code-size, 0.85rem) !important;
+    color: var(--text-normal);
+    transition: background 0.08s ease;
+
+    /* Seamless Whole-Row Hover Highlight */
+    &:hover {
+        background: var(--background-modifier-hover) !important;
+        border-radius: 4px;
+    }
+
+    .pakcli-line-indent {
+        white-space: pre;
+        user-select: none;
+        color: transparent;
+        flex-shrink: 0;
+    }
+
+    .pakcli-line-name {
+        white-space: pre;
+        cursor: text;
+        flex-shrink: 0;
+    }
+
+    .pakcli-folder-name {
+        font-weight: 600;
+        color: var(--text-normal);
+    }
+
+    .pakcli-file-name {
+        color: var(--text-normal);
+    }
+
+    .pakcli-line-spacer {
+        white-space: pre;
+        flex-shrink: 0;
+    }
+
+    .pakcli-line-note {
+        white-space: pre;
+        color: var(--text-muted);
+        cursor: text;
+        flex-shrink: 0;
+    }
+
+    /* In-place Editable Text */
+    .pakcli-editable-val {
+        padding: 0 1px;
+        border-radius: 2px;
+        transition: background 0.12s ease;
+
+        &:hover {
+            outline: 1px dashed var(--text-faint);
+        }
+
+        &.is-editing {
+            outline: 1px solid var(--interactive-accent) !important;
+            background: var(--background-primary) !important;
+            color: var(--text-normal) !important;
+            cursor: text !important;
+            user-select: text !important;
+        }
+    }
+}
+
+/* 8. Active Column Resizing Global Cursor Guard */
 body.pakcli-is-col-resizing {
     cursor: col-resize !important;
     user-select: none !important;
