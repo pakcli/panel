@@ -21,15 +21,18 @@
      - Pressing Enter or clicking outside saves changes directly back to the active note's raw codeblock via Obsidian Vault API.
   4. **Multi-Column `#` Alignment (Max 10 Columns)**:
      - Parses `# col1`, `## col2`, `### col3` up to `########## col10`.
-     - Automatically aligns all columns into a clean, horizontal grid (`clean # sejajar on that one line`).
-  5. **Cascading Sticky Headers (`t -> h1 -> h2 -> h3`)**:
+     - Automatically aligns all `#` comments into a clean vertical grid line (`clean # sejajar on that one line`).
+     - Minimalist `#`, `##`, `###` headers without extra bloat.
+  5. **Column Line as Divider & Dynamic Auto-Fit Spacing**:
+     - The vertical column line acts as the spacing boundary between the file/directory item and its comment.
+     - Initial column widths are computed dynamically to fit tree contents snugly instead of arbitrary fixed widths.
+     - Draggable column resizer on the divider line.
+     - Double-clicking the line auto-fits the column to its left (`fit the column di kirina`).
+     - Full DOM measuring on render with minimum width safeguards.
+  6. **Cascading Sticky Headers (`t -> h1 -> h2 -> h3`)**:
      - Visual sticky hierarchy where parent directory headers remain pinned at the top as the user scrolls down through nested children.
-  6. **Draggable Column Resizing & Double-Click Auto-Fit**:
-     - Draggable divider handles between columns allowing live resizing.
-     - Double-clicking any column divider auto-fits the column width to its widest cell content (with minimum width safeguard).
   7. **Toggleable Folders**:
      - Expand/collapse chevrons on each folder node.
-     - Global Expand All / Collapse All controls.
   8. **Custom & Multiple Aliases in Settings**:
      - Codeblock tag renamable in settings (comma-separated).
      - Default: `panel-tree, panel-tree-structure, tree-structure`.

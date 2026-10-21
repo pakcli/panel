@@ -61,13 +61,14 @@
 
         /* Draggable Column Resizer */
         .pakcli-col-resizer {
-            width: 8px;
+            width: 10px;
             height: 100%;
             cursor: col-resize;
             position: absolute;
-            right: 0;
+            right: -5px;
             top: 0;
             bottom: 0;
+            z-index: 50;
             display: flex;
             align-items: center;
             justify-content: center;
@@ -77,7 +78,7 @@
             &::after {
                 content: '';
                 width: 2px;
-                height: 60%;
+                height: 70%;
                 background: var(--background-modifier-border);
             }
 

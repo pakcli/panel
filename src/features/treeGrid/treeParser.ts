@@ -90,12 +90,12 @@ function getIndentationLevel(line: string): number {
 export function parseCommentColumns(rawComment: string): string[] {
     if (!rawComment) return [];
 
-    // Split on ' ##', ' ###', etc. or sequential '#'
-    const parts = rawComment.split(/\s+##+\s*/);
+    // Split on ' ##', '###', etc. or sequential '#'
+    const parts = rawComment.split(/\s*##+\s*/);
     const cols: string[] = [];
 
     for (const part of parts) {
-        const cleaned = part.trim();
+        const cleaned = part.replace(/^#+\s*/, '').trim();
         if (cleaned) {
             cols.push(cleaned);
         }
@@ -155,7 +155,8 @@ export function serializeTreeToSource(nodes: TreeGridNode[], indentLevel = 0): s
         if (node.columns && node.columns.length > 0) {
             const formattedCols = node.columns.map((c, i) => {
                 const prefix = i === 0 ? '#' : '#'.repeat(i + 1);
-                return `${prefix} ${c}`;
+                const clean = c.replace(/^#+\s*/, '').trim();
+                return `${prefix} ${clean}`;
             }).join(' ');
             line += `    ${formattedCols}`;
         }
@@ -254,10 +255,7 @@ export function parseTreeGrid(source: string): ParsedTreeGrid {
     const columnTitles: string[] = ['NAME / PATH'];
 
     for (let i = 1; i < totalColumns; i++) {
-        if (i === 1) columnTitles.push('DESCRIPTION (#)');
-        else if (i === 2) columnTitles.push('CATEGORY (##)');
-        else if (i === 3) columnTitles.push('DETAILS (###)');
-        else columnTitles.push(`COLUMN ${i + 1}`);
+        columnTitles.push('#'.repeat(i));
     }
 
     return {

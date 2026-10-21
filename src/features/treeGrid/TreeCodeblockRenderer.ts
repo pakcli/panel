@@ -37,17 +37,57 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
 
     onload(): void {
         this.render();
+        // Fine-tune column widths after DOM is attached
+        requestAnimationFrame(() => {
+            this.autoFitAllColumns();
+        });
+    }
+
+    private getAllNodes(nodes: TreeGridNode[]): TreeGridNode[] {
+        const result: TreeGridNode[] = [];
+        const traverse = (list: TreeGridNode[]) => {
+            for (const n of list) {
+                result.push(n);
+                if (n.children && n.children.length > 0) {
+                    traverse(n.children);
+                }
+            }
+        };
+        traverse(nodes);
+        return result;
     }
 
     private initColumns(): void {
         this.columns = [];
         const total = this.parsed.totalColumns;
+        const allNodes = this.getAllNodes(this.parsed.rootNodes);
 
         for (let i = 0; i < total; i++) {
-            const title = this.parsed.columnTitles[i] || (i === 0 ? 'NAME / PATH' : `COL ${i + 1}`);
-            // Compact starting widths
-            const width = i === 0 ? 280 : 180;
-            const minWidth = i === 0 ? 100 : 60;
+            const title = this.parsed.columnTitles[i] || (i === 0 ? 'NAME / PATH' : '#'.repeat(i));
+
+            let maxChars = title.length;
+            if (i === 0) {
+                for (const node of allNodes) {
+                    const branch = getAsciiBranchPrefix(node, this.parsed.rootNodes);
+                    const fold = node.children.length > 0 ? 2 : 0;
+                    const len = branch.length + fold + node.name.length;
+                    if (len > maxChars) maxChars = len;
+                }
+            } else {
+                for (const node of allNodes) {
+                    const val = node.columns[i - 1] || '';
+                    if (val) {
+                        const len = i + 1 + val.length; // '#' repeat + space + text
+                        if (len > maxChars) maxChars = len;
+                    }
+                }
+            }
+
+            // Monospace font char width is approx 8.5px at 0.85rem
+            // Add padding (16px) + resizer buffer (16px) = 32px
+            const snugWidth = Math.ceil(maxChars * 8.6) + 32;
+            const minWidth = i === 0 ? 80 : 50;
+            const width = Math.max(minWidth, Math.min(800, snugWidth));
 
             this.columns.push({
                 id: i,
@@ -69,7 +109,7 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
         this.gridWrapperEl = scrollContainer.createDiv({ cls: 'pakcli-tree-grid-wrapper' });
         this.updateGridTemplate();
 
-        // Header Row (NAME / PATH | DESCRIPTION (#) | ...)
+        // Header Row (NAME / PATH | # | ## | ...)
         this.headerRowEl = this.gridWrapperEl.createDiv({ cls: 'pakcli-tree-header-row' });
         this.renderHeaderRow();
 
@@ -95,7 +135,7 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
 
             // Draggable column divider handle
             const resizer = th.createDiv({ cls: 'pakcli-col-resizer' });
-            resizer.title = 'Drag to resize, double-click to auto-fit width';
+            resizer.title = 'Drag to resize • Double-click to auto-fit';
 
             this.wireColumnResizer(resizer, i);
 
@@ -103,6 +143,13 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
                 e.stopPropagation();
                 e.preventDefault();
                 this.autoFitColumn(i);
+            });
+
+            th.addEventListener('dblclick', (e) => {
+                if ((e.target as HTMLElement).classList.contains('pakcli-tree-th-title') || e.target === th) {
+                    e.stopPropagation();
+                    this.autoFitColumn(i);
+                }
             });
         }
     }
@@ -136,24 +183,50 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
         });
     }
 
-    private autoFitColumn(colIndex: number): void {
+    public autoFitColumn(colIndex: number): void {
+        if (!this.bodyContainerEl || !this.columns[colIndex]) return;
+
         const colCells = this.bodyContainerEl.querySelectorAll<HTMLElement>(
             `.pakcli-tree-row > .pakcli-tree-cell[data-col-index="${colIndex}"]`
         );
 
         let maxContentWidth = this.columns[colIndex].minWidth;
 
+        // Account for header title width
+        const th = this.headerRowEl?.children[colIndex] as HTMLElement | undefined;
+        if (th) {
+            const titleSpan = th.querySelector<HTMLElement>('.pakcli-tree-th-title');
+            if (titleSpan) {
+                maxContentWidth = Math.max(maxContentWidth, titleSpan.scrollWidth + 32);
+            }
+        }
+
         colCells.forEach((cell) => {
-            const contentSpan = cell.querySelector<HTMLElement>('.pakcli-editable-val') || cell;
-            const width = contentSpan.scrollWidth + 24;
+            let cellContentWidth = 0;
+            const children = Array.from(cell.children) as HTMLElement[];
+            if (children.length > 0) {
+                for (const child of children) {
+                    cellContentWidth += child.scrollWidth || child.offsetWidth;
+                }
+            } else {
+                cellContentWidth = cell.scrollWidth;
+            }
+            // Add padding (16px) + small safety buffer (12px) = 28px
+            const width = cellContentWidth + 28;
             if (width > maxContentWidth) {
                 maxContentWidth = width;
             }
         });
 
-        const fittedWidth = Math.min(800, Math.max(this.columns[colIndex].minWidth, maxContentWidth));
+        const fittedWidth = Math.min(1000, Math.max(this.columns[colIndex].minWidth, maxContentWidth));
         this.columns[colIndex].width = fittedWidth;
         this.updateGridTemplate();
+    }
+
+    public autoFitAllColumns(): void {
+        for (let i = 0; i < this.columns.length; i++) {
+            this.autoFitColumn(i);
+        }
     }
 
     private renderBody(): void {
@@ -176,6 +249,8 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
      */
     private renderNode(parentContainer: HTMLElement, node: TreeGridNode, depth: number): void {
         const asciiBranch = getAsciiBranchPrefix(node, this.parsed.rootNodes);
+        const stickyTop = `${25 + depth * 25}px`;
+        const stickyZIndex = String(Math.max(10, 35 - depth));
 
         if (node.isDirectory) {
             const dirBlock = parentContainer.createDiv({ cls: 'pakcli-tree-dir-block' });
@@ -185,12 +260,11 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
                 cls: `pakcli-tree-row is-directory ${depth <= 4 ? 'pakcli-tree-sticky' : ''}`,
             });
 
-            row.style.top = `${depth * 25}px`;
-            row.style.zIndex = `${30 - depth}`;
-
             // Column 0
             const col0 = row.createDiv({ cls: 'pakcli-tree-cell pakcli-tree-cell-primary' });
             col0.dataset.colIndex = '0';
+            col0.style.top = stickyTop;
+            col0.style.zIndex = stickyZIndex;
 
             // Monospace ASCII Branch Prefix (├──, └──, │   )
             if (asciiBranch) {
@@ -207,6 +281,9 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
                     e.stopPropagation();
                     node.isExpanded = !node.isExpanded;
                     this.renderBody();
+                    requestAnimationFrame(() => {
+                        this.autoFitColumn(0);
+                    });
                 });
             }
 
@@ -217,25 +294,50 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
                 attr: { title: 'Double-click to edit' },
             });
             this.makeCellEditable(nameSpan, (newVal) => {
-                node.name = newVal;
+                node.name = newVal.trim();
+                nameSpan.textContent = node.name;
                 this.syncChangesToNote();
+                this.autoFitColumn(0);
+            });
+
+            col0.addEventListener('dblclick', (e) => {
+                if (e.target === col0) {
+                    e.stopPropagation();
+                    this.autoFitColumn(0);
+                }
             });
 
             // Metadata Columns 1 to N
             for (let c = 1; c < this.columns.length; c++) {
                 const cell = row.createDiv({ cls: 'pakcli-tree-cell pakcli-tree-cell-meta' });
                 cell.dataset.colIndex = String(c);
-                const val = node.columns[c - 1] || '';
+                cell.style.top = stickyTop;
+                cell.style.zIndex = stickyZIndex;
+
+                const rawVal = node.columns[c - 1] || '';
+                const prefix = '#'.repeat(c);
+                const cleanVal = rawVal.replace(/^#+\s*/, '').trim();
+                const displayText = cleanVal ? `${prefix} ${cleanVal}` : '';
 
                 const valSpan = cell.createSpan({
                     cls: 'pakcli-editable-val text-muted',
-                    text: val,
+                    text: displayText,
                     attr: { title: 'Double-click to edit' },
                 });
                 this.makeCellEditable(valSpan, (newVal) => {
+                    const cleaned = newVal.replace(/^#+\s*/, '').trim();
                     while (node.columns.length < c) node.columns.push('');
-                    node.columns[c - 1] = newVal;
+                    node.columns[c - 1] = cleaned;
+                    valSpan.textContent = cleaned ? `${prefix} ${cleaned}` : '';
                     this.syncChangesToNote();
+                    this.autoFitColumn(c);
+                });
+
+                cell.addEventListener('dblclick', (e) => {
+                    if (e.target === cell) {
+                        e.stopPropagation();
+                        this.autoFitColumn(c);
+                    }
                 });
             }
 
@@ -265,25 +367,48 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
                 attr: { title: 'Double-click to edit' },
             });
             this.makeCellEditable(nameSpan, (newVal) => {
-                node.name = newVal;
+                node.name = newVal.trim();
+                nameSpan.textContent = node.name;
                 this.syncChangesToNote();
+                this.autoFitColumn(0);
+            });
+
+            col0.addEventListener('dblclick', (e) => {
+                if (e.target === col0) {
+                    e.stopPropagation();
+                    this.autoFitColumn(0);
+                }
             });
 
             // Metadata Columns 1 to N
             for (let c = 1; c < this.columns.length; c++) {
                 const cell = row.createDiv({ cls: 'pakcli-tree-cell pakcli-tree-cell-meta' });
                 cell.dataset.colIndex = String(c);
-                const val = node.columns[c - 1] || '';
+
+                const rawVal = node.columns[c - 1] || '';
+                const prefix = '#'.repeat(c);
+                const cleanVal = rawVal.replace(/^#+\s*/, '').trim();
+                const displayText = cleanVal ? `${prefix} ${cleanVal}` : '';
 
                 const valSpan = cell.createSpan({
                     cls: 'pakcli-editable-val',
-                    text: val,
+                    text: displayText,
                     attr: { title: 'Double-click to edit' },
                 });
                 this.makeCellEditable(valSpan, (newVal) => {
+                    const cleaned = newVal.replace(/^#+\s*/, '').trim();
                     while (node.columns.length < c) node.columns.push('');
-                    node.columns[c - 1] = newVal;
+                    node.columns[c - 1] = cleaned;
+                    valSpan.textContent = cleaned ? `${prefix} ${cleaned}` : '';
                     this.syncChangesToNote();
+                    this.autoFitColumn(c);
+                });
+
+                cell.addEventListener('dblclick', (e) => {
+                    if (e.target === cell) {
+                        e.stopPropagation();
+                        this.autoFitColumn(c);
+                    }
                 });
             }
         }
