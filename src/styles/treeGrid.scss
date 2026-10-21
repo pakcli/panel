@@ -56,6 +56,46 @@
     }
 }
 
+/* Rule #006: Typeable Extra Sub-branch Line */
+.pakcli-tree-prompt-container {
+    display: inline-flex;
+    align-items: center;
+    font-family: var(--font-monospace, monospace);
+    font-size: var(--code-size, 0.85rem);
+    line-height: 24px;
+    height: 24px;
+}
+
+.pakcli-tree-prompt-placeholder {
+    color: var(--text-faint, rgba(255, 255, 255, 0.35));
+    font-style: italic;
+    cursor: pointer;
+    user-select: none;
+    padding: 0 4px;
+    border-radius: 3px;
+    transition: all 0.12s ease;
+
+    &:hover {
+        color: var(--interactive-accent, #00b0ff);
+        background: rgba(0, 176, 255, 0.12);
+        text-decoration: underline;
+    }
+}
+
+.pakcli-tree-prompt-input {
+    background: var(--background-primary, #1e1e1e) !important;
+    color: var(--text-normal) !important;
+    border: 1px solid var(--interactive-accent, #00b0ff) !important;
+    border-radius: 3px !important;
+    padding: 1px 6px !important;
+    font-family: var(--font-monospace, monospace) !important;
+    font-size: var(--code-size, 0.85rem) !important;
+    height: 22px !important;
+    line-height: 22px !important;
+    outline: none !important;
+    box-shadow: 0 0 6px rgba(0, 176, 255, 0.25) !important;
+}
+
 /* 3. Native Copy Button (📋) in top-right */
 .pakcli-tree-copy-btn {
     position: absolute;

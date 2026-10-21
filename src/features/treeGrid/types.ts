@@ -24,6 +24,7 @@ export interface TreeGridNode {
     children: TreeGridNode[];
     parent?: TreeGridNode;
     isExpanded: boolean;
+    isVirtualPrompt?: boolean;
 }
 
 export interface ParsedTreeGrid {

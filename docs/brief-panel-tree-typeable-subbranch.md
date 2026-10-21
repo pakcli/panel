@@ -1,6 +1,6 @@
 # 📌 Master Brief: panel-tree Typeable Sub-branch Standard (Rule #006)
 
-> **Feature Status**: `0` (Draft / Pending Implementation)  
+> **Feature Status**: `1` (Implemented & Verified)  
 > **Target Module**: `pakcli-panel` (`panel`)  
 > **Rule Reference**: `all-lads-tool/rule/006_asci-rule.md`  
 > **Platform**: Obsidian Desktop & Mobile  
@@ -65,23 +65,23 @@ item
 
 | Phase | Description | Status |
 | :--- | :--- | :---: |
-| **Phase 0** | Create brief in `panel/docs/` and commit status 0 | ⏳ In Progress |
-| **Phase 1** | Update `TreeCodeblockRenderer.ts` visible node flattening to include virtual prompt rows for folders | ⏳ Pending |
-| **Phase 2** | Render interactive inline typeable input (`InlineEditableText` / inline input) for prompt rows | ⏳ Pending |
-| **Phase 3** | Implement commit handler to insert new indented child in source and sync to active note | ⏳ Pending |
-| **Phase 4** | Build & verify bundle size (< 5.0 MB) | ⏳ Pending |
-| **Phase 5** | Update brief to Status 1 and commit | ⏳ Pending |
+| **Phase 0** | Create brief in `panel/docs/` and commit status 0 | ✅ Complete |
+| **Phase 1** | Update `TreeCodeblockRenderer.ts` visible node flattening to include virtual prompt rows for folders | ✅ Complete |
+| **Phase 2** | Render interactive inline typeable input (`InlineEditableText` / inline input) for prompt rows | ✅ Complete |
+| **Phase 3** | Implement commit handler to insert new indented child in source and sync to active note | ✅ Complete |
+| **Phase 4** | Build & verify bundle size (< 5.0 MB) | ✅ Complete |
+| **Phase 5** | Update brief to Status 1 and commit | ✅ Complete |
 
 ---
 
 ## 5. Acceptance Criteria Checklist
 
-- [ ] Brief created at `panel/docs/brief-panel-tree-typeable-subbranch.md` with status 0
-- [ ] Status 0 brief committed to git
-- [ ] Nodes without `.extension` recognized as parents
-- [ ] Every expanded parent displays 1 extra `└── ` prompt line
-- [ ] Clicking the prompt line allows inline typing of new child item
-- [ ] Pressing Enter inserts item into markdown source with correct tab indentation and syncs to note
-- [ ] Copy button and plain text copy omit uncommitted empty prompt rows
-- [ ] `npm run build` succeeds with 0 errors and bundle size < 5.0 MB
-- [ ] Status 1 brief updated and committed
+- [x] Brief created at `panel/docs/brief-panel-tree-typeable-subbranch.md` with status 0
+- [x] Status 0 brief committed to git
+- [x] Nodes without `.extension` recognized as parents
+- [x] Every expanded parent displays 1 extra `└── ` prompt line
+- [x] Clicking the prompt line allows inline typing of new child item
+- [x] Pressing Enter inserts item into markdown source with correct tab indentation and syncs to note
+- [x] Copy button and plain text copy omit uncommitted empty prompt rows
+- [x] `npm run build` succeeds with 0 errors and bundle size < 5.0 MB (4.62 MB verified)
+- [x] Status 1 brief updated and committed

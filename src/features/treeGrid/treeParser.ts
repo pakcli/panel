@@ -287,7 +287,10 @@ export function getAsciiBranchPrefix(node: TreeGridNode, rootNodes: TreeGridNode
     }
 
     const isLast = isLastChild(node, rootNodes);
-    const branch = isLast ? '└── ' : '├── ';
+    const effectiveIsLast = node.isVirtualPrompt
+        ? true
+        : (node.parent?.isDirectory && node.parent.isExpanded ? false : isLast);
+    const branch = effectiveIsLast ? '└── ' : '├── ';
 
     return rails.join('') + branch;
 }

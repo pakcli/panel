@@ -145,8 +145,24 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
         const traverse = (nodes: TreeGridNode[]) => {
             for (const n of nodes) {
                 result.push(n);
-                if (n.isDirectory && n.isExpanded && n.children && n.children.length > 0) {
-                    traverse(n.children);
+                if (n.isDirectory && n.isExpanded) {
+                    if (n.children && n.children.length > 0) {
+                        traverse(n.children);
+                    }
+                    // Rule #006: Always 1 extra typeable line if parent is directory (without .extension)
+                    const virtualPrompt: TreeGridNode = {
+                        id: `prompt-${n.id}`,
+                        name: '',
+                        rawName: '',
+                        depth: n.depth + 1,
+                        isDirectory: false,
+                        columns: [],
+                        children: [],
+                        parent: n,
+                        isExpanded: false,
+                        isVirtualPrompt: true,
+                    };
+                    result.push(virtualPrompt);
                 }
             }
         };
@@ -234,6 +250,62 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
             // LAYER 1: Authentic ASCII tree branch prefix: ├── , └── , │
             const branchPrefix = getAsciiBranchPrefix(node, this.parsed.rootNodes);
 
+            // Rule #006: Extra Typeable Sub-branch Line (└── kosong its typeable)
+            if (node.isVirtualPrompt) {
+                if (branchPrefix) {
+                    lineEl.createSpan({ text: branchPrefix });
+                }
+
+                const promptContainer = lineEl.createSpan({ cls: 'pakcli-tree-prompt-container' });
+                const placeholderSpan = promptContainer.createSpan({
+                    cls: 'pakcli-tree-prompt-placeholder',
+                    text: '+ add item...',
+                });
+
+                const activateInput = () => {
+                    promptContainer.empty();
+                    const inputEl = promptContainer.createEl('input', {
+                        type: 'text',
+                        cls: 'pakcli-tree-prompt-input',
+                        placeholder: 'Name (e.g. file.webp or folder)',
+                    });
+                    inputEl.focus();
+
+                    let committed = false;
+                    const commit = async () => {
+                        if (committed) return;
+                        committed = true;
+                        const val = inputEl.value.trim();
+                        if (val && node.parent) {
+                            await this.insertChildNode(node.parent, val);
+                        } else {
+                            this.render();
+                        }
+                    };
+
+                    inputEl.addEventListener('keydown', (e) => {
+                        if (e.key === 'Enter') {
+                            e.preventDefault();
+                            commit();
+                        } else if (e.key === 'Escape') {
+                            e.preventDefault();
+                            committed = true;
+                            this.render();
+                        }
+                    });
+
+                    inputEl.addEventListener('blur', () => {
+                        commit();
+                    });
+                };
+
+                placeholderSpan.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    activateInput();
+                });
+                continue;
+            }
+
             // Folder chevron indicator: v  or >  (or spaces for alignment/leaf files)
             const hasChildren = node.isDirectory && node.children && node.children.length > 0;
             const chevronText = node.isDirectory
@@ -270,7 +342,7 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
      */
     public getPlainTextForCopy(): string {
         const lines: string[] = [];
-        const visibleNodes = this.getFlattenedVisibleNodes();
+        const visibleNodes = this.getFlattenedVisibleNodes().filter((n) => !n.isVirtualPrompt);
         for (const node of visibleNodes) {
             const branchPrefix = getAsciiBranchPrefix(node, this.parsed.rootNodes);
             const hasChildren = node.isDirectory && node.children && node.children.length > 0;
@@ -281,6 +353,37 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
             lines.push(branchPrefix + chevronText + bodyContent);
         }
         return lines.join('\n');
+    }
+
+    /**
+     * Rule #006: Inserts a new child item into a parent folder and syncs to note
+     */
+    private async insertChildNode(parentNode: TreeGridNode, rawInput: string): Promise<void> {
+        const trimmed = rawInput.trim();
+        if (!trimmed) return;
+
+        const isDir = !isFileName(trimmed);
+        const extension = isDir ? undefined : getExtension(trimmed);
+
+        const newChild: TreeGridNode = {
+            id: `tree-node-${Date.now()}`,
+            name: trimmed,
+            rawName: trimmed,
+            depth: parentNode.depth + 1,
+            isDirectory: isDir,
+            extension,
+            columns: [],
+            children: [],
+            parent: parentNode,
+            isExpanded: true,
+        };
+
+        parentNode.children.push(newChild);
+        parentNode.isExpanded = true;
+
+        await this.syncChangesToNote();
+        this.render();
+        new Notice(`✓ Added ${trimmed}`);
     }
 
     /**
