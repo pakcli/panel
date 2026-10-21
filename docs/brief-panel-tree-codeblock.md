@@ -1,6 +1,6 @@
-# 📌 Master Brief: `panel-tree` Codeblock Renderer (Authentic Unreplaced Codeblock + Floating GUI Overlay Layer)
+# 📌 Master Brief: `panel-tree` Codeblock Renderer (Codeblock Asli Unreplaced + Extra GUI Overlay)
 
-> **Feature Status**: `0` (Draft / Pending Authentic Codeblock + Floating Overlay Implementation)  
+> **Feature Status**: `0` (Draft / Pending Implementation)  
 > **Target Module**: `pakcli-panel` (`panel`)  
 > **Platform**: Obsidian Desktop & Mobile  
 > **Date**: 2026-10-21  
@@ -8,11 +8,11 @@
 ---
 
 ## 1. Core Paradigm: "Do Not Overwrite the DOM"
-- **User Instruction**:
-  > *"make sure instead overwrite the dom leave its as is + offset for the notes## and line before it, and floating overlaygui on top of the layer of the codeblock asli"*
-  > 1. **Codeblock asli unreplaced**: The codeblock text remains in its native `<pre><code>` container. No custom cell containers or HTML tables.
-  > 2. **Offset bagian `#note##` saja**: The `#note` comments are shifted using an inline spacer/offset based on the column width.
-  > 3. **Floating GUI (+1 layer above)**: An independent overlay layer (`z-index: 10`) floating over the native codeblock containing the top column rulers and vertical guideline handles.
+- **User Direct Instructions**:
+  > *"brooo do not overwrite the dom :DDDDDD. its clearly u overwire the dom. make sure insted ovewire the dom leave its as is + offset for the notes## and line before it, and floating overlaygui ontop of the layer of thecodeblock asli"*  
+  > 1. **Codeblock asli unreplaced**: The text remains in its native `<pre><code>` codeblock. Zero HTML table elements, zero CSS grid cells.
+  > 2. **Offset bagian `#note##` saja**: Only the `#note` comment portion is pushed by an offset spacer matching the column width.
+  > 3. **The GUI floating +1 layer above the codeblock**: All visual ornaments (**chevron fold `v ` / `> `**, **baris pohon `├── `, `└── `, `│`**, **column ruler**, and **draggable guideline wires**) live on the **Extra GUI Layer**!
 
 ---
 
@@ -20,34 +20,70 @@
 
 ```text
 ┌────────────────────────────────────────────────────────────────────────────────────────────────────────┐
-│ [LAYER 2: FLOATING OVERLAY GUI (+1 Layer Above, z-index: 10, Absolute Position)]                       │
-│ <--------- PATH ---------> │ <------------ # ------------> │ <----------- ## ----------->  +           │
-│                            │   ::   <   >   #   +   -      │   ::   <   >   ##   +   -               │
-└────────────────────────────┼───────────────────────────────┼───────────────────────────────────────────┘
-                             │ (Guideline Wire Overlay)      │ (Guideline Wire Overlay)
-                             │                               │
-┌────────────────────────────┼───────────────────────────────┼───────────────────────────────────────────┐
-│ [LAYER 1: NATIVE CODEBLOCK ASLI (Unreplaced <pre><code>, Native Text)]                                 │
+│ [LAYER 2: EXTRA GUI OVERLAY (+1 Layer Above, z-index: 10, Absolute Position)]                          │
 │                                                                                                        │
-│ v data                                                                                                 │
-│ ├── v asset                │ [offset] # note1              │ [offset] ## note2                         │
-│ │   ├── v player           │                               │                                           │
-│ │   │   ├── yolla.webp     │ [offset] # setter             │                                           │
-│ │   │   └── tisya.webp     │                               │                                           │
-│ │   ├── v matches          │                               │                                           │
-│ │   │   └── poster-m01.webp│                               │                                           │
-└────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+│   [Header Ruler] <--- PATH ---> │ <--------- # ---------> │ <-------- ## -------->  +                  │
+│                                 │   ::  <  >  #  +  -     │   ::  <  >  ##  +  -                       │
+│                                                                                                        │
+│   [v Chevron]                   │ (Guideline Wire)        │ (Guideline Wire)                           │
+│   [├── Branch] [v Chevron]      │                         │                                            │
+│   [│   ├── Branch] [v Chevron]  │                         │                                            │
+│   [│   │   ├── Branch]          │                         │                                            │
+│   [│   │   └── Branch]          │                         │                                            │
+└─────────────────────────────────┼─────────────────────────┼────────────────────────────────────────────┘
+                                  │                         │
+┌─────────────────────────────────┼─────────────────────────┼────────────────────────────────────────────┐
+│ [LAYER 1: CODEBLOCK ASLI UNREPLACED (<pre><code> Murni, Teks Monospace Asli)]                          │
+│                                                                                                        │
+│ data                                                                                                   │
+│   asset                         │ [offset] # note1        │ [offset] ## note2                          │
+│     player                      │                         │                                            │
+│       yolla.webp                │ [offset] # setter       │                                            │
+│       tisya.webp                │                         │                                            │
+│     matches                     │                         │                                            │
+│       poster-m01.webp           │                         │                                            │
+└─────────────────────────────────┴─────────────────────────┴────────────────────────────────────────────┘
 ```
 
 ---
 
-## 3. Detailed Specification
+## 3. Detailed Component Breakdown
 
-### 1. Layer 1: Codeblock Asli (Unreplaced)
-- Uses authentic Obsidian `<pre><code>` codeblock structure without destroying or replacing it with grid cells.
-- Text content is rendered line-by-line:
-  - Tree branch & name: `v data`, `├── v asset`, `│   ├── v player`.
-  - Fold indicators `v ` and `> ` are minimalist interactive inline markers.
+### A. Layer 1: Codeblock Asli (Native Codeblock Teks Murni)
+1. **DOM Asli Tidak Di-Overwrite**:
+   - Kontainer tetap menggunakan elemen `<pre><code>` asli Obsidian tanpa diubah menjadi div sel atau tabel.
+   - Background, border, dan font monospace mengikuti tema native Obsidian (`var(--code-background)`).
+   - Teks mengalir alami per baris:
+     ```text
+     data
+       asset                         # note1        ## note2
+         player
+           yolla.webp                # setter
+           tisya.webp
+     ```
+2. **Offset Spasi `#note##` Saja**:
+   - Teks path/item berada di sisi kiri secara natural.
+   - Hanya token `#note` yang digeser menggunakan offset (spasi terhitung) agar posisinya tepat jatuh di bawah batas kolom yang bersangkutan.
+   - Baris tanpa komentar berhenti setelah nama file/folder; tidak ada elemen kosong apa pun di sebelah kanannya.
+3. **0% Garis Horizontal**:
+   - Tidak ada garis horizontal antar baris (`border-bottom: none !important`).
+
+### B. Layer 2: Extra GUI Overlay (+1 Layer di Atas Codeblock)
+1. **Baris Pohon (ASCII Guide Branches: `├── `, `└── `, `│   `)**:
+   - Garis-garis cabang pohon digambar oleh lapisan GUI overlay, diposisikan tepat di atas area indentasi setiap baris.
+2. **Chevron Fold Toggles (`v ` / `> `)**:
+   - Tombol lipat chevron dipasang oleh lapisan GUI overlay tepat di depan nama folder (`pointer-events: auto`).
+   - Mengklik chevron melipat atau membuka sub-hierarki folder.
+3. **Floating Header Ruler**:
+   - Pinned tipis di bagian atas codeblock.
+   - Menampilkan kontrol kolom: `PATH +`, `::` (drag urutan), `<` dan `>` (geser kolom), `+` (tambah/duplikat), `-` (hapus kolom).
+4. **Vertical Guideline Wires (Garis Kawat Pembatas Kolom)**:
+   - Garis vertikal melayang di pembatas kolom (`position: absolute; top: 0; bottom: 0;`).
+   - Dapat di-drag ke kiri/kanan (`cursor: col-resize; pointer-events: auto`) untuk mengatur jarak offset `#note` secara langsung.
+   - Double-click garis kawat untuk auto-fit jarak ke teks terpanjang.
+5. **Whole-Row Hover Highlight**:
+   - Menyorot seluruh baris secara mulus saat kursor mouse melayang di atas baris.
+
   - `#note` offset: A single dynamic spacer (`display: inline-block; width: ...px` or text space padding) offsets the `#note` comment so it aligns perfectly with the column guideline.
   - If a line has no comment, **nothing is added**: the line simply ends at the file/folder name. Zero empty cell boxes.
   - Zero horizontal lines between lines (`border-bottom: none !important`).
