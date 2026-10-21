@@ -24,16 +24,21 @@
   4. **Multi-Column Alignment via `space + #` (Max 10 Columns)**:
      - Each occurrence of `space + #` creates a column (`#note1 #note2 ...`).
      - Automatically aligns all `#` comments into clean vertical lines (`clean # sejajar on that one line`).
-  5. **Column Handle & Live Source Codeblock Spacing Sync**:
+  5. **Header Column Controls (`::`, `<`, `>`, `+`, `-`)**:
+     - `::` drag handle for drag-and-drop column reordering.
+     - `<` and `>` buttons for quick one-click column shifting.
+     - `+` button to add or duplicate column.
+     - `-` button to delete the column across all rows and sync to note.
+  6. **Column Handle & Live Source Codeblock Spacing Sync**:
      - The vertical column handle `│` in rendered view lets the user drag to adjust spacing.
      - Minimum Column 0 width is strictly bounded by the character width of the longest tree line (`minmimal size = chart character of the whole tree line`).
      - Releasing drag (`mouseup`) or double-clicking to auto-fit **immediately updates the source codeblock in the active markdown note** by padding spaces before `#`.
      - **No pipe `|` symbols** are written to the markdown file; only aligned spaces.
-  6. **Cascading Sticky Headers (`t -> h1 -> h2 -> h3`)**:
+  7. **Cascading Sticky Headers (`t -> h1 -> h2 -> h3`)**:
      - Visual sticky hierarchy where parent directory headers remain pinned at the top as the user scrolls down through nested children.
-  7. **Toggleable Folders**:
+  8. **Toggleable Folders**:
      - Expand/collapse chevrons on each folder node.
-  8. **Custom & Multiple Aliases in Settings**:
+  9. **Custom & Multiple Aliases in Settings**:
      - Codeblock tag renamable in settings (comma-separated).
      - Default: `panel-tree, panel-tree-structure, tree-structure`.
 

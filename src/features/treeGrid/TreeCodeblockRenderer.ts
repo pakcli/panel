@@ -132,10 +132,89 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
         for (let i = 0; i < this.columns.length; i++) {
             const col = this.columns[i];
             const th = this.headerRowEl.createDiv({ cls: 'pakcli-tree-th' });
+            th.dataset.colIndex = String(i);
 
-            th.createSpan({ cls: 'pakcli-tree-th-title', text: col.title });
+            if (i === 0) {
+                // Column 0: PATH / NAME
+                th.createSpan({ cls: 'pakcli-tree-th-title', text: col.title });
 
-            // Draggable column divider handle
+                // Quick add first comment column if desired
+                const addBtn = th.createSpan({ cls: 'pakcli-th-btn pakcli-th-btn-add', text: '+' });
+                addBtn.title = 'Add comment column (#)';
+                addBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    this.addColumn(0);
+                });
+            } else {
+                // Column 1..N: Reorder handle (::), Shift (< and >), Title, Duplicate (+), Delete (-)
+                const dragHandle = th.createSpan({ cls: 'pakcli-th-drag-handle', text: '::' });
+                dragHandle.title = 'Drag :: to reorder column';
+
+                const leftBtn = th.createSpan({ cls: 'pakcli-th-btn pakcli-th-btn-move', text: '<' });
+                leftBtn.title = 'Move column left';
+                if (i === 1) leftBtn.addClass('is-disabled');
+                leftBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    if (i > 1) this.moveColumn(i, i - 1);
+                });
+
+                const rightBtn = th.createSpan({ cls: 'pakcli-th-btn pakcli-th-btn-move', text: '>' });
+                rightBtn.title = 'Move column right';
+                if (i === this.columns.length - 1) rightBtn.addClass('is-disabled');
+                rightBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    if (i < this.columns.length - 1) this.moveColumn(i, i + 1);
+                });
+
+                th.createSpan({ cls: 'pakcli-tree-th-title', text: col.title });
+
+                // + Add / Duplicate Column
+                const addBtn = th.createSpan({ cls: 'pakcli-th-btn pakcli-th-btn-add', text: '+' });
+                addBtn.title = 'Add new column (Alt+click to duplicate)';
+                addBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    this.addColumn(i, e.altKey);
+                });
+
+                // - Delete Column
+                const delBtn = th.createSpan({ cls: 'pakcli-th-btn pakcli-th-btn-del', text: '-' });
+                delBtn.title = 'Delete this column';
+                delBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    this.deleteColumn(i);
+                });
+
+                // HTML5 Drag-and-drop column reordering
+                th.setAttribute('draggable', 'true');
+                th.addEventListener('dragstart', (e) => {
+                    e.dataTransfer?.setData('text/plain', String(i));
+                    th.addClass('is-dragging');
+                });
+                th.addEventListener('dragend', () => {
+                    th.removeClass('is-dragging');
+                    this.headerRowEl.querySelectorAll('.pakcli-tree-th').forEach((el) => el.removeClass('drag-over'));
+                });
+                th.addEventListener('dragover', (e) => {
+                    e.preventDefault();
+                    th.addClass('drag-over');
+                });
+                th.addEventListener('dragleave', () => {
+                    th.removeClass('drag-over');
+                });
+                th.addEventListener('drop', (e) => {
+                    e.preventDefault();
+                    th.removeClass('drag-over');
+                    const fromStr = e.dataTransfer?.getData('text/plain');
+                    if (fromStr !== undefined) {
+                        const fromIdx = parseInt(fromStr, 10);
+                        if (!isNaN(fromIdx) && fromIdx >= 1 && fromIdx !== i) {
+                            this.moveColumn(fromIdx, i);
+                        }
+                    }
+                });
+            }
+
+            // Draggable column divider handle (Resizer)
             const resizer = th.createDiv({ cls: 'pakcli-col-resizer' });
             resizer.title = 'Drag to resize • Double-click to auto-fit';
 
@@ -154,6 +233,67 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
                 }
             });
         }
+    }
+
+    private moveColumn(fromColIdx: number, toColIdx: number): void {
+        if (fromColIdx < 1 || toColIdx < 1 || fromColIdx === toColIdx) return;
+        if (fromColIdx >= this.columns.length || toColIdx >= this.columns.length) return;
+
+        const allNodes = this.getAllNodes(this.parsed.rootNodes);
+        const fromDataIdx = fromColIdx - 1;
+        const toDataIdx = toColIdx - 1;
+
+        for (const node of allNodes) {
+            while (node.columns.length <= Math.max(fromDataIdx, toDataIdx)) {
+                node.columns.push('');
+            }
+            const moved = node.columns.splice(fromDataIdx, 1)[0];
+            node.columns.splice(toDataIdx, 0, moved);
+        }
+
+        const movedCol = this.columns.splice(fromColIdx, 1)[0];
+        this.columns.splice(toColIdx, 0, movedCol);
+
+        this.syncChangesToNote();
+        this.render();
+    }
+
+    private deleteColumn(colIdx: number): void {
+        if (colIdx < 1 || colIdx >= this.columns.length) return;
+        const allNodes = this.getAllNodes(this.parsed.rootNodes);
+        const dataIdx = colIdx - 1;
+
+        for (const node of allNodes) {
+            if (node.columns.length > dataIdx) {
+                node.columns.splice(dataIdx, 1);
+            }
+        }
+
+        this.columns.splice(colIdx, 1);
+        this.parsed.totalColumns = Math.max(1, this.columns.length);
+
+        this.syncChangesToNote();
+        this.render();
+    }
+
+    private addColumn(afterColIdx: number, duplicate = false): void {
+        const allNodes = this.getAllNodes(this.parsed.rootNodes);
+        const targetDataIdx = Math.max(0, afterColIdx);
+
+        for (const node of allNodes) {
+            while (node.columns.length < targetDataIdx) {
+                node.columns.push('');
+            }
+            const newVal = duplicate && afterColIdx > 0 && node.columns[afterColIdx - 1]
+                ? node.columns[afterColIdx - 1]
+                : '';
+            node.columns.splice(targetDataIdx, 0, newVal);
+        }
+
+        this.parsed.totalColumns = Math.min(11, this.columns.length + 1);
+        this.initColumns();
+        this.syncChangesToNote();
+        this.render();
     }
 
     private wireColumnResizer(resizerEl: HTMLElement, colIndex: number): void {
