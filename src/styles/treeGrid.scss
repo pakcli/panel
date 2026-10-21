@@ -52,287 +52,15 @@
     }
 }
 
-/* 4. Top Header Ruler Bar (Sticky above code, pointer-events: auto) */
-.pakcli-ruler-bar {
-    position: sticky;
-    top: 0;
-    left: 0;
-    z-index: 25;
-    display: flex;
-    align-items: center;
-    border-bottom: 1px solid rgba(var(--background-modifier-border-rgb, 128, 128, 128), 0.35);
-    padding: 0 0 4px 0;
-    margin-bottom: 4px;
-    height: 28px;
-    box-sizing: border-box;
-    background: var(--code-background, var(--background-primary-alt)) !important;
-    pointer-events: auto;
-    user-select: none;
-    -webkit-user-select: none;
-    width: max-content;
-    min-width: 100%;
-
-    .pakcli-ruler-col {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        padding: 1px 6px;
-        box-sizing: border-box;
-        font-size: 0.72rem;
-        font-weight: 600;
-        text-transform: uppercase;
-        color: var(--text-muted);
-        letter-spacing: 0.05em;
-        border-right: 1px solid rgba(var(--background-modifier-border-rgb, 128, 128, 128), 0.25);
-        flex-shrink: 0;
-        background: transparent !important;
-
-        &:last-child {
-            border-right: none;
-        }
-
-        .pakcli-ruler-title {
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            font-weight: 700;
-        }
-
-        .pakcli-ruler-drag-handle {
-            cursor: grab;
-            color: var(--text-faint);
-            font-size: 0.72rem;
-            letter-spacing: -1px;
-            user-select: none;
-            padding: 0 2px;
-            opacity: 0.6;
-            transition: opacity 0.1s ease;
-
-            &:hover {
-                opacity: 1;
-                color: var(--text-normal);
-            }
-
-            &:active {
-                cursor: grabbing;
-            }
-        }
-
-        .pakcli-ruler-btn {
-            cursor: pointer;
-            font-size: 0.72rem;
-            padding: 0 2px;
-            line-height: 1;
-            border-radius: 2px;
-            color: var(--text-faint);
-            user-select: none;
-            transition: all 0.1s ease;
-
-            &:hover {
-                color: var(--text-normal);
-                background: var(--background-modifier-hover);
-            }
-
-            &.is-disabled {
-                opacity: 0.2;
-                cursor: not-allowed;
-                pointer-events: none;
-            }
-
-            &.pakcli-ruler-btn-del:hover {
-                color: var(--text-error, #f44336);
-                background: rgba(244, 67, 54, 0.15);
-            }
-
-            &.pakcli-ruler-btn-add:hover {
-                color: var(--interactive-accent);
-                background: rgba(var(--interactive-accent-rgb, 128, 128, 255), 0.15);
-            }
-        }
-
-        &.is-dragging {
-            opacity: 0.4;
-        }
-
-        &.drag-over {
-            border-left: 2px solid var(--interactive-accent) !important;
-        }
-    }
-}
-
-/* 5. Main Tree Body Wrapper */
+/* 4. Main Tree Body Wrapper */
 .pakcli-tree-body {
     position: relative;
     width: max-content;
     min-width: 100%;
 }
 
-/* 6. Layer 2: Floating Extra GUI Overlay (+1 Layer Above, z-index: 10, absolute) */
-.pakcli-floating-extra-gui {
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    pointer-events: none;
-    z-index: 10;
-}
-
-/* 6A. Draggable Column Guidelines */
-.pakcli-guideline-wires {
-    position: absolute;
-    top: 0;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    pointer-events: none;
-    z-index: 20;
-}
-
-.pakcli-wire {
-    position: absolute;
-    top: 0;
-    bottom: 0;
-    width: 9px;
-    margin-left: -4px;
-    pointer-events: auto;
-    cursor: col-resize;
-    z-index: 20;
-
-    &::after {
-        content: '';
-        position: absolute;
-        left: 4px;
-        top: 0;
-        bottom: 0;
-        width: 1px;
-        background: rgba(var(--background-modifier-border-rgb, 128, 128, 128), 0.35);
-        transition: background 0.12s ease;
-    }
-
-    &:hover::after,
-    &.is-dragging::after {
-        background: var(--interactive-accent);
-        width: 2px;
-    }
-}
-
-/* 6B. Overlay Rows for Branches & Chevrons */
-.pakcli-overlay-rows {
-    display: flex;
-    flex-direction: column;
-    width: max-content;
-    pointer-events: none;
-}
-
-.pakcli-overlay-row {
-    display: flex;
-    align-items: center;
-    height: 24px;
-    min-height: 24px;
-    box-sizing: border-box;
-    position: relative;
-    pointer-events: none;
-
-    /* Seamless Vector CSS Tree Branches (100% Gap-Free Connectors) */
-    .pakcli-branch-container {
-        display: inline-flex;
-        align-items: stretch;
-        height: 24px;
-        line-height: 24px;
-        flex-shrink: 0;
-        user-select: none;
-    }
-
-    .pakcli-branch-seg {
-        height: 24px;
-        position: relative;
-        box-sizing: border-box;
-        flex-shrink: 0;
-
-        &.trunk::after {
-            content: '';
-            position: absolute;
-            left: 50%;
-            top: 0;
-            bottom: 0;
-            width: 1px;
-            background: rgba(var(--background-modifier-border-rgb, 128, 128, 128), 0.55);
-        }
-
-        &.tee {
-            &::before {
-                content: '';
-                position: absolute;
-                left: 50%;
-                top: 0;
-                bottom: 0;
-                width: 1px;
-                background: rgba(var(--background-modifier-border-rgb, 128, 128, 128), 0.55);
-            }
-            &::after {
-                content: '';
-                position: absolute;
-                left: 50%;
-                top: 50%;
-                right: 0;
-                height: 1px;
-                background: rgba(var(--background-modifier-border-rgb, 128, 128, 128), 0.55);
-            }
-        }
-
-        &.corner {
-            &::before {
-                content: '';
-                position: absolute;
-                left: 50%;
-                top: 0;
-                height: 50%;
-                width: 1px;
-                background: rgba(var(--background-modifier-border-rgb, 128, 128, 128), 0.55);
-            }
-            &::after {
-                content: '';
-                position: absolute;
-                left: 50%;
-                top: 50%;
-                right: 0;
-                height: 1px;
-                background: rgba(var(--background-modifier-border-rgb, 128, 128, 128), 0.55);
-            }
-        }
-    }
-
-    /* Minimalist Fold Chevron */
-    .pakcli-overlay-chevron {
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        height: 14px;
-        font-size: 0.65rem;
-        font-weight: 700;
-        color: var(--text-muted);
-        cursor: pointer;
-        pointer-events: auto;
-        border-radius: 2px;
-        user-select: none;
-        flex-shrink: 0;
-        transition: color 0.12s ease, background 0.12s ease;
-
-        &:hover {
-            color: var(--interactive-accent);
-            background: var(--background-modifier-hover);
-        }
-    }
-
-    .pakcli-overlay-chevron-spacer {
-        display: inline-block;
-        flex-shrink: 0;
-        height: 100%;
-    }
-}
-
-/* 7. Layer 1: Codeblock Lines (div.cm-line.HyperMD-codeblock.HyperMD-codeblock-bg) */
+/* 5. Layer 1: Codeblock Lines (div.cm-line.HyperMD-codeblock.HyperMD-codeblock-bg) */
+/* 100% PURE TEXT NODES ONLY — ZERO SPANS, ZERO CELL DIVS! */
 .pakcli-code-lines {
     display: flex;
     flex-direction: column;
@@ -342,12 +70,11 @@
 }
 
 div.cm-line.HyperMD-codeblock.HyperMD-codeblock-bg.pakcli-code-line {
-    display: flex !important;
-    align-items: center !important;
+    display: block !important;
     height: 24px !important;
     min-height: 24px !important;
     line-height: 24px !important;
-    padding: 0 4px !important;
+    padding: 0 10px !important;
     border: none !important;
     border-bottom: none !important;
     box-shadow: none !important;
@@ -364,62 +91,141 @@ div.cm-line.HyperMD-codeblock.HyperMD-codeblock-bg.pakcli-code-line {
         background: var(--background-modifier-hover) !important;
         border-radius: 4px;
     }
+}
 
-    .pakcli-line-indent {
-        white-space: pre;
+/* 6. Layer 2: Floating Extra GUI Overlay (+1 Layer Above, z-index: 10, absolute) */
+.pakcli-floating-extra-gui {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    pointer-events: none;
+    z-index: 10;
+}
+
+/* 6A. SVG Canvas for Continuous Blue Vector Branches and Guideline Wire */
+.pakcli-tree-svg-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    pointer-events: none;
+    overflow: visible;
+    z-index: 12;
+
+    /* Continuous Blue Branches from media_1792590031684_53a169a5.png */
+    .pakcli-svg-branch {
+        fill: none;
+        stroke: var(--interactive-accent, #00b0ff);
+        stroke-width: 2px;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+    }
+
+    /* Blue Vertical Guideline Wire */
+    .pakcli-svg-wire {
+        stroke: var(--interactive-accent, #00b0ff);
+        stroke-width: 1.5px;
+        opacity: 0.85;
+    }
+}
+
+/* 6B. Interactive Controls Container (Chevrons, Wire Hitboxes, - < > :: +) */
+.pakcli-gui-controls-layer {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: 20;
+
+    /* Minimalist Folder Fold Chevron (v / >) in Blue */
+    .pakcli-overlay-chevron {
+        position: absolute;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 14px;
+        height: 14px;
+        font-family: var(--font-monospace, monospace);
+        font-size: 0.72rem;
+        font-weight: 700;
+        color: var(--interactive-accent, #00b0ff);
+        cursor: pointer;
+        pointer-events: auto;
+        border-radius: 3px;
         user-select: none;
-        color: transparent;
-        flex-shrink: 0;
-    }
-
-    .pakcli-line-name {
-        white-space: pre;
-        cursor: text;
-        flex-shrink: 0;
-    }
-
-    .pakcli-folder-name {
-        font-weight: 600;
-        color: var(--text-normal);
-    }
-
-    .pakcli-file-name {
-        color: var(--text-normal);
-    }
-
-    .pakcli-line-spacer {
-        white-space: pre;
-        flex-shrink: 0;
-    }
-
-    .pakcli-line-note {
-        white-space: pre;
-        color: var(--text-muted);
-        cursor: text;
-        flex-shrink: 0;
-    }
-
-    /* In-place Editable Text */
-    .pakcli-editable-val {
-        padding: 0 1px;
-        border-radius: 2px;
-        transition: background 0.12s ease;
+        transition: background 0.12s ease, transform 0.1s ease;
 
         &:hover {
-            outline: 1px dashed var(--text-faint);
+            background: rgba(0, 176, 255, 0.2);
+            transform: scale(1.15);
         }
+    }
 
-        &.is-editing {
-            outline: 1px solid var(--interactive-accent) !important;
-            background: var(--background-primary) !important;
-            color: var(--text-normal) !important;
-            cursor: text !important;
-            user-select: text !important;
+    /* Draggable Hitbox for Guideline Wire */
+    .pakcli-wire-hitbox {
+        position: absolute;
+        width: 14px;
+        cursor: col-resize;
+        pointer-events: auto;
+        z-index: 25;
+
+        &:hover {
+            background: rgba(0, 176, 255, 0.1);
+        }
+    }
+
+    /* Floating Column Controls Pill: - < > :: + in Blue */
+    .pakcli-column-controls-pill {
+        position: absolute;
+        display: inline-flex;
+        align-items: center;
+        gap: 2px;
+        background: var(--background-secondary, #1a1e24);
+        border: 1.5px solid var(--interactive-accent, #00b0ff);
+        border-radius: 4px;
+        padding: 1px 4px;
+        font-family: var(--font-monospace, monospace);
+        font-size: 0.72rem;
+        font-weight: 700;
+        color: var(--interactive-accent, #00b0ff);
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+        pointer-events: auto;
+        user-select: none;
+        z-index: 30;
+
+        .pakcli-pill-btn {
+            cursor: pointer;
+            padding: 1px 4px;
+            border-radius: 2px;
+            transition: all 0.12s ease;
+
+            &:hover {
+                background: var(--interactive-accent, #00b0ff);
+                color: var(--text-on-accent, #ffffff);
+            }
+
+            &.is-disabled {
+                opacity: 0.3;
+                cursor: not-allowed;
+                pointer-events: none;
+            }
+
+            &.pakcli-drag-handle {
+                cursor: grab;
+                letter-spacing: -1px;
+
+                &:active {
+                    cursor: grabbing;
+                }
+            }
         }
     }
 }
 
-/* 8. Active Column Resizing Global Cursor Guard */
+/* 7. Active Column Resizing Global Cursor Guard */
 body.pakcli-is-col-resizing {
     cursor: col-resize !important;
     user-select: none !important;

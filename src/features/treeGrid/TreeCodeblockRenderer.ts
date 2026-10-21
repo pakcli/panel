@@ -2,38 +2,19 @@
  * TreeCodeblockRenderer.ts
  * Authentic Native Codeblock with Floating Extra GUI Overlay Layer.
  *
- * Implements exact Obsidian Live Preview codeblock architecture:
- * Target Fix:
- *   Element Name: div
- *   Style Class: .cm-line.cm-active.HyperMD-codeblock.HyperMD-codeblock-bg
- *   Selector: div.cm-line.cm-active.HyperMD-codeblock.HyperMD-codeblock-bg
- *
- * Architecture:
- * 1. Base Layer (Native Codeblock Lines):
- *    - Rendered directly as div.cm-line.HyperMD-codeblock.HyperMD-codeblock-bg.
- *    - Full Obsidian theme styling: border, radius, background, monospace font.
- *    - Native Copy Code button (📋) in top-right copying clean indented source text.
- *    - Pure monospace text lines with real space offsets for #note comments.
- *    - Zero custom cell divs, zero table elements, zero horizontal divider lines!
- *    - Active hover highlight via .cm-active.
- *
- * 2. Extra GUI Overlay Layer (+1 Layer Above, z-index: 10, position: absolute):
- *    - Floats directly over the codeblock lines (pointer-events: none).
- *    - Sticky Header Ruler Bar: Displays column titles (PATH, #, ##) with :: reorder, < > shift, + add, - delete.
- *    - Draggable Guideline Wires: Vertical lines at column boundary offsets (cursor: col-resize; pointer-events: auto).
- *      Dragging dynamically adjusts #note space padding in real time and syncs to note on release.
- *    - Seamless Continuous CSS Tree Branches (├──, └──, │) connecting vertically with 100% zero gaps.
- *    - Minimalist Fold Chevrons (v / >) floating right before folder items (pointer-events: auto; cursor: pointer).
+ * Exact User Specification:
+ * - "ITS A TEXT LADS THE ELEMENTED IS TEXT ELEMENT LADS"
+ * - Base Layer lines: div.cm-line.HyperMD-codeblock.HyperMD-codeblock-bg containing PURE TEXT NODES ONLY.
+ * - Extra GUI Overlay: Floating SVG vector layer drawing the blue lines from media_1792590031684_53a169a5.png:
+ *   1. Blue tree branches connecting parents to children (zero gaps, round joins)
+ *   2. Blue vertical guideline wire at column boundary
+ *   3. Blue header controls "- < > :: +" above comment column
+ *   4. Blue chevrons (v / >) in front of folder items
  */
 
 import { MarkdownRenderChild, MarkdownPostProcessorContext, Notice, TFile } from 'obsidian';
 import { ParsedTreeGrid, TreeGridColumn, TreeGridNode } from './types';
-import { parseTreeGrid, serializeTreeToSource, getMaxCol0Length, isLastChild } from './treeParser';
-
-interface BranchRails {
-    ancestors: boolean[];
-    isLast: boolean;
-}
+import { parseTreeGrid, serializeTreeToSource, getMaxCol0Length } from './treeParser';
 
 export class TreeCodeblockRenderer extends MarkdownRenderChild {
     private source: string;
@@ -44,18 +25,17 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
 
     // DOM Elements
     private cardContainerEl!: HTMLElement;
-    private rulerBarEl!: HTMLElement;
     private bodyEl!: HTMLElement;
-    private overlayEl!: HTMLElement;
-    private guidelinesContainerEl!: HTMLElement;
-    private overlayRowsEl!: HTMLElement;
     private linesContainerEl!: HTMLElement;
+    private overlayEl!: HTMLElement;
+    private svgOverlayEl!: SVGSVGElement;
+    private controlsContainerEl!: HTMLElement;
 
-    // Measured character dimensions in monospace font
+    // Metrics
     private charWidthPx = 8.6;
     private readonly ROW_HEIGHT_PX = 24;
-    private readonly INDENT_CHARS = 4;
-    private readonly CHEVRON_CHARS = 2;
+    private paddingLeftPx = 10;
+    private paddingTopPx = 34; // Room for top "- < > :: +" controls
 
     constructor(
         containerEl: HTMLElement,
@@ -76,8 +56,7 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
         this.render();
         requestAnimationFrame(() => {
             this.measureCharWidth();
-            this.renderGuidelines();
-            this.renderOverlayRows();
+            this.renderOverlayGUI();
         });
     }
 
@@ -123,7 +102,7 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
             let maxChars = title.length;
             if (i === 0) {
                 for (const node of allNodes) {
-                    const indent = (node.depth * this.INDENT_CHARS) + this.CHEVRON_CHARS;
+                    const indent = (node.depth * 4) + 2;
                     const len = indent + node.name.length;
                     if (len > maxChars) maxChars = len;
                 }
@@ -131,7 +110,7 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
                 for (const node of allNodes) {
                     const val = node.columns[i - 1] || '';
                     if (val) {
-                        const len = i + 1 + val.length;
+                        const len = val.length;
                         if (len > maxChars) maxChars = len;
                     }
                 }
@@ -139,8 +118,8 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
 
             const maxTreeChars = getMaxCol0Length(this.parsed.rootNodes);
             const treeMinPx = Math.ceil((maxTreeChars + 4) * 8.6);
-            const minWidth = i === 0 ? Math.max(140, treeMinPx) : 60;
-            const snugWidth = Math.ceil((maxChars + 4) * 8.6);
+            const minWidth = i === 0 ? Math.max(160, treeMinPx) : 80;
+            const snugWidth = Math.ceil((maxChars + 6) * 8.6);
             const width = Math.max(minWidth, Math.min(800, snugWidth));
 
             this.columns.push({
@@ -176,311 +155,43 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
             cls: 'pakcli-tree-card-container HyperMD-codeblock-bg',
         });
 
-        // Native Copy Code Button (📋) in top-right
+        // Native Copy Button (📋)
         const copyBtn = this.cardContainerEl.createEl('button', {
             cls: 'pakcli-tree-copy-btn',
-            attr: { title: 'Copy clean tree source' },
+            text: '📋',
+            attr: { title: 'Copy clean codeblock content' },
         });
-        copyBtn.setText('📋');
         copyBtn.addEventListener('click', (e) => {
             e.stopPropagation();
-            this.copyCleanSource(copyBtn);
+            navigator.clipboard.writeText(this.source);
+            new Notice('✓ Copied codeblock to clipboard');
         });
-
-        // Top Header Ruler Bar (Sticky above code, pointer-events: auto)
-        this.rulerBarEl = this.cardContainerEl.createDiv({ cls: 'pakcli-ruler-bar' });
-        this.renderRulerBar();
 
         // Main Tree Body (relative wrapper for overlay and code lines)
         this.bodyEl = this.cardContainerEl.createDiv({ cls: 'pakcli-tree-body' });
+        this.bodyEl.style.paddingTop = `${this.paddingTopPx}px`;
+
+        // Layer 1: Codeblock Lines (div.cm-line.HyperMD-codeblock.HyperMD-codeblock-bg)
+        this.linesContainerEl = this.bodyEl.createDiv({ cls: 'pakcli-code-lines' });
+        this.renderCodeLines();
 
         // Layer 2: Floating Extra GUI Overlay (+1 Layer Above, z-index: 10, position: absolute)
         this.overlayEl = this.bodyEl.createDiv({ cls: 'pakcli-floating-extra-gui' });
 
-        // 2A. Draggable Column Guidelines
-        this.guidelinesContainerEl = this.overlayEl.createDiv({ cls: 'pakcli-guideline-wires' });
+        // SVG layer for continuous blue vector tree branches & column guideline wire
+        this.svgOverlayEl = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        this.svgOverlayEl.setAttribute('class', 'pakcli-tree-svg-overlay');
+        this.overlayEl.appendChild(this.svgOverlayEl);
 
-        // 2B. Overlay Rows for Branches & Chevrons
-        this.overlayRowsEl = this.overlayEl.createDiv({ cls: 'pakcli-overlay-rows' });
+        // Interactive Controls Container (Chevrons & Header Buttons: - < > :: +)
+        this.controlsContainerEl = this.overlayEl.createDiv({ cls: 'pakcli-gui-controls-layer' });
 
-        // Layer 1: Codeblock Lines (div.cm-line.HyperMD-codeblock.HyperMD-codeblock-bg)
-        this.linesContainerEl = this.bodyEl.createDiv({ cls: 'pakcli-code-lines' });
-
-        this.renderCodeLines();
-        this.renderOverlayRows();
-        this.renderGuidelines();
-    }
-
-    private copyCleanSource(btnEl: HTMLElement): void {
-        const col0WidthPx = this.columns[0]?.width || 200;
-        const col0TargetChars = Math.max(10, Math.round(col0WidthPx / this.charWidthPx));
-
-        const colWidthsTargetChars: number[] = [];
-        for (let i = 1; i < this.columns.length; i++) {
-            const w = this.columns[i]?.width || 120;
-            colWidthsTargetChars[i] = Math.max(4, Math.round(w / this.charWidthPx));
-        }
-
-        const lines = serializeTreeToSource(
-            this.parsed.rootNodes,
-            col0TargetChars,
-            colWidthsTargetChars
-        );
-        const textToCopy = lines.join('\n');
-
-        navigator.clipboard.writeText(textToCopy).then(() => {
-            btnEl.setText('✓');
-            new Notice('✓ Copied tree text to clipboard');
-            setTimeout(() => {
-                btnEl.setText('📋');
-            }, 1500);
-        }).catch((err) => {
-            console.warn('Copy failed:', err);
-            new Notice('Failed to copy');
-        });
-    }
-
-    private renderRulerBar(): void {
-        this.rulerBarEl.empty();
-
-        for (let i = 0; i < this.columns.length; i++) {
-            const col = this.columns[i];
-            const colEl = this.rulerBarEl.createDiv({ cls: 'pakcli-ruler-col' });
-            colEl.dataset.colIndex = String(i);
-            colEl.style.width = `${col.width}px`;
-
-            if (i === 0) {
-                colEl.createSpan({ cls: 'pakcli-ruler-title', text: col.title });
-
-                const addBtn = colEl.createSpan({ cls: 'pakcli-ruler-btn pakcli-ruler-btn-add', text: '+' });
-                addBtn.title = 'Add comment column (#)';
-                addBtn.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    this.addColumn(0);
-                });
-            } else {
-                const dragHandle = colEl.createSpan({ cls: 'pakcli-ruler-drag-handle', text: '::' });
-                dragHandle.title = 'Drag :: to reorder column';
-
-                const leftBtn = colEl.createSpan({ cls: 'pakcli-ruler-btn pakcli-ruler-btn-move', text: '<' });
-                leftBtn.title = 'Move column left';
-                if (i === 1) leftBtn.addClass('is-disabled');
-                leftBtn.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    if (i > 1) this.moveColumn(i, i - 1);
-                });
-
-                const rightBtn = colEl.createSpan({ cls: 'pakcli-ruler-btn pakcli-ruler-btn-move', text: '>' });
-                rightBtn.title = 'Move column right';
-                if (i === this.columns.length - 1) rightBtn.addClass('is-disabled');
-                rightBtn.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    if (i < this.columns.length - 1) this.moveColumn(i, i + 1);
-                });
-
-                colEl.createSpan({ cls: 'pakcli-ruler-title', text: col.title });
-
-                const addBtn = colEl.createSpan({ cls: 'pakcli-ruler-btn pakcli-ruler-btn-add', text: '+' });
-                addBtn.title = 'Add new column (Alt+click to duplicate)';
-                addBtn.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    this.addColumn(i, e.altKey);
-                });
-
-                const delBtn = colEl.createSpan({ cls: 'pakcli-ruler-btn pakcli-ruler-btn-del', text: '-' });
-                delBtn.title = 'Delete this column';
-                delBtn.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    this.deleteColumn(i);
-                });
-
-                colEl.setAttribute('draggable', 'true');
-                colEl.addEventListener('dragstart', (e) => {
-                    e.dataTransfer?.setData('text/plain', String(i));
-                    colEl.addClass('is-dragging');
-                });
-                colEl.addEventListener('dragend', () => {
-                    colEl.removeClass('is-dragging');
-                    this.rulerBarEl.querySelectorAll('.pakcli-ruler-col').forEach((el) => el.removeClass('drag-over'));
-                });
-                colEl.addEventListener('dragover', (e) => {
-                    e.preventDefault();
-                    colEl.addClass('drag-over');
-                });
-                colEl.addEventListener('dragleave', () => {
-                    colEl.removeClass('drag-over');
-                });
-                colEl.addEventListener('drop', (e) => {
-                    e.preventDefault();
-                    colEl.removeClass('drag-over');
-                    const fromStr = e.dataTransfer?.getData('text/plain');
-                    if (fromStr !== undefined) {
-                        const fromIdx = parseInt(fromStr, 10);
-                        if (!isNaN(fromIdx) && fromIdx >= 1 && fromIdx !== i) {
-                            this.moveColumn(fromIdx, i);
-                        }
-                    }
-                });
-            }
-
-            colEl.addEventListener('dblclick', (e) => {
-                if ((e.target as HTMLElement).classList.contains('pakcli-ruler-title') || e.target === colEl) {
-                    e.stopPropagation();
-                    this.autoFitColumn(i);
-                }
-            });
-        }
-    }
-
-    private renderGuidelines(): void {
-        this.guidelinesContainerEl.empty();
-
-        let currentLeft = 0;
-        for (let i = 0; i < this.columns.length - 1; i++) {
-            currentLeft += this.columns[i].width;
-
-            const guideline = this.guidelinesContainerEl.createDiv({ cls: 'pakcli-wire' });
-            guideline.style.left = `${currentLeft}px`;
-            guideline.title = 'Drag to adjust column width • Double-click to auto-fit';
-
-            this.wireGuidelineResizer(guideline, i);
-
-            guideline.addEventListener('dblclick', (e) => {
-                e.stopPropagation();
-                e.preventDefault();
-                this.autoFitColumn(i);
-            });
-        }
-    }
-
-    private wireGuidelineResizer(guidelineEl: HTMLElement, colIndex: number): void {
-        guidelineEl.addEventListener('mousedown', (e: MouseEvent) => {
-            e.preventDefault();
-            e.stopPropagation();
-
-            const startX = e.clientX;
-            const startWidth = this.columns[colIndex].width;
-            const colDef = this.columns[colIndex];
-            const minWidth = colDef.minWidth;
-
-            document.body.addClass('pakcli-is-col-resizing');
-            guidelineEl.addClass('is-dragging');
-
-            const onMouseMove = (moveEvent: MouseEvent) => {
-                const deltaX = moveEvent.clientX - startX;
-                const newWidth = Math.max(minWidth, startWidth + deltaX);
-                colDef.width = newWidth;
-
-                this.updateColumnWidthsInDOM(colIndex, newWidth);
-            };
-
-            const onMouseUp = () => {
-                document.body.removeClass('pakcli-is-col-resizing');
-                guidelineEl.removeClass('is-dragging');
-                document.removeEventListener('mousemove', onMouseMove);
-                document.removeEventListener('mouseup', onMouseUp);
-
-                this.renderGuidelines();
-                this.syncChangesToNote();
-            };
-
-            document.addEventListener('mousemove', onMouseMove);
-            document.addEventListener('mouseup', onMouseUp);
-        });
-    }
-
-    private updateColumnWidthsInDOM(colIndex: number, newWidth: number): void {
-        const rulerCol = this.rulerBarEl.querySelector<HTMLElement>(`.pakcli-ruler-col[data-col-index="${colIndex}"]`);
-        if (rulerCol) rulerCol.style.width = `${newWidth}px`;
-
-        this.renderCodeLines();
-
-        let currentLeft = 0;
-        const allWires = this.guidelinesContainerEl.querySelectorAll<HTMLElement>('.pakcli-wire');
-        for (let i = 0; i < this.columns.length - 1; i++) {
-            currentLeft += this.columns[i].width;
-            if (allWires[i]) {
-                allWires[i].style.left = `${currentLeft}px`;
-            }
-        }
-    }
-
-    private getBranchRails(node: TreeGridNode): BranchRails {
-        if (node.depth === 0) {
-            return { ancestors: [], isLast: false };
-        }
-
-        const ancestors: boolean[] = [];
-        let curr = node.parent;
-
-        while (curr && curr.depth > 0) {
-            const hasNext = !isLastChild(curr, this.parsed.rootNodes);
-            ancestors.unshift(hasNext);
-            curr = curr.parent;
-        }
-
-        const isLast = isLastChild(node, this.parsed.rootNodes);
-        return { ancestors, isLast };
-    }
-
-    /**
-     * LAYER 2: Floating Extra GUI Overlay (Branches & Chevrons)
-     */
-    private renderOverlayRows(): void {
-        this.overlayRowsEl.empty();
-
-        const visibleNodes = this.getFlattenedVisibleNodes();
-        const branchSegWidthPx = Math.round(this.INDENT_CHARS * this.charWidthPx);
-        const chevronWidthPx = Math.round(this.CHEVRON_CHARS * this.charWidthPx);
-
-        for (const node of visibleNodes) {
-            const overlayRow = this.overlayRowsEl.createDiv({ cls: 'pakcli-overlay-row' });
-            overlayRow.style.height = `${this.ROW_HEIGHT_PX}px`;
-
-            const isFolderWithChildren = node.isDirectory && node.children.length > 0;
-            const branchRails = this.getBranchRails(node);
-
-            // Continuous CSS Tree Branches
-            if (node.depth > 0) {
-                const branchContainer = overlayRow.createSpan({ cls: 'pakcli-branch-container' });
-
-                for (const hasTrunk of branchRails.ancestors) {
-                    const trunkEl = branchContainer.createSpan({
-                        cls: `pakcli-branch-seg ${hasTrunk ? 'trunk' : 'empty'}`,
-                    });
-                    trunkEl.style.width = `${branchSegWidthPx}px`;
-                }
-
-                const segEl = branchContainer.createSpan({
-                    cls: `pakcli-branch-seg ${branchRails.isLast ? 'corner' : 'tee'}`,
-                });
-                segEl.style.width = `${branchSegWidthPx}px`;
-            }
-
-            // Minimalist Fold Chevron (v / >) in front of folder
-            if (isFolderWithChildren) {
-                const chevron = overlayRow.createSpan({
-                    cls: 'pakcli-overlay-chevron',
-                    text: node.isExpanded ? 'v' : '>',
-                    attr: { title: node.isExpanded ? 'Collapse folder' : 'Expand folder' },
-                });
-                chevron.style.width = `${chevronWidthPx}px`;
-                chevron.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    node.isExpanded = !node.isExpanded;
-                    this.renderCodeLines();
-                    this.renderOverlayRows();
-                    this.renderGuidelines();
-                });
-            } else {
-                const spacer = overlayRow.createSpan({ cls: 'pakcli-overlay-chevron-spacer' });
-                spacer.style.width = `${chevronWidthPx}px`;
-            }
-        }
+        this.renderOverlayGUI();
     }
 
     /**
      * LAYER 1: Codeblock Asli (div.cm-line.HyperMD-codeblock.HyperMD-codeblock-bg)
+     * 100% PURE TEXT NODES ONLY — ZERO SPANS, ZERO CELL DIVS!
      */
     private renderCodeLines(): void {
         this.linesContainerEl.empty();
@@ -490,12 +201,11 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
             const emptyEl = this.linesContainerEl.createDiv({
                 cls: 'cm-line HyperMD-codeblock HyperMD-codeblock-bg pakcli-tree-empty text-muted',
             });
-            emptyEl.setText('Empty tree.');
+            emptyEl.textContent = 'Empty tree.';
             return;
         }
 
         for (const node of visibleNodes) {
-            // Authentic Live Preview codeblock line div
             const lineEl = this.linesContainerEl.createDiv({
                 cls: 'cm-line HyperMD-codeblock HyperMD-codeblock-bg pakcli-code-line',
             });
@@ -506,29 +216,13 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
                 lineEl.addClass('cm-active');
             });
             lineEl.addEventListener('mouseleave', () => {
-                if (!lineEl.hasClass('is-focused')) {
-                    lineEl.removeClass('cm-active');
-                }
+                lineEl.removeClass('cm-active');
             });
 
-            // Leading spaces (where overlay branches and chevron float)
-            const leadingSpacesCount = (node.depth * this.INDENT_CHARS) + this.CHEVRON_CHARS;
-            lineEl.createSpan({
-                cls: 'pakcli-line-indent',
-                text: ' '.repeat(leadingSpacesCount),
-            });
-
-            // Item Name (Pure text, inline editable)
-            const nameSpan = lineEl.createSpan({
-                cls: `pakcli-line-name pakcli-editable-val ${node.isDirectory ? 'pakcli-folder-name' : 'pakcli-file-name'}`,
-                text: node.name,
-                attr: { title: 'Click to type / Enter for new line / Tab to indent' },
-            });
-            this.makeNameEditable(nameSpan, node);
-
-            // Columns 1 to N: Offset #note## with pure space characters
-            const itemVisualLength = leadingSpacesCount + node.name.length;
-            let currentCursorChars = itemVisualLength;
+            // Build pure text line with leading indentation spaces and offset spaces for comments
+            const leadingSpacesCount = (node.depth * 4) + 2;
+            let fullLineText = ' '.repeat(leadingSpacesCount) + node.name;
+            let currentCursorChars = leadingSpacesCount + node.name.length;
 
             for (let c = 1; c < this.columns.length; c++) {
                 const rawVal = node.columns[c - 1] || '';
@@ -544,300 +238,223 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
 
                 const hasSubsequentVal = node.columns.slice(c - 1).some((v) => v && v.trim().length > 0);
                 if (hasSubsequentVal || cleanVal) {
-                    lineEl.createSpan({
-                        cls: 'pakcli-line-spacer',
-                        text: ' '.repeat(spacesCount),
-                    });
-
-                    const prefix = '#'.repeat(c);
-                    const displayText = cleanVal ? `${prefix} ${cleanVal}` : `${prefix} `;
-                    const noteSpan = lineEl.createSpan({
-                        cls: 'pakcli-line-note pakcli-editable-val text-muted',
-                        text: displayText,
-                        attr: { title: 'Click to type comment' },
-                    });
-                    this.makeNoteEditable(noteSpan, node, c);
-
-                    currentCursorChars += displayText.length;
+                    fullLineText += ' '.repeat(spacesCount) + cleanVal;
+                    currentCursorChars += cleanVal.length;
                 }
             }
+
+            // PURE TEXT ELEMENT ONLY: Plain text node!
+            lineEl.textContent = fullLineText;
         }
     }
 
-    private makeNameEditable(element: HTMLElement, node: TreeGridNode): void {
-        element.addEventListener('click', (e) => {
-            e.stopPropagation();
-            this.enterInlineEdit(element, (newVal) => {
-                node.name = newVal.trim();
-                element.textContent = node.name;
-                this.syncChangesToNote();
-                this.renderCodeLines();
-            }, node, 0);
-        });
-    }
+    /**
+     * LAYER 2: Extra GUI Overlay (Blue SVG Tree Branches, Chevrons, Guideline Wire & - < > :: +)
+     */
+    private renderOverlayGUI(): void {
+        this.controlsContainerEl.empty();
+        while (this.svgOverlayEl.firstChild) {
+            this.svgOverlayEl.removeChild(this.svgOverlayEl.firstChild);
+        }
 
-    private makeNoteEditable(element: HTMLElement, node: TreeGridNode, colIndex: number): void {
-        element.addEventListener('click', (e) => {
-            e.stopPropagation();
-            const prefix = '#'.repeat(colIndex);
-            this.enterInlineEdit(element, (newVal) => {
-                const cleaned = newVal.replace(/^#+\s*/, '').trim();
-                while (node.columns.length < colIndex) node.columns.push('');
-                node.columns[colIndex - 1] = cleaned;
-                element.textContent = cleaned ? `${prefix} ${cleaned}` : '';
-                this.syncChangesToNote();
-                this.renderCodeLines();
-            }, node, colIndex);
-        });
-    }
+        const visibleNodes = this.getFlattenedVisibleNodes();
+        if (visibleNodes.length === 0) return;
 
-    private enterInlineEdit(
-        element: HTMLElement,
-        onSave: (val: string) => void,
-        node: TreeGridNode,
-        colIndex: number
-    ): void {
-        if (element.classList.contains('is-editing')) return;
+        // Size SVG canvas to match content
+        const bodyWidth = Math.max(this.bodyEl.scrollWidth, this.bodyEl.offsetWidth);
+        const bodyHeight = this.bodyEl.scrollHeight || (visibleNodes.length * this.ROW_HEIGHT_PX + this.paddingTopPx);
+        this.svgOverlayEl.setAttribute('width', `${bodyWidth}`);
+        this.svgOverlayEl.setAttribute('height', `${bodyHeight}`);
+        this.svgOverlayEl.style.width = `${bodyWidth}px`;
+        this.svgOverlayEl.style.height = `${bodyHeight}px`;
 
-        const originalText = element.textContent || '';
-        const lineEl = element.closest('.pakcli-code-line');
-        lineEl?.addClass('is-focused');
-        lineEl?.addClass('cm-active');
+        // 1. Render Column Guideline Wires & Header Controls (- < > :: +) in Blue
+        let currentLeft = this.paddingLeftPx;
+        for (let c = 0; c < this.columns.length - 1; c++) {
+            currentLeft += this.columns[c].width;
+            const wireX = currentLeft;
 
-        element.contentEditable = 'true';
-        element.addClass('is-editing');
-        element.focus();
+            // Blue Vertical Guideline Wire
+            const wireLine = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+            wireLine.setAttribute('x1', `${wireX}`);
+            wireLine.setAttribute('y1', `${this.paddingTopPx - 10}`);
+            wireLine.setAttribute('x2', `${wireX}`);
+            wireLine.setAttribute('y2', `${bodyHeight}`);
+            wireLine.setAttribute('class', 'pakcli-svg-wire');
+            this.svgOverlayEl.appendChild(wireLine);
 
-        const range = document.createRange();
-        range.selectNodeContents(element);
-        range.collapse(false);
-        const sel = window.getSelection();
-        sel?.removeAllRanges();
-        sel?.addRange(range);
+            // Draggable Hit-Box for Resizing
+            const wireHit = this.controlsContainerEl.createDiv({ cls: 'pakcli-wire-hitbox' });
+            wireHit.style.left = `${wireX - 6}px`;
+            wireHit.style.top = `${this.paddingTopPx - 10}px`;
+            wireHit.style.height = `${bodyHeight - this.paddingTopPx + 10}px`;
+            wireHit.title = 'Drag to adjust column width • Double-click to auto-fit';
+            this.wireGuidelineResizer(wireHit, c);
 
-        let isSaved = false;
+            // Floating Header Controls (- < > :: +) above comment column (exact match to blue guide)
+            const controlsPill = this.controlsContainerEl.createDiv({ cls: 'pakcli-column-controls-pill' });
+            controlsPill.style.left = `${wireX + 10}px`;
+            controlsPill.style.top = '6px';
 
-        const finish = (save: boolean) => {
-            if (isSaved) return;
-            isSaved = true;
-            element.contentEditable = 'false';
-            element.removeClass('is-editing');
-            lineEl?.removeClass('is-focused');
-
-            const newText = (element.textContent || '').trim();
-            if (save && newText !== originalText) {
-                onSave(newText);
-            } else {
-                element.textContent = originalText;
-            }
-        };
-
-        const onKeyDown = (e: KeyboardEvent) => {
-            if (e.key === 'Enter') {
-                e.preventDefault();
+            // Delete (-)
+            const delBtn = controlsPill.createSpan({ cls: 'pakcli-pill-btn', text: '-' });
+            delBtn.title = 'Delete column';
+            delBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
-                finish(true);
+                this.deleteColumn(c + 1);
+            });
 
-                if (e.shiftKey) {
-                    this.focusPrevRowCell(node, colIndex);
-                } else if (colIndex === 0) {
-                    this.insertNodeAfter(node);
-                } else {
-                    this.focusNextRowCell(node, colIndex);
-                }
-            } else if (e.key === 'Tab') {
-                e.preventDefault();
+            // Shift Left (<)
+            const leftBtn = controlsPill.createSpan({ cls: 'pakcli-pill-btn', text: '<' });
+            leftBtn.title = 'Move left';
+            if (c === 0) leftBtn.addClass('is-disabled');
+            leftBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
-                finish(true);
+                if (c > 0) this.moveColumn(c + 1, c);
+            });
 
-                if (colIndex === 0) {
-                    if (e.shiftKey) {
-                        this.unindentNode(node);
-                    } else {
-                        this.indentNode(node);
-                    }
-                } else {
-                    const targetCol = e.shiftKey
-                        ? Math.max(0, colIndex - 1)
-                        : Math.min(this.columns.length - 1, colIndex + 1);
-                    this.focusCell(node.id, targetCol);
-                }
-            } else if (e.key === 'ArrowDown') {
-                e.preventDefault();
-                finish(true);
-                this.focusNextRowCell(node, colIndex);
-            } else if (e.key === 'ArrowUp') {
-                e.preventDefault();
-                finish(true);
-                this.focusPrevRowCell(node, colIndex);
-            } else if (e.key === 'Backspace' && (element.textContent || '').trim() === '') {
-                if (colIndex === 0) {
-                    e.preventDefault();
-                    finish(false);
-                    this.deleteNode(node);
-                }
-            } else if (e.key === 'Escape') {
-                e.preventDefault();
-                finish(false);
-            }
-        };
+            // Shift Right (>)
+            const rightBtn = controlsPill.createSpan({ cls: 'pakcli-pill-btn', text: '>' });
+            rightBtn.title = 'Move right';
+            if (c === this.columns.length - 2) rightBtn.addClass('is-disabled');
+            rightBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                if (c < this.columns.length - 2) this.moveColumn(c + 1, c + 2);
+            });
 
-        const onBlur = () => {
-            finish(true);
-            element.removeEventListener('keydown', onKeyDown);
-            element.removeEventListener('blur', onBlur);
-        };
+            // Drag Handle (::)
+            const dragHandle = controlsPill.createSpan({ cls: 'pakcli-pill-btn pakcli-drag-handle', text: '::' });
+            dragHandle.title = 'Drag to reorder';
 
-        element.addEventListener('keydown', onKeyDown);
-        element.addEventListener('blur', onBlur);
-    }
-
-    private insertNodeAfter(targetNode: TreeGridNode): TreeGridNode {
-        const newNode: TreeGridNode = {
-            id: `tree-node-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
-            name: '',
-            rawName: '',
-            rawLine: '',
-            depth: targetNode.depth,
-            isDirectory: true,
-            columns: [],
-            children: [],
-            isExpanded: true,
-        };
-
-        if (targetNode.parent) {
-            newNode.parent = targetNode.parent;
-            const siblings = targetNode.parent.children;
-            const idx = siblings.indexOf(targetNode);
-            siblings.splice(idx + 1, 0, newNode);
-        } else {
-            const idx = this.parsed.rootNodes.indexOf(targetNode);
-            this.parsed.rootNodes.splice(idx + 1, 0, newNode);
-        }
-
-        this.syncChangesToNote();
-        this.renderCodeLines();
-        this.renderOverlayRows();
-        this.renderGuidelines();
-
-        requestAnimationFrame(() => {
-            this.focusCell(newNode.id, 0);
-        });
-
-        return newNode;
-    }
-
-    private deleteNode(node: TreeGridNode): void {
-        const flat = this.getFlattenedVisibleNodes();
-        const idx = flat.indexOf(node);
-        const prevNode = idx > 0 ? flat[idx - 1] : null;
-
-        if (node.parent) {
-            const siblings = node.parent.children;
-            const sIdx = siblings.indexOf(node);
-            if (sIdx !== -1) siblings.splice(sIdx, 1);
-        } else {
-            const rIdx = this.parsed.rootNodes.indexOf(node);
-            if (rIdx !== -1) this.parsed.rootNodes.splice(rIdx, 1);
-        }
-
-        this.syncChangesToNote();
-        this.renderCodeLines();
-        this.renderOverlayRows();
-        this.renderGuidelines();
-
-        if (prevNode) {
-            requestAnimationFrame(() => {
-                this.focusCell(prevNode.id, 0);
+            // Add (+)
+            const addBtn = controlsPill.createSpan({ cls: 'pakcli-pill-btn', text: '+' });
+            addBtn.title = 'Add new column (Alt+click to duplicate)';
+            addBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                this.addColumn(c + 1, e.altKey);
             });
         }
+
+        // 2. Render SVG Continuous Tree Branches & Chevrons (Matching Blue User Guide)
+        this.renderTreeBranchesAndChevrons();
     }
 
-    private indentNode(node: TreeGridNode): void {
-        const siblings = node.parent ? node.parent.children : this.parsed.rootNodes;
-        const idx = siblings.indexOf(node);
-        if (idx <= 0) return;
+    private renderTreeBranchesAndChevrons(): void {
+        const visibleNodes = this.getFlattenedVisibleNodes();
+        const nodeIndexMap = new Map<TreeGridNode, number>();
+        visibleNodes.forEach((node, idx) => nodeIndexMap.set(node, idx));
 
-        const prevSibling = siblings[idx - 1];
-        siblings.splice(idx, 1);
+        const getMidY = (idx: number) => this.paddingTopPx + (idx * this.ROW_HEIGHT_PX) + (this.ROW_HEIGHT_PX / 2);
 
-        node.parent = prevSibling;
-        node.depth = prevSibling.depth + 1;
-        prevSibling.children.push(node);
-        prevSibling.isExpanded = true;
-        prevSibling.isDirectory = true;
+        // Recursively draw branches for parent nodes
+        const drawBranches = (nodes: TreeGridNode[]) => {
+            for (const parent of nodes) {
+                if (parent.children && parent.children.length > 0 && parent.isExpanded) {
+                    const firstChild = parent.children[0];
+                    const lastChild = parent.children[parent.children.length - 1];
 
-        this.syncChangesToNote();
-        this.renderCodeLines();
-        this.renderOverlayRows();
-        this.renderGuidelines();
+                    const firstIdx = nodeIndexMap.get(firstChild);
+                    const lastIdx = nodeIndexMap.get(lastChild);
+                    const parentIdx = nodeIndexMap.get(parent);
 
-        requestAnimationFrame(() => {
-            this.focusCell(node.id, 0);
+                    if (firstIdx !== undefined && lastIdx !== undefined) {
+                        const trunkX = this.paddingLeftPx + (((parent.depth * 4) + 1) * this.charWidthPx) + (this.charWidthPx / 2);
+                        const startY = parentIdx !== undefined ? getMidY(parentIdx) + 8 : getMidY(firstIdx);
+                        const endY = getMidY(lastIdx);
+
+                        // Vertical Trunk Line connecting children
+                        const trunkPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                        trunkPath.setAttribute('d', `M ${trunkX} ${startY} V ${endY}`);
+                        trunkPath.setAttribute('class', 'pakcli-svg-branch');
+                        this.svgOverlayEl.appendChild(trunkPath);
+
+                        // Horizontal Branch Ticks (├── and └──) into each child
+                        for (const child of parent.children) {
+                            const cIdx = nodeIndexMap.get(child);
+                            if (cIdx !== undefined) {
+                                const cMidY = getMidY(cIdx);
+                                const childIndentX = this.paddingLeftPx + (((child.depth * 4) + 2) * this.charWidthPx);
+                                const tickEndX = childIndentX - 3;
+
+                                const tickPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                                tickPath.setAttribute('d', `M ${trunkX} ${cMidY} H ${tickEndX}`);
+                                tickPath.setAttribute('class', 'pakcli-svg-branch');
+                                this.svgOverlayEl.appendChild(tickPath);
+                            }
+                        }
+                    }
+
+                    drawBranches(parent.children);
+                }
+            }
+        };
+
+        drawBranches(this.parsed.rootNodes);
+
+        // 3. Render Chevrons (v / >) in front of folder items
+        for (let i = 0; i < visibleNodes.length; i++) {
+            const node = visibleNodes[i];
+            if (node.isDirectory && node.children.length > 0) {
+                const chevronX = this.paddingLeftPx + ((node.depth * 4) * this.charWidthPx);
+                const chevronY = this.paddingTopPx + (i * this.ROW_HEIGHT_PX) + 4;
+
+                const chevronEl = this.controlsContainerEl.createSpan({
+                    cls: 'pakcli-overlay-chevron',
+                    text: node.isExpanded ? 'v' : '>',
+                    attr: { title: node.isExpanded ? 'Collapse folder' : 'Expand folder' },
+                });
+                chevronEl.style.left = `${chevronX}px`;
+                chevronEl.style.top = `${chevronY}px`;
+                chevronEl.style.width = `${Math.round(this.charWidthPx * 1.8)}px`;
+
+                chevronEl.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    node.isExpanded = !node.isExpanded;
+                    this.renderCodeLines();
+                    this.renderOverlayGUI();
+                });
+            }
+        }
+    }
+
+    private wireGuidelineResizer(wireHitEl: HTMLElement, colIndex: number): void {
+        wireHitEl.addEventListener('mousedown', (e: MouseEvent) => {
+            e.preventDefault();
+            e.stopPropagation();
+
+            const startX = e.clientX;
+            const startWidth = this.columns[colIndex].width;
+            const colDef = this.columns[colIndex];
+            const minWidth = colDef.minWidth;
+
+            document.body.addClass('pakcli-is-col-resizing');
+
+            const onMouseMove = (moveEvent: MouseEvent) => {
+                const deltaX = moveEvent.clientX - startX;
+                const newWidth = Math.max(minWidth, startWidth + deltaX);
+                colDef.width = newWidth;
+
+                this.renderCodeLines();
+                this.renderOverlayGUI();
+            };
+
+            const onMouseUp = () => {
+                document.body.removeClass('pakcli-is-col-resizing');
+                document.removeEventListener('mousemove', onMouseMove);
+                document.removeEventListener('mouseup', onMouseUp);
+
+                this.syncChangesToNote();
+            };
+
+            document.addEventListener('mousemove', onMouseMove);
+            document.addEventListener('mouseup', onMouseUp);
         });
-    }
 
-    private unindentNode(node: TreeGridNode): void {
-        if (!node.parent) return;
-
-        const parent = node.parent;
-        const grandparent = parent.parent;
-
-        const siblings = parent.children;
-        const idx = siblings.indexOf(node);
-        if (idx !== -1) siblings.splice(idx, 1);
-
-        node.depth = parent.depth;
-        if (grandparent) {
-            node.parent = grandparent;
-            const gSiblings = grandparent.children;
-            const pIdx = gSiblings.indexOf(parent);
-            gSiblings.splice(pIdx + 1, 0, node);
-        } else {
-            node.parent = undefined;
-            const pIdx = this.parsed.rootNodes.indexOf(parent);
-            this.parsed.rootNodes.splice(pIdx + 1, 0, node);
-        }
-
-        this.syncChangesToNote();
-        this.renderCodeLines();
-        this.renderOverlayRows();
-        this.renderGuidelines();
-
-        requestAnimationFrame(() => {
-            this.focusCell(node.id, 0);
+        wireHitEl.addEventListener('dblclick', (e) => {
+            e.stopPropagation();
+            e.preventDefault();
+            this.autoFitColumn(colIndex);
         });
-    }
-
-    private focusCell(nodeId: string, colIndex: number): void {
-        const selector = colIndex === 0
-            ? `.pakcli-code-line[data-node-id="${nodeId}"] .pakcli-line-name`
-            : `.pakcli-code-line[data-node-id="${nodeId}"] .pakcli-line-note`;
-
-        const cell = this.linesContainerEl.querySelector<HTMLElement>(selector);
-        if (cell) {
-            cell.click();
-        }
-    }
-
-    private focusNextRowCell(currentNode: TreeGridNode, colIndex: number): void {
-        const flat = this.getFlattenedVisibleNodes();
-        const idx = flat.indexOf(currentNode);
-        if (idx !== -1 && idx < flat.length - 1) {
-            const nextNode = flat[idx + 1];
-            this.focusCell(nextNode.id, colIndex);
-        } else if (colIndex === 0) {
-            this.insertNodeAfter(currentNode);
-        }
-    }
-
-    private focusPrevRowCell(currentNode: TreeGridNode, colIndex: number): void {
-        const flat = this.getFlattenedVisibleNodes();
-        const idx = flat.indexOf(currentNode);
-        if (idx > 0) {
-            const prevNode = flat[idx - 1];
-            this.focusCell(prevNode.id, colIndex);
-        }
     }
 
     private moveColumn(fromColIdx: number, toColIdx: number): void {
@@ -909,7 +526,7 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
 
         if (colIndex === 0) {
             for (const node of visibleNodes) {
-                const indent = (node.depth * this.INDENT_CHARS) + this.CHEVRON_CHARS;
+                const indent = (node.depth * 4) + 2;
                 const len = indent + node.name.length;
                 if (len > maxChars) maxChars = len;
             }
@@ -918,17 +535,17 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
                 const rawVal = node.columns[colIndex - 1] || '';
                 const clean = rawVal.replace(/^#+\s*/, '').trim();
                 if (clean) {
-                    const len = colIndex + 1 + clean.length;
+                    const len = clean.length;
                     if (len > maxChars) maxChars = len;
                 }
             }
         }
 
-        const fittedWidth = Math.max(this.columns[colIndex].minWidth, Math.ceil((maxChars + 4) * this.charWidthPx));
+        const fittedWidth = Math.max(this.columns[colIndex].minWidth, Math.ceil((maxChars + 6) * this.charWidthPx));
         this.columns[colIndex].width = fittedWidth;
 
-        this.updateColumnWidthsInDOM(colIndex, fittedWidth);
-        this.renderGuidelines();
+        this.renderCodeLines();
+        this.renderOverlayGUI();
         this.syncChangesToNote();
     }
 
