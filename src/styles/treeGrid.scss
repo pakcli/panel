@@ -15,7 +15,7 @@
 /* 2. Codeblock Card Container */
 .pakcli-tree-card-container {
     margin: 0 !important;
-    padding: 8px 14px !important;
+    padding: 8px 14px 12px 14px !important;
     border: 1px solid var(--code-border, var(--background-modifier-border)) !important;
     border-radius: var(--radius-m, 8px) !important;
     background: var(--code-background, var(--background-primary-alt)) !important;
@@ -24,6 +24,36 @@
     position: relative !important;
     box-shadow: none !important;
     overflow-x: auto !important;
+}
+
+/* 2B. Top HUD Bar (top huio) */
+.pakcli-tree-top-hud {
+    position: relative;
+    height: 32px;
+    min-height: 32px;
+    display: flex;
+    align-items: center;
+    border-bottom: 1px dashed var(--background-modifier-border);
+    margin-bottom: 8px;
+    user-select: none;
+    z-index: 25;
+}
+
+/* Inline Interactive Chevrons (v / >) in Layer 1 */
+.pakcli-interactive-chevron-inline {
+    display: inline;
+    color: var(--interactive-accent, #00b0ff);
+    font-family: var(--font-monospace, monospace);
+    font-weight: 700;
+    cursor: pointer;
+    user-select: none;
+    transition: opacity 0.1s ease, color 0.1s ease;
+
+    &:hover {
+        opacity: 0.8;
+        color: var(--text-accent, #00b0ff);
+        text-decoration: underline;
+    }
 }
 
 /* 3. Native Copy Button (📋) in top-right */
@@ -130,7 +160,70 @@ div.cm-line.HyperMD-codeblock.HyperMD-codeblock-bg.pakcli-code-line {
     }
 }
 
-/* 6B. Interactive Controls Container (Chevrons, Wire Hitboxes, - < > :: +) */
+/* 6B. Interactive Controls (Chevrons, Wire Hitboxes, - < > :: +) */
+.pakcli-wire-hitbox {
+    position: absolute;
+    width: 14px;
+    cursor: col-resize;
+    pointer-events: auto;
+    z-index: 25;
+
+    &:hover {
+        background: rgba(0, 176, 255, 0.1);
+    }
+}
+
+.pakcli-column-controls-pill {
+    position: absolute;
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    background: var(--background-secondary, #1a1e24);
+    border: 1.5px solid var(--interactive-accent, #00b0ff);
+    border-radius: 4px;
+    padding: 1px 4px;
+    font-family: var(--font-monospace, monospace);
+    font-size: 0.72rem;
+    font-weight: 700;
+    color: var(--interactive-accent, #00b0ff);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+    pointer-events: auto;
+    user-select: none;
+    z-index: 30;
+
+    .pakcli-pill-btn {
+        cursor: pointer;
+        padding: 0 3px;
+        color: var(--interactive-accent, #00b0ff);
+        background: transparent;
+        border: none;
+        outline: none;
+        font-family: var(--font-monospace, monospace);
+        font-size: 0.72rem;
+        font-weight: 700;
+        transition: opacity 0.1s ease, color 0.1s ease;
+
+        &:hover {
+            opacity: 1;
+            color: #fff;
+            background: rgba(0, 176, 255, 0.25);
+            border-radius: 2px;
+        }
+
+        &.is-disabled {
+            opacity: 0.3;
+            cursor: not-allowed;
+            pointer-events: none;
+        }
+
+        &.pakcli-pill-handle {
+            cursor: grab;
+            letter-spacing: -1px;
+            padding: 0 2px;
+        }
+    }
+}
+
 .pakcli-gui-controls-layer {
     position: absolute;
     top: 0;
@@ -139,90 +232,6 @@ div.cm-line.HyperMD-codeblock.HyperMD-codeblock-bg.pakcli-code-line {
     height: 100%;
     pointer-events: none;
     z-index: 20;
-
-    /* Minimalist Folder Fold Chevron (v / >) in Blue */
-    .pakcli-overlay-chevron {
-        position: absolute;
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        width: 14px;
-        height: 14px;
-        font-family: var(--font-monospace, monospace);
-        font-size: 0.72rem;
-        font-weight: 700;
-        color: var(--interactive-accent, #00b0ff);
-        cursor: pointer;
-        pointer-events: auto;
-        border-radius: 3px;
-        user-select: none;
-        transition: background 0.12s ease, transform 0.1s ease;
-
-        &:hover {
-            background: rgba(0, 176, 255, 0.2);
-            transform: scale(1.15);
-        }
-    }
-
-    /* Draggable Hitbox for Guideline Wire */
-    .pakcli-wire-hitbox {
-        position: absolute;
-        width: 14px;
-        cursor: col-resize;
-        pointer-events: auto;
-        z-index: 25;
-
-        &:hover {
-            background: rgba(0, 176, 255, 0.1);
-        }
-    }
-
-    /* Floating Column Controls Pill: - < > :: + in Blue */
-    .pakcli-column-controls-pill {
-        position: absolute;
-        display: inline-flex;
-        align-items: center;
-        gap: 2px;
-        background: var(--background-secondary, #1a1e24);
-        border: 1.5px solid var(--interactive-accent, #00b0ff);
-        border-radius: 4px;
-        padding: 1px 4px;
-        font-family: var(--font-monospace, monospace);
-        font-size: 0.72rem;
-        font-weight: 700;
-        color: var(--interactive-accent, #00b0ff);
-        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
-        pointer-events: auto;
-        user-select: none;
-        z-index: 30;
-
-        .pakcli-pill-btn {
-            cursor: pointer;
-            padding: 1px 4px;
-            border-radius: 2px;
-            transition: all 0.12s ease;
-
-            &:hover {
-                background: var(--interactive-accent, #00b0ff);
-                color: var(--text-on-accent, #ffffff);
-            }
-
-            &.is-disabled {
-                opacity: 0.3;
-                cursor: not-allowed;
-                pointer-events: none;
-            }
-
-            &.pakcli-drag-handle {
-                cursor: grab;
-                letter-spacing: -1px;
-
-                &:active {
-                    cursor: grabbing;
-                }
-            }
-        }
-    }
 }
 
 /* 7. Active Column Resizing Global Cursor Guard */

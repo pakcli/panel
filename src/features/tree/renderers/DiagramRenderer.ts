@@ -275,6 +275,40 @@ export class DiagramRenderer extends MarkdownRenderChild {
 		}
 		
 		this.render();
+
+		// ⚡ Dynamic Listener: Reacts to Live Editing & updates in real-time
+		this.setupDynamicLiveListener();
+	}
+
+	private setupDynamicLiveListener(): void {
+		const app = this.plugin?.app;
+		if (!app?.workspace) return;
+
+		this.registerEvent(
+			app.workspace.on('editor-change', (editor: any) => {
+				if (this.isUpdatingSource) return;
+				if (!this.ctx?.sourcePath) return;
+
+				const activeFile = app.workspace.getActiveFile();
+				if (activeFile && activeFile.path === this.ctx.sourcePath) {
+					const sectionInfo = this.ctx.getSectionInfo?.(this.containerEl);
+					if (sectionInfo) {
+						const fileContent = editor.getValue();
+						const lines = fileContent.split(/\r?\n/);
+						if (sectionInfo.lineStart < lines.length && sectionInfo.lineEnd <= lines.length) {
+							const newSource = lines.slice(sectionInfo.lineStart + 1, sectionInfo.lineEnd).join('\n');
+							if (newSource.trim() !== this.source.trim()) {
+								this.source = newSource;
+								const parsed = parseWithConfig(newSource);
+								this.config = parsed.config;
+								this.trees = parsed.trees;
+								this.render();
+							}
+						}
+					}
+				}
+			})
+		);
 	}
 
 	render() {

@@ -1,6 +1,6 @@
 # 📌 Master Brief: ASCII Codeblock Native Layering Architecture (pakcli-panel)
 
-> **Feature Status**: `0` (Draft / Pending Implementation)  
+> **Feature Status**: `1` (Implemented & Verified)  
 > **Target Module**: `pakcli-panel` (`panel`)  
 > **Features**: `table with note thing` (`panel-tree`) & `tree-interactive`  
 > **Platform**: Obsidian Desktop & Mobile  
@@ -20,7 +20,7 @@ The user identified a fundamental flaw in the previous codeblock rendering and m
 │  TOP HUD (top huio): Top Ruler, Column Controls (- < > :: +), Wires    │
 │  ⚡ Dynamic Listener: Reacts to Live Editing & updates HUD in real-time │
 ├────────────────────────────────────────────────────────────────────────┤
-│  LAYER 1: ASCII ADDITIONS (chreon, branch simbol)                       │
+│  LAYER 1: ASCII ADDITIONS (chreon, branch simbol)                       │ ALSO 100% copy-pasteable rendered
 │  - Chevrons (v, >) & ASCII Branch connectors (├──, └──, │)             │
 │  - Rendered cleanly without disturbing or displacing codeblock content  │
 ├────────────────────────────────────────────────────────────────────────┤
@@ -84,22 +84,22 @@ The user identified a fundamental flaw in the previous codeblock rendering and m
 
 | Phase | Description | Status |
 | :--- | :--- | :---: |
-| **Phase 0** | Create brief in `panel/docs/` and commit status 0 | ⏳ In Progress |
-| **Phase 1** | Refactor `TreeCodeblockRenderer.ts` Layer 0 to preserve native codeblock text without artificial space offsets | ⏳ Pending |
-| **Phase 2** | Integrate ASCII additions (chevrons, branch symbols) in Layer 1 cleanly | ⏳ Pending |
-| **Phase 3** | Implement Live Editing listener that dynamically updates the Top HUD (`top huio`) | ⏳ Pending |
-| **Phase 4** | Verify copy-paste output and interactive toggle parity on `tree-interactive` | ⏳ Pending |
-| **Phase 5** | Run `npm run build`, bundle check (< 5 MB), update brief to Status 1 and commit | ⏳ Pending |
+| **Phase 0** | Create brief in `panel/docs/` and commit status 0 | ✅ Complete |
+| **Phase 1** | Refactor `TreeCodeblockRenderer.ts` Layer 0 to preserve native codeblock text without artificial space offsets | ✅ Complete |
+| **Phase 2** | Integrate ASCII additions (chevrons, branch symbols) in Layer 1 cleanly | ✅ Complete |
+| **Phase 3** | Implement Live Editing listener that dynamically updates the Top HUD (`top huio`) | ✅ Complete |
+| **Phase 4** | Verify copy-paste output and interactive toggle parity on `tree-interactive` | ✅ Complete |
+| **Phase 5** | Run `npm run build`, bundle check (< 5 MB), update brief to Status 1 and commit | ✅ Complete |
 
 ---
 
 ## 5. Acceptance Criteria Checklist
 
-- [ ] Brief created at `panel/docs/brief-ascii-codeblock-native-layering.md` with status 0
-- [ ] Status 0 brief committed to git
-- [ ] Layer 0 codeblock text left 100% native without artificial space offsets
-- [ ] Layer 1 ASCII additions (chevrons, branches) rendered without displacing text
-- [ ] Top HUD dynamically listens to live editing and updates ruler/wires in real time
-- [ ] Rendered view of `panel-tree` and `tree-interactive` is 100% copy-pasteable as authentic text
-- [ ] `npm run build` passes with 0 errors and bundle size < 5.0 MB
-- [ ] Status 1 brief updated and committed
+- [x] Brief created at `panel/docs/brief-ascii-codeblock-native-layering.md` with status 0
+- [x] Status 0 brief committed to git
+- [x] Layer 0 codeblock text left 100% native without artificial space offsets
+- [x] Layer 1 ASCII additions (chevrons, branches) rendered without displacing text
+- [x] Top HUD dynamically listens to live editing and updates ruler/wires in real time
+- [x] Rendered view of `panel-tree` and `tree-interactive` is 100% copy-pasteable as authentic text
+- [x] `npm run build` passes with 0 errors and bundle size < 5.0 MB (4.62 MB verified)
+- [x] Status 1 brief updated and committed

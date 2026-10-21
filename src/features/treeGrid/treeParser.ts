@@ -83,10 +83,15 @@ export function getRawLeadingWhitespace(line: string): number {
 
 /**
  * Extracts node name and comment columns from a raw trimmed line.
- * Rule: any "space + #" or "| #" creates a column.
+ * Rule: any "space + #" or "| #" or 2+ spaces creates a column.
  * Also supports multiple columns: "#col1 #col2".
  */
-export function extractNameAndColumns(rawTrimmed: string): { name: string; rawName: string; columns: string[] } {
+export function extractNameAndColumns(rawTrimmed: string): {
+    name: string;
+    rawName: string;
+    trailingContent: string;
+    columns: string[];
+} {
     let trimmed = rawTrimmed.trim();
 
     // Strip leading ASCII symbols if user wrote V, >, L, ├──, └──, │
@@ -94,13 +99,13 @@ export function extractNameAndColumns(rawTrimmed: string): { name: string; rawNa
     trimmed = trimmed.replace(/^[L├└│]\s*/, '');
     trimmed = trimmed.replace(/^[│\s]*[├└]──\s*/, '');
 
-    // Check if line has columns marked by "space + #" or "| #" or "##"
-    const colSplitRegex = /(?:[ \t]+\|[ \t]*|[ \t]+)#|\s+##+\s*/;
-    const firstMatch = colSplitRegex.exec(trimmed);
-
-    if (firstMatch) {
-        const namePart = trimmed.slice(0, firstMatch.index).trim().replace(/\|\s*$/, '').trim();
-        const rest = trimmed.slice(firstMatch.index).trim();
+    // Check if line has columns marked by:
+    // 1. "space + #" or "| #" or "##"
+    const hashMatch = /(?:[ \t]+\|[ \t]*|[ \t]+)#|\s+##+\s*/.exec(trimmed);
+    if (hashMatch) {
+        const namePart = trimmed.slice(0, hashMatch.index).trim().replace(/\|\s*$/, '').trim();
+        const trailing = trimmed.slice(namePart.length);
+        const rest = trimmed.slice(hashMatch.index).trim();
 
         // Split all columns by (space + #) or (| + #) or (##)
         const rawCols = rest.split(/(?:[ \t]+\|[ \t]*|[ \t]+)#|\s+##+\s*/);
@@ -116,14 +121,16 @@ export function extractNameAndColumns(rawTrimmed: string): { name: string; rawNa
         return {
             name: namePart.replace(/[\/\\]$/, ''),
             rawName: namePart,
+            trailingContent: trailing,
             columns: columns.slice(0, 10),
         };
     }
 
-    // Check for pipe delimited columns without # (e.g. name | col1 | col2)
+    // 2. Check for pipe delimited columns without # (e.g. name | col1 | col2)
     if (trimmed.includes('|')) {
         const parts = trimmed.split(/\s*\|\s*/);
         const namePart = parts[0].trim();
+        const trailing = trimmed.slice(namePart.length);
         const columns: string[] = [];
         for (let i = 1; i < parts.length; i++) {
             const c = parts[i].trim().replace(/^[|#\s]+/, '').trim();
@@ -132,13 +139,29 @@ export function extractNameAndColumns(rawTrimmed: string): { name: string; rawNa
         return {
             name: namePart.replace(/[\/\\]$/, ''),
             rawName: namePart,
+            trailingContent: trailing,
             columns: columns.slice(0, 10),
+        };
+    }
+
+    // 3. 2 or more consecutive spaces or tab followed by non-whitespace
+    const spaceColMatch = /(?:\t|[ ]{2,})(?=\S)/.exec(trimmed);
+    if (spaceColMatch) {
+        const namePart = trimmed.slice(0, spaceColMatch.index).trim();
+        const trailing = trimmed.slice(namePart.length);
+        const rest = trimmed.slice(spaceColMatch.index).trim();
+        return {
+            name: namePart.replace(/[\/\\]$/, ''),
+            rawName: namePart,
+            trailingContent: trailing,
+            columns: [rest],
         };
     }
 
     return {
         name: trimmed.replace(/[\/\\]$/, ''),
         rawName: trimmed,
+        trailingContent: '',
         columns: [],
     };
 }
@@ -172,9 +195,11 @@ export function parseTreeGrid(source: string): ParsedTreeGrid {
         }
         const depth = indentStack.length - 1;
 
-        const trimmedLine = rawLine.trim();
+        const leadingMatch = rawLine.match(/^[\t ]*/);
+        const leadingWhitespace = leadingMatch ? leadingMatch[0] : '';
+        const trimmedLine = rawLine.slice(leadingWhitespace.length);
 
-        const { name, rawName, columns } = extractNameAndColumns(trimmedLine);
+        const { name, rawName, trailingContent, columns } = extractNameAndColumns(trimmedLine);
 
         if (columns.length > maxCols) {
             maxCols = columns.length;
@@ -188,6 +213,8 @@ export function parseTreeGrid(source: string): ParsedTreeGrid {
             name,
             rawName,
             rawLine,
+            leadingWhitespace,
+            trailingContent,
             depth,
             isDirectory: isDir,
             extension,

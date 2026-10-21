@@ -15,6 +15,8 @@ export interface TreeGridNode {
     name: string;
     rawName: string;
     rawLine?: string;
+    leadingWhitespace?: string;
+    trailingContent?: string;
     depth: number;
     isDirectory: boolean;
     extension?: string;

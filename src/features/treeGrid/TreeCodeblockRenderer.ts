@@ -1,15 +1,20 @@
 /**
  * TreeCodeblockRenderer.ts
- * Authentic Native Codeblock with Floating Extra GUI Overlay Layer.
  *
- * Exact User Specification:
- * - "ITS A TEXT LADS THE ELEMENTED IS TEXT ELEMENT LADS"
- * - Base Layer lines: div.cm-line.HyperMD-codeblock.HyperMD-codeblock-bg containing PURE TEXT NODES ONLY.
- * - Extra GUI Overlay: Floating SVG vector layer drawing the blue lines from media_1792590031684_53a169a5.png:
- *   1. Blue tree branches connecting parents to children (zero gaps, round joins)
- *   2. Blue vertical guideline wire at column boundary
- *   3. Blue header controls "- < > :: +" above comment column
- *   4. Blue chevrons (v / >) in front of folder items
+ * 3-Layer Architecture for "Table with Note Thing" Codeblock:
+ * ┌────────────────────────────────────────────────────────────────────────┐
+ * │  TOP HUD (top huio): Top Ruler, Column Controls (- < > :: +), Wires    │
+ * │  ⚡ Dynamic Listener: Reacts to Live Editing & updates HUD in real-time │
+ * ├────────────────────────────────────────────────────────────────────────┤
+ * │  LAYER 1: ASCII ADDITIONS (chreon, branch simbol)                       │ ALSO 100% copy-pasteable rendered
+ * │  - Chevrons (v, >) & ASCII Branch connectors (├──, └──, │)             │
+ * │  - Rendered cleanly without disturbing or displacing codeblock content  │
+ * ├────────────────────────────────────────────────────────────────────────┤
+ * │  LAYER 0: NATIVE CODEBLOCK (layer codeblock)                           │
+ * │  - 🚨 DO NOT TOUCH AND DO NOT OFFSET ANYTHING                           │
+ * │  - Keep codeblock native: natural indentation, spaces, and note text   │
+ * │  - Full native Live Editing experience; 100% copy-pasteable rendered    │
+ * └────────────────────────────────────────────────────────────────────────┘
  */
 
 import { MarkdownRenderChild, MarkdownPostProcessorContext, Notice, TFile } from 'obsidian';
@@ -26,17 +31,16 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
 
     // DOM Elements
     private cardContainerEl!: HTMLElement;
+    private topHudEl!: HTMLElement;
     private bodyEl!: HTMLElement;
     private linesContainerEl!: HTMLElement;
-    private overlayEl!: HTMLElement;
     private svgOverlayEl!: SVGSVGElement;
-    private controlsContainerEl!: HTMLElement;
 
     // Metrics
     private charWidthPx = 8.6;
     private readonly ROW_HEIGHT_PX = 24;
     private paddingLeftPx = 10;
-    private paddingTopPx = 34; // Room for top "- < > :: +" controls
+    private isSyncing = false;
 
     constructor(
         containerEl: HTMLElement,
@@ -57,8 +61,11 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
         this.render();
         requestAnimationFrame(() => {
             this.measureCharWidth();
-            this.renderOverlayGUI();
+            this.renderTopHUD();
         });
+
+        // ⚡ Dynamic Listener: Reacts to Live Editing & updates HUD in real-time
+        this.setupDynamicLiveListener();
     }
 
     private measureCharWidth(): void {
@@ -147,79 +154,56 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
         return result;
     }
 
+    /**
+     * Master Render: Builds Card, Top HUD, Background SVG Wires, and Native Codeblock Lines
+     */
     private render(): void {
         const { containerEl } = this;
         containerEl.empty();
         containerEl.addClass('pakcli-tree-root-container');
 
-        // Card Container holding the Live Preview Codeblock lines
+        // Card Container holding the Live Preview Codeblock
         this.cardContainerEl = containerEl.createDiv({
             cls: 'pakcli-tree-card-container HyperMD-codeblock-bg',
         });
 
-        // Native Copy Button (📋) using CopyButton from uiComponents
-        new CopyButton({
-            containerEl: this.cardContainerEl,
-            cls: 'pakcli-tree-copy-btn',
-            tooltip: 'Copy clean formatted tree',
-            textGetter: () => {
-                const lines: string[] = [];
-                const flatNodes = this.getFlattenedVisibleNodes();
-                for (const node of flatNodes) {
-                    const branchPrefix = getAsciiBranchPrefix(node, this.parsed.rootNodes);
-                    const chevronPrefix = node.isDirectory
-                        ? (node.children.length > 0 ? (node.isExpanded ? 'v ' : '> ') : '  ')
-                        : (node.depth === 0 ? '  ' : '');
-                    const pathSegment = branchPrefix + chevronPrefix + node.name;
-                    let lineStr = pathSegment;
-                    let curChars = pathSegment.length;
-
-                    for (let c = 1; c < this.columns.length; c++) {
-                        const rawVal = node.columns[c - 1] || '';
-                        const cleanVal = rawVal.replace(/^#+\s*/, '').trim();
-
-                        let targetColStartChars = 0;
-                        for (let k = 0; k < c; k++) {
-                            targetColStartChars += Math.max(4, Math.round(this.columns[k].width / this.charWidthPx));
-                        }
-                        const spacesCount = Math.max(2, targetColStartChars - curChars);
-                        curChars += spacesCount;
-                        if (cleanVal) {
-                            lineStr += ' '.repeat(spacesCount) + cleanVal;
-                            curChars += cleanVal.length;
-                        }
-                    }
-                    lines.push(lineStr);
-                }
-                return lines.join('\n');
-            },
+        // ══════════════════════════════════════════════════════════════════
+        // TOP HUD (top huio): Top Ruler, Column Controls (- < > :: +), Copy
+        // ══════════════════════════════════════════════════════════════════
+        this.topHudEl = this.cardContainerEl.createDiv({
+            cls: 'pakcli-tree-top-hud',
         });
 
-        // Main Tree Body (relative wrapper for overlay and code lines)
-        this.bodyEl = this.cardContainerEl.createDiv({ cls: 'pakcli-tree-body' });
-        this.bodyEl.style.paddingTop = `${this.paddingTopPx}px`;
+        // 📋 1-Click Copy Button inside Top HUD
+        new CopyButton({
+            containerEl: this.topHudEl,
+            cls: 'pakcli-tree-copy-btn',
+            tooltip: 'Copy clean formatted tree',
+            textGetter: () => this.getPlainTextForCopy(),
+        });
 
-        // Layer 1: Codeblock Lines (div.cm-line.HyperMD-codeblock.HyperMD-codeblock-bg)
+        // Main Tree Body (relative wrapper for background wires and code lines)
+        this.bodyEl = this.cardContainerEl.createDiv({ cls: 'pakcli-tree-body' });
+
+        // Background Guideline SVG Wire Layer (strictly pointer-events: none)
+        this.svgOverlayEl = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        this.svgOverlayEl.setAttribute('class', 'pakcli-tree-svg-overlay');
+        this.bodyEl.appendChild(this.svgOverlayEl);
+
+        // ══════════════════════════════════════════════════════════════════
+        // LAYER 0 + LAYER 1: Codeblock Lines (100% Copy-Pasteable Authentic Text)
+        // ══════════════════════════════════════════════════════════════════
         this.linesContainerEl = this.bodyEl.createDiv({ cls: 'pakcli-code-lines' });
         this.renderCodeLines();
 
-        // Layer 2: Floating Extra GUI Overlay (+1 Layer Above, z-index: 10, position: absolute)
-        this.overlayEl = this.bodyEl.createDiv({ cls: 'pakcli-floating-extra-gui' });
-
-        // SVG layer for continuous blue vector tree branches & column guideline wire
-        this.svgOverlayEl = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-        this.svgOverlayEl.setAttribute('class', 'pakcli-tree-svg-overlay');
-        this.overlayEl.appendChild(this.svgOverlayEl);
-
-        // Interactive Controls Container (Chevrons & Header Buttons: - < > :: +)
-        this.controlsContainerEl = this.overlayEl.createDiv({ cls: 'pakcli-gui-controls-layer' });
-
-        this.renderOverlayGUI();
+        // Render Top HUD items and guideline wires
+        this.renderTopHUD();
     }
 
     /**
-     * LAYER 1: Codeblock Asli (div.cm-line.HyperMD-codeblock.HyperMD-codeblock-bg)
-     * 100% PURE TEXT NODES ONLY — ZERO SPANS, ZERO CELL DIVS!
+     * LAYER 0 (NATIVE CODEBLOCK) + LAYER 1 (ASCII ADDITIONS)
+     * - DO NOT TOUCH AND DO NOT OFFSET ANYTHING on node.name + trailingContent!
+     * - 100% genuine text; 100% copy-pasteable rendered!
      */
     private renderCodeLines(): void {
         this.linesContainerEl.empty();
@@ -247,47 +231,66 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
                 lineEl.removeClass('cm-active');
             });
 
-            // Authentic ASCII tree branch prefix: ├── , └── , │   
+            // LAYER 1: Authentic ASCII tree branch prefix: ├── , └── , │
             const branchPrefix = getAsciiBranchPrefix(node, this.parsed.rootNodes);
 
-            // Folder chevron indicator: v  or >  (or empty for root/leaf files)
-            const chevronPrefix = node.isDirectory
-                ? (node.children.length > 0 ? (node.isExpanded ? 'v ' : '> ') : '  ')
+            // Folder chevron indicator: v  or >  (or spaces for alignment/leaf files)
+            const hasChildren = node.isDirectory && node.children && node.children.length > 0;
+            const chevronText = node.isDirectory
+                ? (hasChildren ? (node.isExpanded ? 'v ' : '> ') : '  ')
                 : (node.depth === 0 ? '  ' : '');
 
-            const pathSegment = branchPrefix + chevronPrefix + node.name;
-            let fullLineText = pathSegment;
-            let currentCursorChars = pathSegment.length;
+            // LAYER 0: Native codeblock content: name + trailingContent (UNTOUCHED! 0% artificial offset!)
+            const bodyContent = node.name + (node.trailingContent || '');
 
-            for (let c = 1; c < this.columns.length; c++) {
-                const rawVal = node.columns[c - 1] || '';
-                const cleanVal = rawVal.replace(/^#+\s*/, '').trim();
-
-                let targetColStartChars = 0;
-                for (let k = 0; k < c; k++) {
-                    targetColStartChars += Math.max(4, Math.round(this.columns[k].width / this.charWidthPx));
+            if (hasChildren) {
+                if (branchPrefix) {
+                    lineEl.createSpan({ text: branchPrefix });
                 }
-
-                const spacesCount = Math.max(2, targetColStartChars - currentCursorChars);
-                currentCursorChars += spacesCount;
-
-                const hasSubsequentVal = node.columns.slice(c - 1).some((v) => v && v.trim().length > 0);
-                if (hasSubsequentVal || cleanVal) {
-                    fullLineText += ' '.repeat(spacesCount) + cleanVal;
-                    currentCursorChars += cleanVal.length;
-                }
+                const chevronSpan = lineEl.createSpan({
+                    cls: 'pakcli-interactive-chevron-inline',
+                    text: chevronText,
+                });
+                chevronSpan.title = node.isExpanded ? 'Click to collapse folder' : 'Click to expand folder';
+                chevronSpan.onclick = (e) => {
+                    e.stopPropagation();
+                    node.isExpanded = !node.isExpanded;
+                    this.render();
+                };
+                lineEl.createSpan({ text: bodyContent });
+            } else {
+                lineEl.textContent = branchPrefix + chevronText + bodyContent;
             }
-
-            // PURE TEXT ELEMENT ONLY: 100% Copy-pasteable authentic tree!
-            lineEl.textContent = fullLineText;
         }
     }
 
     /**
-     * LAYER 2: Extra GUI Overlay (Blue SVG Tree Branches, Chevrons, Guideline Wire & - < > :: +)
+     * 100% Copy-Pasteable Plain Text Generator:
+     * Produces clean, intact ASCII diagram with untouched note columns.
      */
-    private renderOverlayGUI(): void {
-        this.controlsContainerEl.empty();
+    public getPlainTextForCopy(): string {
+        const lines: string[] = [];
+        const visibleNodes = this.getFlattenedVisibleNodes();
+        for (const node of visibleNodes) {
+            const branchPrefix = getAsciiBranchPrefix(node, this.parsed.rootNodes);
+            const hasChildren = node.isDirectory && node.children && node.children.length > 0;
+            const chevronText = node.isDirectory
+                ? (hasChildren ? (node.isExpanded ? 'v ' : '> ') : '  ')
+                : (node.depth === 0 ? '  ' : '');
+            const bodyContent = node.name + (node.trailingContent || '');
+            lines.push(branchPrefix + chevronText + bodyContent);
+        }
+        return lines.join('\n');
+    }
+
+    /**
+     * TOP HUD (top huio):
+     * Draws column guideline wires & places controls (- < > :: +) aligned with detected columns.
+     */
+    private renderTopHUD(): void {
+        const existingPills = this.topHudEl.querySelectorAll('.pakcli-column-controls-pill, .pakcli-wire-hitbox');
+        existingPills.forEach((p) => p.remove());
+
         while (this.svgOverlayEl.firstChild) {
             this.svgOverlayEl.removeChild(this.svgOverlayEl.firstChild);
         }
@@ -296,39 +299,63 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
         if (visibleNodes.length === 0) return;
 
         // Size SVG canvas to match content
-        const bodyWidth = Math.max(this.bodyEl.scrollWidth, this.bodyEl.offsetWidth);
-        const bodyHeight = this.bodyEl.scrollHeight || (visibleNodes.length * this.ROW_HEIGHT_PX + this.paddingTopPx);
+        const bodyWidth = Math.max(this.bodyEl.scrollWidth, this.bodyEl.offsetWidth, 400);
+        const bodyHeight = this.bodyEl.scrollHeight || (visibleNodes.length * this.ROW_HEIGHT_PX);
         this.svgOverlayEl.setAttribute('width', `${bodyWidth}`);
         this.svgOverlayEl.setAttribute('height', `${bodyHeight}`);
         this.svgOverlayEl.style.width = `${bodyWidth}px`;
         this.svgOverlayEl.style.height = `${bodyHeight}px`;
 
-        // 1. Render Column Guideline Wires & Header Controls (- < > :: +) in Blue
+        // Detect column positions dynamically from node trailingContent
+        const allNodes = this.getAllNodes(this.parsed.rootNodes);
+        let detectedColStartChar = 0;
+        for (const node of allNodes) {
+            if (node.trailingContent) {
+                const match = node.trailingContent.match(/\S/);
+                if (match && match.index !== undefined) {
+                    const branchPrefix = getAsciiBranchPrefix(node, this.parsed.rootNodes);
+                    const chevronLen = node.isDirectory ? 2 : (node.depth === 0 ? 2 : 0);
+                    const charPos = branchPrefix.length + chevronLen + node.name.length + match.index;
+                    if (charPos > detectedColStartChar) {
+                        detectedColStartChar = charPos;
+                    }
+                }
+            }
+        }
+
+        if (detectedColStartChar > 0) {
+            const detectedWidth = Math.round(detectedColStartChar * this.charWidthPx);
+            if (this.columns[0]) {
+                this.columns[0].width = Math.max(this.columns[0].minWidth, detectedWidth);
+            }
+        }
+
+        // Draw guideline wires & HUD control pills
         let currentLeft = this.paddingLeftPx;
         for (let c = 0; c < this.columns.length - 1; c++) {
             currentLeft += this.columns[c].width;
             const wireX = currentLeft;
 
-            // Blue Vertical Guideline Wire
+            // Background Guideline Wire (strictly pointer-events: none)
             const wireLine = document.createElementNS('http://www.w3.org/2000/svg', 'line');
             wireLine.setAttribute('x1', `${wireX}`);
-            wireLine.setAttribute('y1', `${this.paddingTopPx - 10}`);
+            wireLine.setAttribute('y1', `0`);
             wireLine.setAttribute('x2', `${wireX}`);
             wireLine.setAttribute('y2', `${bodyHeight}`);
             wireLine.setAttribute('class', 'pakcli-svg-wire');
             this.svgOverlayEl.appendChild(wireLine);
 
-            // Draggable Hit-Box for Resizing
-            const wireHit = this.controlsContainerEl.createDiv({ cls: 'pakcli-wire-hitbox' });
+            // Draggable Resizer Hitbox inside Top HUD
+            const wireHit = this.topHudEl.createDiv({ cls: 'pakcli-wire-hitbox' });
             wireHit.style.left = `${wireX - 6}px`;
-            wireHit.style.top = `${this.paddingTopPx - 10}px`;
-            wireHit.style.height = `${bodyHeight - this.paddingTopPx + 10}px`;
+            wireHit.style.top = `0px`;
+            wireHit.style.height = `28px`;
             wireHit.title = 'Drag to adjust column width • Double-click to auto-fit';
             this.wireGuidelineResizer(wireHit, c);
 
-            // Floating Header Controls (- < > :: +) above comment column (using PillGroup)
+            // Column controls (- < > :: +) inside Top HUD
             const pill = new PillGroup({
-                containerEl: this.controlsContainerEl,
+                containerEl: this.topHudEl,
                 cls: 'pakcli-column-controls-pill',
                 items: [
                     { id: 'del', label: '-', tooltip: 'Delete column', onClick: () => this.deleteColumn(c + 1) },
@@ -339,41 +366,42 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
                 ],
             });
             pill.containerEl.style.left = `${wireX + 10}px`;
-            pill.containerEl.style.top = '6px';
+            pill.containerEl.style.top = '2px';
         }
-
-        // 2. Render Interactive Chevrons (v / >) matching character position
-        this.renderInteractiveChevrons();
     }
 
-    private renderInteractiveChevrons(): void {
-        const visibleNodes = this.getFlattenedVisibleNodes();
+    /**
+     * ⚡ Dynamic Live Editing Listener:
+     * Listens to live user typing in the note and updates HUD in real-time.
+     */
+    private setupDynamicLiveListener(): void {
+        const app = this.plugin?.app;
+        if (!app?.workspace) return;
 
-        for (let i = 0; i < visibleNodes.length; i++) {
-            const node = visibleNodes[i];
-            if (node.isDirectory && node.children.length > 0) {
-                const branchPrefix = getAsciiBranchPrefix(node, this.parsed.rootNodes);
-                const chevronCharOffset = branchPrefix.length;
-                const chevronX = this.paddingLeftPx + (chevronCharOffset * this.charWidthPx);
-                const chevronY = this.paddingTopPx + (i * this.ROW_HEIGHT_PX) + 3;
+        this.registerEvent(
+            app.workspace.on('editor-change', (editor) => {
+                if (this.isSyncing) return;
+                if (!this.ctx?.sourcePath) return;
 
-                const chevronEl = this.controlsContainerEl.createSpan({
-                    cls: 'pakcli-overlay-chevron',
-                    text: node.isExpanded ? 'v' : '>',
-                    attr: { title: node.isExpanded ? 'Collapse folder' : 'Expand folder' },
-                });
-                chevronEl.style.left = `${chevronX}px`;
-                chevronEl.style.top = `${chevronY}px`;
-                chevronEl.style.width = `${Math.round(this.charWidthPx * 1.8)}px`;
-
-                chevronEl.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    node.isExpanded = !node.isExpanded;
-                    this.renderCodeLines();
-                    this.renderOverlayGUI();
-                });
-            }
-        }
+                const activeFile = app.workspace.getActiveFile();
+                if (activeFile && activeFile.path === this.ctx.sourcePath) {
+                    const sectionInfo = this.ctx.getSectionInfo?.(this.containerEl);
+                    if (sectionInfo) {
+                        const fileContent = editor.getValue();
+                        const lines = fileContent.split(/\r?\n/);
+                        if (sectionInfo.lineStart < lines.length && sectionInfo.lineEnd <= lines.length) {
+                            const newSource = lines.slice(sectionInfo.lineStart + 1, sectionInfo.lineEnd).join('\n');
+                            if (newSource.trim() !== this.source.trim()) {
+                                this.source = newSource;
+                                this.parsed = parseTreeGrid(newSource);
+                                this.initColumns();
+                                this.render();
+                            }
+                        }
+                    }
+                }
+            })
+        );
     }
 
     private wireGuidelineResizer(wireHitEl: HTMLElement, colIndex: number): void {
@@ -393,8 +421,7 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
                 const newWidth = Math.max(minWidth, startWidth + deltaX);
                 colDef.width = newWidth;
 
-                this.renderCodeLines();
-                this.renderOverlayGUI();
+                this.renderTopHUD();
             };
 
             const onMouseUp = () => {
@@ -504,8 +531,7 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
         const fittedWidth = Math.max(this.columns[colIndex].minWidth, Math.ceil((maxChars + 6) * this.charWidthPx));
         this.columns[colIndex].width = fittedWidth;
 
-        this.renderCodeLines();
-        this.renderOverlayGUI();
+        this.renderTopHUD();
         this.syncChangesToNote();
     }
 
@@ -514,6 +540,7 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
         if (!app?.vault || !this.ctx?.sourcePath) return;
 
         try {
+            this.isSyncing = true;
             const file = app.vault.getAbstractFileByPath(this.ctx.sourcePath);
             if (!(file instanceof TFile)) return;
 
@@ -566,6 +593,8 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
             }
         } catch (err) {
             console.warn('[TreeGrid] Failed to sync changes to note:', err);
+        } finally {
+            this.isSyncing = false;
         }
     }
 }
