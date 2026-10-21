@@ -1,76 +1,61 @@
 /* ==========================================================================
    treeGrid.scss
    Authentic Native Codeblock with Floating Extra GUI Overlay
-   100% Zero DOM Overwrite: Native <pre><code> untouched, GUI floats on top
+   100% Zero DOM Overwrite: Native Obsidian <pre><code> untouched, GUI floats on top
    ========================================================================== */
 
 /* 1. Root Container */
 .pakcli-tree-root-container {
     margin: 1em 0;
     position: relative;
-    background: transparent !important;
-    font-family: var(--font-monospace, monospace);
-    font-size: var(--code-size, 0.85rem);
     box-shadow: none !important;
-    user-select: text !important;
-    -webkit-user-select: text !important;
 }
 
-/* 2. Authentic Native Codeblock Card (<pre class="HyperMD-codeblock"><code>) */
-.pakcli-tree-pre.HyperMD-codeblock {
-    margin: 0 !important;
-    padding: 10px 16px !important;
-    border: 1px solid var(--code-border, var(--background-modifier-border)) !important;
-    border-radius: var(--radius-m, 8px) !important;
-    background: var(--code-background, var(--background-primary-alt)) !important;
-    font-family: var(--font-monospace, monospace) !important;
-    font-size: var(--code-size, 0.85rem) !important;
-    line-height: 24px !important;
-    position: relative !important;
-    box-shadow: none !important;
-    overflow-x: auto !important;
-}
+/* 2. Authentic Native Codeblock Container (Rendered natively by Obsidian) */
+.pakcli-native-codeblock-wrap {
+    position: relative;
+    width: 100%;
 
-/* 3. Native Copy Button (📋) in top-right */
-.pakcli-tree-copy-btn {
-    position: absolute;
-    top: 8px;
-    right: 8px;
-    z-index: 30;
-    padding: 4px 6px;
-    font-size: 0.78rem;
-    line-height: 1;
-    background: var(--background-primary);
-    color: var(--text-muted);
-    border: 1px solid var(--background-modifier-border);
-    border-radius: 4px;
-    cursor: pointer;
-    opacity: 0.7;
-    transition: all 0.15s ease;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    /* Preserve 100% native theme styling, only ensure relative positioning */
+    pre.pakcli-native-codeblock-pre {
+        position: relative !important;
+        margin: 0 !important;
+        overflow-x: auto !important;
 
-    &:hover {
-        opacity: 1;
-        color: var(--text-normal);
-        background: var(--background-modifier-hover);
-        border-color: var(--interactive-accent);
+        code {
+            display: block;
+            white-space: pre !important;
+        }
     }
 }
 
-/* 4. Top Header Ruler Bar (Sticky above code, pointer-events: auto) */
-.pakcli-ruler-bar {
-    position: sticky;
+/* 3. Layer 2: Floating Extra GUI Overlay (+1 Layer Above, z-index: 10, absolute) */
+.pakcli-floating-extra-gui {
+    position: absolute;
     top: 0;
     left: 0;
+    right: 0;
+    bottom: 0;
+    pointer-events: none;
+    z-index: 10;
+    overflow: hidden;
+}
+
+/* 3A. Floating Header Ruler Bar */
+.pakcli-ruler-bar {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
     z-index: 25;
     display: flex;
     align-items: center;
     border-bottom: 1px solid rgba(var(--background-modifier-border-rgb, 128, 128, 128), 0.35);
-    padding: 0 0 4px 0;
-    margin-bottom: 4px;
     height: 28px;
     box-sizing: border-box;
     background: var(--code-background, var(--background-primary-alt)) !important;
+    border-top-left-radius: var(--radius-m, 8px);
+    border-top-right-radius: var(--radius-m, 8px);
     pointer-events: auto;
     user-select: none;
     -webkit-user-select: none;
@@ -165,31 +150,10 @@
     }
 }
 
-/* 5. Main Tree Body Wrapper */
-.pakcli-tree-body {
-    position: relative;
-    width: max-content;
-    min-width: 100%;
-}
-
-/* 6. Layer 2: Floating Extra GUI Overlay (+1 Layer Above, z-index: 10, absolute) */
-.pakcli-floating-extra-gui {
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    pointer-events: none;
-    z-index: 10;
-}
-
-/* 6A. Draggable Column Guidelines */
+/* 3B. Draggable Column Guidelines */
 .pakcli-guideline-wires {
     position: absolute;
-    top: 0;
     bottom: 0;
-    left: 0;
-    right: 0;
     pointer-events: none;
     z-index: 20;
 }
@@ -222,19 +186,19 @@
     }
 }
 
-/* 6B. Overlay Rows for Branches & Chevrons */
+/* 3C. Overlay Rows for Branches & Chevrons */
 .pakcli-overlay-rows {
+    position: absolute;
     display: flex;
     flex-direction: column;
     width: max-content;
     pointer-events: none;
+    z-index: 15;
 }
 
 .pakcli-overlay-row {
     display: flex;
     align-items: center;
-    height: 24px;
-    min-height: 24px;
     box-sizing: border-box;
     position: relative;
     pointer-events: none;
@@ -243,14 +207,13 @@
     .pakcli-branch-container {
         display: inline-flex;
         align-items: stretch;
-        height: 24px;
-        line-height: 24px;
+        height: 100%;
         flex-shrink: 0;
         user-select: none;
     }
 
     .pakcli-branch-seg {
-        height: 24px;
+        height: 100%;
         position: relative;
         box-sizing: border-box;
         flex-shrink: 0;
@@ -337,101 +300,7 @@
     }
 }
 
-/* 7. Layer 1: Codeblock Asli Text Lines (Zero Table Cells, Zero Horizontal Lines) */
-.pakcli-tree-code {
-    display: block;
-    background: transparent !important;
-    border: none !important;
-    padding: 0 !important;
-    margin: 0 !important;
-}
-
-.pakcli-code-lines {
-    display: flex;
-    flex-direction: column;
-    width: max-content;
-    min-width: 100%;
-    background: transparent !important;
-}
-
-.pakcli-code-line {
-    display: flex;
-    align-items: center;
-    height: 24px;
-    min-height: 24px;
-    line-height: 24px;
-    padding: 0 4px;
-    border: none !important;
-    border-bottom: none !important;
-    box-shadow: none !important;
-    background: transparent !important;
-    white-space: pre;
-    font-family: var(--font-monospace, monospace) !important;
-    font-size: var(--code-size, 0.85rem) !important;
-    color: var(--text-normal);
-    transition: background 0.08s ease;
-
-    /* Seamless Whole-Row Hover Highlight */
-    &:hover {
-        background: var(--background-modifier-hover) !important;
-        border-radius: 4px;
-    }
-
-    .pakcli-line-indent {
-        white-space: pre;
-        user-select: none;
-        color: transparent;
-        flex-shrink: 0;
-    }
-
-    .pakcli-line-name {
-        white-space: pre;
-        cursor: text;
-        flex-shrink: 0;
-    }
-
-    .pakcli-folder-name {
-        font-weight: 600;
-        color: var(--text-normal);
-    }
-
-    .pakcli-file-name {
-        color: var(--text-normal);
-    }
-
-    .pakcli-line-spacer {
-        white-space: pre;
-        flex-shrink: 0;
-    }
-
-    .pakcli-line-note {
-        white-space: pre;
-        color: var(--text-muted);
-        cursor: text;
-        flex-shrink: 0;
-    }
-
-    /* In-place Editable Text */
-    .pakcli-editable-val {
-        padding: 0 1px;
-        border-radius: 2px;
-        transition: background 0.12s ease;
-
-        &:hover {
-            outline: 1px dashed var(--text-faint);
-        }
-
-        &.is-editing {
-            outline: 1px solid var(--interactive-accent) !important;
-            background: var(--background-primary) !important;
-            color: var(--text-normal) !important;
-            cursor: text !important;
-            user-select: text !important;
-        }
-    }
-}
-
-/* 8. Active Column Resizing Global Cursor Guard */
+/* 4. Active Column Resizing Global Cursor Guard */
 body.pakcli-is-col-resizing {
     cursor: col-resize !important;
     user-select: none !important;
