@@ -1,33 +1,29 @@
 /* ==========================================================================
    treeGrid.scss
-   Pure Monospace Codeblock with Floating GUI Overlay Layer
-   100% Not a Table: Zero CSS Grid cells, zero horizontal lines, zero empty boxes
+   Authentic Unreplaced Codeblock with Extra GUI Overlay
+   100% Not a Table: Native <pre><code> lines, zero cell grid, zero horizontal lines
    ========================================================================== */
 
-/* 1. Root Codeblock Container */
-.pakcli-tree-codeblock-root {
+/* 1. Root Container */
+.pakcli-tree-container-root {
     margin: 8px 0;
-    padding: 6px 10px;
-    border: 1px solid var(--code-border, var(--background-modifier-border));
-    border-radius: var(--radius-s, 4px);
-    background: var(--code-background, var(--background-primary-alt)) !important;
+    background: transparent !important;
     font-family: var(--font-monospace, monospace);
     font-size: 0.85rem;
-    overflow-x: auto;
     box-shadow: none !important;
     user-select: text !important;
     -webkit-user-select: text !important;
 }
 
-/* 2. Scroll Container */
-.pakcli-tree-scroll-container {
+/* 2. Scrollable Wrapper */
+.pakcli-tree-scroll-wrapper {
     max-height: 560px;
     overflow: auto;
     position: relative;
     background: transparent !important;
 }
 
-/* 3. Top Ruler Overlay Bar */
+/* 3. Layer 2A: Floating Header Ruler Overlay */
 .pakcli-tree-ruler-overlay {
     display: flex;
     align-items: center;
@@ -126,14 +122,29 @@
     }
 }
 
-/* 4. Content Wrapper & Draggable Guideline Wires */
-.pakcli-tree-content-wrapper {
-    position: relative;
-    width: max-content;
-    min-width: 100%;
-    background: transparent !important;
+/* 4. Layer 1: Native Codeblock Element (<pre><code>) */
+.pakcli-tree-native-codeblock {
+    margin: 0 !important;
+    padding: 6px 10px !important;
+    border: 1px solid var(--code-border, var(--background-modifier-border)) !important;
+    border-radius: var(--radius-s, 4px) !important;
+    background: var(--code-background, var(--background-primary-alt)) !important;
+    font-family: var(--font-monospace, monospace) !important;
+    font-size: 0.85rem !important;
+    line-height: 1.5 !important;
+    position: relative !important;
+    box-shadow: none !important;
+    overflow-x: auto !important;
+
+    .pakcli-tree-code-content {
+        background: transparent !important;
+        border: none !important;
+        padding: 0 !important;
+        display: block;
+    }
 }
 
+/* 5. Layer 2B: Draggable Guidelines Overlay */
 .pakcli-tree-guidelines-overlay {
     position: absolute;
     top: 0;
@@ -172,8 +183,8 @@
     }
 }
 
-/* 5. Lines Container & Single Continuous Rows (Zero Table, Zero Horizontal Lines) */
-.pakcli-tree-lines-container {
+/* 6. Codeblock Lines Container (Zero Table, Zero Horizontal Lines) */
+.pakcli-codeblock-lines {
     display: flex;
     flex-direction: column;
     width: max-content;
@@ -181,7 +192,7 @@
     background: transparent !important;
 }
 
-.pakcli-tree-line {
+.pakcli-codeblock-line {
     display: flex;
     align-items: center;
     line-height: 1.5;
@@ -199,7 +210,7 @@
         border-radius: 4px;
     }
 
-    .pakcli-tree-col-0 {
+    .pakcli-tree-item-area {
         flex-shrink: 0;
         box-sizing: border-box;
         overflow: hidden;
@@ -212,7 +223,7 @@
         align-items: center;
     }
 
-    .pakcli-tree-col-meta {
+    .pakcli-tree-note-area {
         flex-shrink: 0;
         box-sizing: border-box;
         overflow: hidden;
@@ -225,8 +236,8 @@
         align-items: center;
     }
 
-    /* Monospace Branch Lines (├──, └──, │   ) */
-    .pakcli-tree-branch-prefix {
+    /* Extra GUI Layer: Baris Pohon (├──, └──, │   ) */
+    .pakcli-tree-gui-branch {
         font-family: var(--font-monospace, monospace);
         color: var(--text-muted);
         white-space: pre;
@@ -235,8 +246,8 @@
         flex-shrink: 0;
     }
 
-    /* Minimalist fold indicator */
-    .pakcli-tree-fold-indicator {
+    /* Extra GUI Layer: Minimalist Fold Chevron */
+    .pakcli-tree-gui-fold {
         font-size: 0.65rem;
         color: var(--text-muted);
         cursor: pointer;
@@ -257,7 +268,7 @@
         color: var(--text-normal);
     }
 
-    .pakcli-tree-comment {
+    .pakcli-tree-note-text {
         color: var(--text-muted);
     }
 
@@ -282,7 +293,7 @@
     }
 }
 
-/* 6. Active Column Resizing */
+/* 7. Active Column Resizing */
 body.pakcli-is-col-resizing {
     cursor: col-resize !important;
     user-select: none !important;

@@ -1,6 +1,6 @@
 # 📌 Master Brief: `panel-tree` Codeblock Renderer (Codeblock Asli Unreplaced + Extra GUI Overlay)
 
-> **Feature Status**: `0` (Draft / Pending Implementation)  
+> **Feature Status**: `1` (Implemented & Verified)  
 > **Target Module**: `pakcli-panel` (`panel`)  
 > **Platform**: Obsidian Desktop & Mobile  
 > **Date**: 2026-10-21  

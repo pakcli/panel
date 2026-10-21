@@ -1,13 +1,20 @@
 /**
  * TreeCodeblockRenderer.ts
- * Pure Monospace Codeblock with Floating GUI Overlay Layer.
- * 100% Not a Table: Zero CSS grid cells, zero horizontal divider lines, zero empty right boxes.
- * Features:
- * - Base Codeblock Layer: Monospace ASCII branching (├──, └──, │   ), fold chevrons (v / >), full-row hover highlight.
- * - Floating Overlay GUI: Top column ruler with :: drag reorder, < > shift, + add/duplicate, - delete.
- * - Draggable Vertical Guidelines: Overlay wires (position: absolute) to adjust column space padding without pipe symbols.
- * - Live in-place click-to-type editing with Enter, Tab, Shift-Tab, and Arrow navigation.
- * - Zero sticky headers inside codeblock.
+ * Authentic Unreplaced Codeblock with Extra GUI Overlay.
+ * 100% Not a Table: Native <pre><code> lines, zero cell grid, zero horizontal lines.
+ *
+ * Layer 1 (Base Codeblock):
+ * - Native <pre><code> text flow.
+ * - Monospace font, codeblock background.
+ * - Dynamic column width offset for #note comments.
+ * - Zero empty cell divs on lines without comments.
+ * - Smooth whole-row hover highlight.
+ *
+ * Layer 2 (Extra GUI Overlay):
+ * - Baris Pohon (ASCII branches: ├──, └──, │   ) and Chevron fold toggles (v / >).
+ * - Floating Header Ruler with column controls (::, <, >, #, +, -).
+ * - Draggable Vertical Guideline Wires (position: absolute) to adjust column spacing.
+ * - Bi-directional markdown note sync without pipe symbols.
  */
 
 import { MarkdownRenderChild, MarkdownPostProcessorContext, Notice, TFile } from 'obsidian';
@@ -21,9 +28,11 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
     private parsed: ParsedTreeGrid;
     private columns: TreeGridColumn[] = [];
 
-    private scrollContainerEl!: HTMLElement;
+    private rootContainerEl!: HTMLElement;
+    private scrollWrapperEl!: HTMLElement;
     private rulerOverlayEl!: HTMLElement;
-    private contentWrapperEl!: HTMLElement;
+    private codeblockPreEl!: HTMLElement;
+    private codeblockCodeEl!: HTMLElement;
     private guidelinesOverlayEl!: HTMLElement;
     private linesContainerEl!: HTMLElement;
 
@@ -107,23 +116,24 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
     private render(): void {
         const { containerEl } = this;
         containerEl.empty();
-        containerEl.addClass('pakcli-tree-codeblock-root');
+        containerEl.addClass('pakcli-tree-container-root');
 
-        // Scroll Container
-        this.scrollContainerEl = containerEl.createDiv({ cls: 'pakcli-tree-scroll-container' });
+        // Scrollable Wrapper
+        this.scrollWrapperEl = containerEl.createDiv({ cls: 'pakcli-tree-scroll-wrapper' });
 
-        // 1. Top Ruler Overlay (Column markers, reorder, shift, add, delete)
-        this.rulerOverlayEl = this.scrollContainerEl.createDiv({ cls: 'pakcli-tree-ruler-overlay' });
+        // Layer 2A: Floating Header Ruler Overlay
+        this.rulerOverlayEl = this.scrollWrapperEl.createDiv({ cls: 'pakcli-tree-ruler-overlay' });
         this.renderRulerOverlay();
 
-        // 2. Content Wrapper (Holds lines and draggable guideline wires)
-        this.contentWrapperEl = this.scrollContainerEl.createDiv({ cls: 'pakcli-tree-content-wrapper' });
+        // Layer 1: Native Codeblock Element (<pre><code>)
+        this.codeblockPreEl = this.scrollWrapperEl.createEl('pre', { cls: 'pakcli-tree-native-codeblock' });
+        this.codeblockCodeEl = this.codeblockPreEl.createEl('code', { cls: 'pakcli-tree-code-content' });
 
-        // 3. Guidelines Overlay (Draggable vertical wires)
-        this.guidelinesOverlayEl = this.contentWrapperEl.createDiv({ cls: 'pakcli-tree-guidelines-overlay' });
+        // Layer 2B: Draggable Guidelines Overlay
+        this.guidelinesOverlayEl = this.codeblockPreEl.createDiv({ cls: 'pakcli-tree-guidelines-overlay' });
 
-        // 4. Codeblock Lines Container (Pure text lines, NO GRID, NO CELLS, NO BORDERS)
-        this.linesContainerEl = this.contentWrapperEl.createDiv({ cls: 'pakcli-tree-lines-container' });
+        // Codeblock Lines Container
+        this.linesContainerEl = this.codeblockCodeEl.createDiv({ cls: 'pakcli-codeblock-lines' });
 
         this.renderLines();
         this.renderGuidelines();
@@ -139,7 +149,7 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
             colEl.style.width = `${col.width}px`;
 
             if (i === 0) {
-                // Column 0: PATH and + button
+                // Column 0 Header
                 colEl.createSpan({ cls: 'pakcli-ruler-title', text: col.title });
 
                 const addBtn = colEl.createSpan({ cls: 'pakcli-ruler-btn pakcli-ruler-btn-add', text: '+' });
@@ -149,7 +159,7 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
                     this.addColumn(0);
                 });
             } else {
-                // Column 1..N: Reorder handle (::), Shift (< >), Title, Add (+), Delete (-)
+                // Column 1..N Header: :: drag handle, < >, title, +, -
                 const dragHandle = colEl.createSpan({ cls: 'pakcli-ruler-drag-handle', text: '::' });
                 dragHandle.title = 'Drag :: to reorder column';
 
@@ -263,7 +273,6 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
                 const newWidth = Math.max(minWidth, startWidth + deltaX);
                 colDef.width = newWidth;
 
-                // Live update DOM widths without full re-render
                 this.updateColumnWidthsInDOM(colIndex, newWidth);
             };
 
@@ -289,8 +298,8 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
 
         // Update all line spans for this column
         const selector = colIndex === 0
-            ? '.pakcli-tree-line .pakcli-tree-col-0'
-            : `.pakcli-tree-line .pakcli-tree-col-meta[data-col-index="${colIndex}"]`;
+            ? '.pakcli-codeblock-line .pakcli-tree-item-area'
+            : `.pakcli-codeblock-line .pakcli-tree-note-area[data-col-index="${colIndex}"]`;
 
         this.linesContainerEl.querySelectorAll<HTMLElement>(selector).forEach((el) => {
             el.style.width = `${newWidth}px`;
@@ -373,8 +382,8 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
 
         let maxContentWidth = 0;
         const selector = colIndex === 0
-            ? '.pakcli-tree-line .pakcli-tree-col-0'
-            : `.pakcli-tree-line .pakcli-tree-col-meta[data-col-index="${colIndex}"] .pakcli-tree-comment`;
+            ? '.pakcli-codeblock-line .pakcli-tree-item-area'
+            : `.pakcli-codeblock-line .pakcli-tree-note-area[data-col-index="${colIndex}"] .pakcli-tree-note-text`;
 
         this.linesContainerEl.querySelectorAll<HTMLElement>(selector).forEach((el) => {
             const text = el.textContent || '';
@@ -408,37 +417,39 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
         }
 
         for (const rootNode of this.parsed.rootNodes) {
-            this.renderNodeLines(this.linesContainerEl, rootNode, 0);
+            this.renderNodeLine(this.linesContainerEl, rootNode, 0);
         }
     }
 
     /**
-     * Renders a tree node as a single .pakcli-tree-line element.
-     * ZERO table structures, ZERO horizontal borders, ZERO sticky headers.
+     * Renders a single codeblock line:
+     * - Column 0 Area: Extra GUI Baris Pohon (├──, └──) + Chevron (v / >) + Item Name.
+     * - Columns 1..N: Only rendered if comments exist, offset by column width.
+     * - Zero table cells, zero horizontal lines, zero empty right boxes!
      */
-    private renderNodeLines(parentContainer: HTMLElement, node: TreeGridNode, depth: number): void {
+    private renderNodeLine(parentContainer: HTMLElement, node: TreeGridNode, depth: number): void {
         const asciiBranch = getAsciiBranchPrefix(node, this.parsed.rootNodes);
 
-        // A single continuous line container
+        // A single continuous line of codeblock text
         const lineEl = parentContainer.createDiv({
-            cls: `pakcli-tree-line ${node.isDirectory ? 'is-directory' : 'is-file'}`,
+            cls: `pakcli-codeblock-line ${node.isDirectory ? 'is-directory' : 'is-file'}`,
         });
         lineEl.dataset.nodeId = node.id;
 
-        // Column 0 Container (Tree branch + fold chevron + item name)
-        const col0Span = lineEl.createDiv({ cls: 'pakcli-tree-col-0' });
-        col0Span.dataset.colIndex = '0';
-        col0Span.style.width = `${this.columns[0].width}px`;
+        // Column 0 Item Area (Tree Baris Pohon + Fold Chevron + Item Name)
+        const col0Area = lineEl.createDiv({ cls: 'pakcli-tree-item-area' });
+        col0Area.dataset.colIndex = '0';
+        col0Area.style.width = `${this.columns[0].width}px`;
 
-        // ASCII Branch prefix (├──, └──, │   )
+        // Extra GUI Layer: Baris Pohon (├──, └──, │   )
         if (asciiBranch) {
-            col0Span.createSpan({ cls: 'pakcli-tree-branch-prefix', text: asciiBranch });
+            col0Area.createSpan({ cls: 'pakcli-tree-gui-branch', text: asciiBranch });
         }
 
-        // Minimalist fold toggle (v / >) only for directories with children
+        // Extra GUI Layer: Minimalist Fold Chevron (v / >) only for directories with children
         if (node.isDirectory && node.children.length > 0) {
-            const foldBtn = col0Span.createSpan({
-                cls: 'pakcli-tree-fold-indicator',
+            const foldBtn = col0Area.createSpan({
+                cls: 'pakcli-tree-gui-fold',
                 text: node.isExpanded ? 'v ' : '> ',
             });
             foldBtn.addEventListener('click', (e) => {
@@ -449,8 +460,8 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
             });
         }
 
-        // Editable Item Name
-        const nameSpan = col0Span.createSpan({
+        // Item Name (Editable in place)
+        const nameSpan = col0Area.createSpan({
             cls: `pakcli-editable-val ${node.isDirectory ? 'pakcli-folder-name' : 'pakcli-file-name'}`,
             text: node.name,
             attr: { title: 'Click to type / Enter for new line / Tab to indent' },
@@ -462,19 +473,20 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
             this.autoFitColumn(0);
         }, node, 0);
 
-        // Columns 1 to N: Metadata comments (#, ##, ...)
+        // Columns 1 to N: Offset #note## areas
+        // Notice: If line has no comments, col0Area is all that exists! No empty boxes on the right!
         for (let c = 1; c < this.columns.length; c++) {
             const rawVal = node.columns[c - 1] || '';
             const prefix = '#'.repeat(c);
             const cleanVal = rawVal.replace(/^#+\s*/, '').trim();
             const displayText = cleanVal ? `${prefix} ${cleanVal}` : '';
 
-            const colMeta = lineEl.createDiv({ cls: 'pakcli-tree-col-meta' });
+            const colMeta = lineEl.createDiv({ cls: 'pakcli-tree-note-area' });
             colMeta.dataset.colIndex = String(c);
             colMeta.style.width = `${this.columns[c].width}px`;
 
             const valSpan = colMeta.createSpan({
-                cls: 'pakcli-editable-val pakcli-tree-comment text-muted',
+                cls: 'pakcli-editable-val pakcli-tree-note-text text-muted',
                 text: displayText,
                 attr: { title: 'Click to type comment' },
             });
@@ -492,7 +504,7 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
         // Render visible children if folder is expanded
         if (node.isDirectory && node.isExpanded && node.children.length > 0) {
             for (const child of node.children) {
-                this.renderNodeLines(parentContainer, child, depth + 1);
+                this.renderNodeLine(parentContainer, child, depth + 1);
             }
         }
     }
@@ -622,8 +634,8 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
 
     private focusCell(nodeId: string, colIndex: number): void {
         const selector = colIndex === 0
-            ? `.pakcli-tree-line[data-node-id="${nodeId}"] .pakcli-tree-col-0 .pakcli-editable-val`
-            : `.pakcli-tree-line[data-node-id="${nodeId}"] .pakcli-tree-col-meta[data-col-index="${colIndex}"] .pakcli-editable-val`;
+            ? `.pakcli-codeblock-line[data-node-id="${nodeId}"] .pakcli-tree-item-area .pakcli-editable-val`
+            : `.pakcli-codeblock-line[data-node-id="${nodeId}"] .pakcli-tree-note-area[data-col-index="${colIndex}"] .pakcli-editable-val`;
 
         const cell = this.linesContainerEl.querySelector<HTMLElement>(selector);
         if (cell) {
