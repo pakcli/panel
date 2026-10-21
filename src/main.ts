@@ -1,4 +1,4 @@
-import { Plugin, Notice, Setting, PluginSettingTab, ButtonComponent, DropdownComponent, ToggleComponent, TFile, TFolder, TAbstractFile, Menu, TextComponent, setIcon, normalizePath } from 'obsidian';
+﻿import { Plugin, Notice, Setting, PluginSettingTab, ButtonComponent, DropdownComponent, ToggleComponent, TFile, TFolder, TAbstractFile, Menu, TextComponent, setIcon, normalizePath } from 'obsidian';
 import { PakCLITableSettings, DEFAULT_TABLE_SETTINGS, DEFAULT_BUBBLE_GRAPH_SETTINGS, RelationshipTierConfig, DEFAULT_RELATIONSHIP_TIERS, RelationshipFolderEntry, RelationshipViewStructure, RelationshipSortOrder, DictionaryFolderEntry, DictionarySubfolderMode, HtmlSnapshotMode, BubbleTimelapseDurationMode } from './settings';
 import { handleArtifactRename, moveArtifactsBetweenFolders } from './features/sqlseal/utils/views';
 import { SplitViewManager, FolderSuggestModal } from './features/explorer/splitViewManager';
@@ -98,6 +98,8 @@ import { VaultHistoryView, VAULT_HISTORY_VIEW_TYPE } from './features/history/Va
 
 // Tier List Engine (Score & Batch Compare) Imports
 import { TierListManager } from './features/tierlist/TierListManager';
+// Tree Grid Codeblock Renderer
+import { TreeCodeblockRenderer } from './features/treeGrid';
 
 export default class PakCLITablePlugin extends Plugin {
 	declare settings: PakCLITableSettings;
@@ -747,6 +749,9 @@ export default class PakCLITablePlugin extends Plugin {
 		this.registerMarkdownCodeBlockProcessor('timeline-tree', async (source, el, ctx) => {
 			ctx.addChild(new TimelineNarrativeRenderer(this.app, source, el, ctx));
 		});
+
+		// 5c. Multi-Column Tree Grid Codeblock Processors (panel-tree, tree-structure)
+		this.registerTreeGridProcessors();
 
 		// 5b. Embedded CSV & TSV CodeBlock Processors (Tablite Direct Interaction & Dynamic Row-Height)
 		this.registerMarkdownCodeBlockProcessor('csv', (source, el, ctx) => {
@@ -6942,7 +6947,56 @@ export default class PakCLITablePlugin extends Plugin {
 			}
 		});
 
+		// 11. Tree Grid & Outliner Codeblock Handler (table-tree-grid)
+		settingsTab.registerLocalSection({
+			id: 'table-tree-grid',
+			category: 'table',
+			title: 'Tree Grid Outliner',
+			icon: 'folder-tree',
+			isInstalled: true,
+			render: (containerEl) => {
+				containerEl.empty();
+
+				new Setting(containerEl)
+					.setName('Tree Grid Outliner (panel-tree)')
+					.setDesc('Configure codeblock language aliases for the multi-column tree explorer with draggable column resizing, double-click auto-fit, and cascading sticky headers.')
+					.setHeading();
+
+				new Setting(containerEl)
+					.setName('Codeblock Tags / Aliases')
+					.setDesc('Comma-separated list of codeblock language tags that trigger the Tree Grid renderer. (Default: panel-tree, panel-tree-structure, tree-structure)')
+					.addText((text) => {
+						text
+							.setPlaceholder('panel-tree, panel-tree-structure, tree-structure')
+							.setValue(this.settings.panelTreeAliases || 'panel-tree, panel-tree-structure, tree-structure')
+							.onChange(async (val) => {
+								this.settings.panelTreeAliases = val.trim() || 'panel-tree, panel-tree-structure, tree-structure';
+								await this.saveSettings();
+								this.registerTreeGridProcessors();
+							});
+					});
+			}
+		});
+
 		this.addSettingTab(settingsTab);
+	}
+
+	private registerTreeGridProcessors(): void {
+		const rawAliases = this.settings.panelTreeAliases || 'panel-tree, panel-tree-structure, tree-structure';
+		const aliases = rawAliases
+			.split(',')
+			.map((a) => a.trim().toLowerCase())
+			.filter((a) => a.length > 0);
+
+		for (const alias of aliases) {
+			try {
+				this.registerMarkdownCodeBlockProcessor(alias, (source, el, ctx) => {
+					ctx.addChild(new TreeCodeblockRenderer(el, source, ctx));
+				});
+			} catch {
+				// Prevent crashing if already registered
+			}
+		}
 	}
 
 	renderSanitizerSettings(containerEl: HTMLElement): void {

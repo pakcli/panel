@@ -3,11 +3,17 @@ main.js
 styles.css
 *.map
 .DS_Store
+Thumbs.db
+*.log
+.env
+.env.*
+*.local
+.cache/
+.firebase/
+.firebase/hosting..cache
 dist/
 # Local publisher configuration
 .publish-config.json
 ps_publish.json
 .vaultpath
 important-links
-important-links
-styles.css

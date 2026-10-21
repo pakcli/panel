@@ -1,4 +1,4 @@
-import { AssetRouterSettings } from './features/tree/types';
+﻿import { AssetRouterSettings } from './features/tree/types';
 import { TablitePluginData as SQLSealSettings, DEFAULT_PLUGIN_DATA as DEFAULT_SQLSEAL_SETTINGS, CalcPreset, DEFAULT_CALC_PRESETS } from './features/sqlseal/types';
 export type { CalcPreset };
 export { DEFAULT_CALC_PRESETS };
@@ -246,6 +246,7 @@ export interface PakCLITableSettings extends
     enableVsCodeTabs?: boolean;
     vscodeTabsMode?: 'default' | 'active';
     tabTitleMaxChars?: number;
+    panelTreeAliases?: string;
     [key: string]: unknown;
 }
 
@@ -389,5 +390,6 @@ export const DEFAULT_TABLE_SETTINGS: PakCLITableSettings = {
     enableVsCodeTabs: true,
     vscodeTabsMode: 'active',
     tabTitleMaxChars: 15,
+    panelTreeAliases: 'panel-tree, panel-tree-structure, tree-structure',
 };
 

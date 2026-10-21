@@ -1,0 +1,288 @@
+/* ==========================================================================
+   treeGrid.scss
+   Multi-Column Tree Grid with Cascading Sticky Headers and Draggable Columns
+   ========================================================================== */
+
+.pakcli-tree-grid-root {
+    margin: 16px 0;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: var(--radius-m, 8px);
+    background: var(--background-primary);
+    overflow: hidden;
+    font-family: var(--font-text);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+}
+
+/* 1. Control Toolbar */
+.pakcli-tree-toolbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 12px;
+    background: var(--background-secondary);
+    border-bottom: 1px solid var(--background-modifier-border);
+    gap: 8px;
+    flex-wrap: wrap;
+
+    .pakcli-tree-toolbar-left {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+
+        .pakcli-tree-badge {
+            font-size: 0.72rem;
+            font-weight: 700;
+            letter-spacing: 0.05em;
+            color: var(--interactive-accent);
+            background: rgba(var(--interactive-accent-rgb, 100, 150, 255), 0.12);
+            padding: 3px 8px;
+            border-radius: 4px;
+        }
+
+        .pakcli-tree-node-count {
+            font-size: 0.78rem;
+            color: var(--text-muted);
+        }
+    }
+
+    .pakcli-tree-toolbar-right {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+
+        .pakcli-tree-search-input {
+            padding: 4px 10px;
+            font-size: 0.8rem;
+            background: var(--background-primary);
+            border: 1px solid var(--background-modifier-border);
+            border-radius: 4px;
+            color: var(--text-normal);
+            outline: none;
+            width: 140px;
+            transition: width 0.2s ease, border-color 0.2s ease;
+
+            &:focus {
+                width: 190px;
+                border-color: var(--interactive-accent);
+            }
+        }
+
+        .pakcli-tree-btn {
+            padding: 4px 8px;
+            font-size: 0.75rem;
+            font-weight: 500;
+            background: var(--background-primary);
+            border: 1px solid var(--background-modifier-border);
+            border-radius: 4px;
+            color: var(--text-normal);
+            cursor: pointer;
+            transition: all 0.15s ease;
+
+            &:hover {
+                background: var(--background-modifier-hover);
+                border-color: var(--interactive-accent);
+                color: var(--interactive-accent);
+            }
+        }
+    }
+}
+
+/* 2. Scroll Container */
+.pakcli-tree-scroll-container {
+    max-height: 560px;
+    overflow: auto;
+    position: relative;
+    background: var(--background-primary);
+}
+
+/* 3. Grid Wrapper */
+.pakcli-tree-grid-wrapper {
+    display: grid;
+    min-width: 100%;
+    width: max-content;
+}
+
+/* 4. Header Row */
+.pakcli-tree-header-row {
+    display: contents;
+
+    .pakcli-tree-th {
+        position: sticky;
+        top: 0;
+        z-index: 40;
+        background: var(--background-secondary-alt, var(--background-secondary));
+        color: var(--text-muted);
+        font-size: 0.76rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        padding: 8px 12px;
+        border-bottom: 2px solid var(--background-modifier-border);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        user-select: none;
+        backdrop-filter: blur(6px);
+
+        .pakcli-tree-th-title {
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        /* Draggable Column Resizer Handle */
+        .pakcli-col-resizer {
+            width: 8px;
+            height: 100%;
+            cursor: col-resize;
+            position: absolute;
+            right: 0;
+            top: 0;
+            bottom: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            opacity: 0.4;
+            transition: opacity 0.15s ease, background 0.15s ease;
+
+            &::after {
+                content: '';
+                width: 2px;
+                height: 60%;
+                background: var(--background-modifier-border);
+                border-radius: 1px;
+            }
+
+            &:hover {
+                opacity: 1;
+                background: rgba(var(--interactive-accent-rgb, 100, 150, 255), 0.2);
+
+                &::after {
+                    background: var(--interactive-accent);
+                }
+            }
+        }
+    }
+}
+
+/* 5. Body Rows & Cells */
+.pakcli-tree-body-container {
+    display: contents;
+}
+
+.pakcli-tree-dir-block {
+    display: contents;
+}
+
+.pakcli-tree-children {
+    display: contents;
+}
+
+.pakcli-tree-row {
+    display: contents;
+
+    /* Cascading Sticky Directory Header */
+    &.is-directory > .pakcli-tree-cell {
+        background: var(--background-secondary);
+        font-weight: 600;
+        border-bottom: 1px solid var(--background-modifier-border);
+        cursor: pointer;
+
+        &:hover {
+            background: var(--background-modifier-hover);
+        }
+    }
+
+    &.pakcli-tree-sticky > .pakcli-tree-cell {
+        position: sticky;
+        backdrop-filter: blur(8px);
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+    }
+
+    &.is-file > .pakcli-tree-cell {
+        background: var(--background-primary);
+        border-bottom: 1px solid rgba(var(--background-modifier-border-rgb, 128, 128, 128), 0.2);
+
+        &:hover {
+            background: rgba(var(--interactive-accent-rgb, 100, 150, 255), 0.05);
+        }
+    }
+}
+
+.pakcli-tree-cell {
+    padding: 6px 12px;
+    font-size: 0.82rem;
+    color: var(--text-normal);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    box-sizing: border-box;
+
+    &.pakcli-tree-cell-primary {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+    }
+
+    .pakcli-tree-chevron {
+        font-size: 0.68rem;
+        color: var(--text-muted);
+        cursor: pointer;
+        padding: 2px 4px;
+        border-radius: 3px;
+        transition: transform 0.15s ease, color 0.15s ease;
+
+        &:hover {
+            color: var(--interactive-accent);
+            background: var(--background-modifier-hover);
+        }
+
+        &.is-closed {
+            transform: rotate(-90deg);
+        }
+    }
+
+    .pakcli-tree-icon {
+        font-size: 0.95rem;
+        flex-shrink: 0;
+    }
+
+    .pakcli-folder-name {
+        font-weight: 600;
+        color: var(--text-normal);
+    }
+
+    .pakcli-file-name {
+        color: var(--text-normal);
+    }
+
+    .pakcli-tree-ext-badge {
+        font-size: 0.68rem;
+        font-family: var(--font-monospace);
+        padding: 1px 5px;
+        border-radius: 3px;
+        background: var(--background-modifier-border);
+        color: var(--text-muted);
+        margin-left: 4px;
+    }
+
+    .pakcli-cell-content {
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+}
+
+/* 6. Active Dragging State Across Whole Window */
+body.pakcli-is-col-resizing {
+    cursor: col-resize !important;
+    user-select: none !important;
+
+    * {
+        cursor: col-resize !important;
+        user-select: none !important;
+    }
+}

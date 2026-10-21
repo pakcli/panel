@@ -1,4 +1,4 @@
-@use 'core';
+﻿@use 'core';
 @use 'csvEditor';
 @use 'inlineQueries';
 @use 'listView';
@@ -23,6 +23,7 @@
 @use 'sanitizer';
 @use 'tierlist';
 @use 'csvCodeblock';
+@use 'treeGrid';
 
 
 @use '../features/sqlseal/modules/explorer/explorer/style.scss';
