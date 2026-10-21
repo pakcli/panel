@@ -1,18 +1,76 @@
-# 📌 Master Brief: `panel-tree` Codeblock Renderer (Codeblock Asli Unreplaced + Extra GUI Overlay)
+# 📌 Master Brief: `panel-tree` Codeblock Renderer (Native Codeblock Frame + Seamless CSS Tree Branches + Extra GUI Overlay)
 
-> **Feature Status**: `1` (Implemented & Verified)  
+> **Feature Status**: `0` (Draft / Pending Implementation)  
 > **Target Module**: `pakcli-panel` (`panel`)  
 > **Platform**: Obsidian Desktop & Mobile  
 > **Date**: 2026-10-21  
 
 ---
 
-## 1. Core Paradigm: "Do Not Overwrite the DOM"
-- **User Direct Instructions**:
-  > *"brooo do not overwrite the dom :DDDDDD. its clearly u overwire the dom. make sure insted ovewire the dom leave its as is + offset for the notes## and line before it, and floating overlaygui ontop of the layer of thecodeblock asli"*  
-  > 1. **Codeblock asli unreplaced**: The text remains in its native `<pre><code>` codeblock. Zero HTML table elements, zero CSS grid cells.
-  > 2. **Offset bagian `#note##` saja**: Only the `#note` comment portion is pushed by an offset spacer matching the column width.
-  > 3. **The GUI floating +1 layer above the codeblock**: All visual ornaments (**chevron fold `v ` / `> `**, **baris pohon `├── `, `└── `, `│`**, **column ruler**, and **draggable guideline wires**) live on the **Extra GUI Layer**!
+## 1. Problem & Visual Defects Identified from User Benchmark
+- **Visual Breakdown of Previous Output vs Native Codeblock**:
+  1. **Lost Codeblock Frame**: The renderer stripped away the native Obsidian codeblock container (card border, rounded corners, native code background, inner padding).
+  2. **Missing Copy Button**: Native codeblock copy button (`📋`) in top-right was absent.
+  3. **Broken Chopstick ASCII Pipes**: Text pipe characters (`|`) had vertical line-height gaps between lines, creating fragmented, broken guide lines.
+  4. **Overwritten DOM**: Clearing the container bypassed Obsidian's theme styling.
+
+---
+
+## 2. Target Architecture: Native Codeblock Card + Seamless CSS Tree Connectors + Extra GUI Overlay
+
+```text
+┌─────────────────────────────────────────────────────────────────────────────────────────────────────────[ 📋 Copy ]┐
+│ [EXTRA GUI: Floating Top Column Ruler]                                                                              │
+│ <--------- PATH ---------> │ <------------ # ------------> │ <----------- ## ----------->  +                        │
+│                            │   ::   <   >   #   +   -      │   ::   <   >   ##   +   -                            │
+├────────────────────────────┼───────────────────────────────┼────────────────────────────────────────────────────────┤
+│ [NATIVE CODEBLOCK BODY WITH SEAMLESS CSS TREE BRANCHES & DYNAMIC #NOTE OFFSETS]                                     │
+│                                                                                                                     │
+│ v data                                                                                                              │
+│ ├── v asset                │ [offset] # note1              │ [offset] ## note2                                      │
+│ │   ├── v player           │                               │                                                        │
+│ │   │   ├── yolla.webp     │ [offset] # setter             │                                                        │
+│ │   │   └── tisya.webp     │                               │                                                        │
+│ │   ├── v matches          │                               │                                                        │
+│ │   │   └── poster-m01.webp│                               │                                                        │
+└────────────────────────────┴───────────────────────────────┴────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 3. Detailed Technical Solutions
+
+### A. Authentic Native Codeblock Container
+- **Full Theme Inheritance**:
+  - Encapsulated in `<pre class="HyperMD-codeblock ..."><code>` or styled to strictly match the active theme's native codeblock container:
+    - `border-radius: var(--radius-m, 8px)`
+    - `border: 1px solid var(--code-border, var(--background-modifier-border))`
+    - `background: var(--code-background, var(--background-primary-alt))`
+    - Native codeblock font family, line-height, and padding.
+  - **Native Copy Code Button (`📋`)**:
+    - Embedded in the top-right corner.
+    - Copies clean indented markdown source text with aligned `#note` comments.
+
+### B. Seamless CSS Continuous Tree Branches (100% Gap-Free)
+- **Zero Broken Text Characters**:
+  - Instead of font characters (`|` and `├──`), branch guides are rendered via **CSS vector lines** (`::before` / `::after` with `border-left` and `border-bottom`).
+  - Lines stretch `height: 100%` from the top of the line to the bottom, ensuring **zero vertical gaps** regardless of font or line-height.
+  - Generates authentic tree hierarchy with trunk (`│`), branch tees (`├──`), and corners (`└──`).
+
+### C. Extra GUI Layer (+1 Layer Overlay)
+- **Minimalist Chevron Fold (`v ` / `> `)**:
+  - Interactive folding button right before directory names (`pointer-events: auto; cursor: pointer`).
+  - Toggles sub-tree visibility on click.
+- **Floating Header Ruler**:
+  - Top ruler showing `PATH +`, `::` (drag-and-drop column reordering), `< >` (column shifting), `+` (add/duplicate), and `-` (delete column).
+- **Draggable Vertical Guideline Wires**:
+  - Absolute positioned vertical lines at column boundaries (`left: colWidth px`).
+  - Interactive resizer (`cursor: col-resize; pointer-events: auto`).
+  - Dragging dynamically updates `#note` offsets in real time and syncs padded spaces to markdown source on release.
+  - Double-click triggers auto-fit to longest content.
+- **Whole-Row Hover Highlight**:
+  - Seamless full-width line highlight on hover (`background: var(--background-modifier-hover); border-radius: 4px;`).
+
 
 ---
 
