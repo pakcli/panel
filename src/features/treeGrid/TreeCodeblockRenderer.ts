@@ -404,6 +404,7 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
             const row = dirBlock.createDiv({
                 cls: `pakcli-tree-row is-directory ${depth <= 4 ? 'pakcli-tree-sticky' : ''}`,
             });
+            row.dataset.nodeId = node.id;
 
             // Column 0
             const col0 = row.createDiv({ cls: 'pakcli-tree-cell pakcli-tree-cell-primary' });
@@ -436,14 +437,14 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
             const nameSpan = col0.createSpan({
                 cls: 'pakcli-editable-val pakcli-folder-name',
                 text: node.name,
-                attr: { title: 'Double-click to edit' },
+                attr: { title: 'Click to type / Enter for new line / Tab to indent' },
             });
             this.makeCellEditable(nameSpan, (newVal) => {
                 node.name = newVal.trim();
                 nameSpan.textContent = node.name;
                 this.syncChangesToNote();
                 this.autoFitColumn(0);
-            });
+            }, node, 0);
 
             col0.addEventListener('dblclick', (e) => {
                 if (e.target === col0) {
@@ -467,7 +468,7 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
                 const valSpan = cell.createSpan({
                     cls: 'pakcli-editable-val text-muted',
                     text: displayText,
-                    attr: { title: 'Double-click to edit' },
+                    attr: { title: 'Click to type comment' },
                 });
                 this.makeCellEditable(valSpan, (newVal) => {
                     const cleaned = newVal.replace(/^#+\s*/, '').trim();
@@ -476,7 +477,7 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
                     valSpan.textContent = cleaned ? `${prefix} ${cleaned}` : '';
                     this.syncChangesToNote();
                     this.autoFitColumn(c);
-                });
+                }, node, c);
 
                 cell.addEventListener('dblclick', (e) => {
                     if (e.target === cell) {
@@ -496,6 +497,7 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
         } else {
             // Leaf File Node Row
             const row = parentContainer.createDiv({ cls: 'pakcli-tree-row is-file' });
+            row.dataset.nodeId = node.id;
 
             // Column 0
             const col0 = row.createDiv({ cls: 'pakcli-tree-cell pakcli-tree-cell-primary' });
@@ -509,14 +511,14 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
             const nameSpan = col0.createSpan({
                 cls: 'pakcli-editable-val pakcli-file-name',
                 text: node.name,
-                attr: { title: 'Double-click to edit' },
+                attr: { title: 'Click to type / Enter for new line / Tab to indent' },
             });
             this.makeCellEditable(nameSpan, (newVal) => {
                 node.name = newVal.trim();
                 nameSpan.textContent = node.name;
                 this.syncChangesToNote();
                 this.autoFitColumn(0);
-            });
+            }, node, 0);
 
             col0.addEventListener('dblclick', (e) => {
                 if (e.target === col0) {
@@ -538,7 +540,7 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
                 const valSpan = cell.createSpan({
                     cls: 'pakcli-editable-val',
                     text: displayText,
-                    attr: { title: 'Double-click to edit' },
+                    attr: { title: 'Click to type comment' },
                 });
                 this.makeCellEditable(valSpan, (newVal) => {
                     const cleaned = newVal.replace(/^#+\s*/, '').trim();
@@ -547,7 +549,7 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
                     valSpan.textContent = cleaned ? `${prefix} ${cleaned}` : '';
                     this.syncChangesToNote();
                     this.autoFitColumn(c);
-                });
+                }, node, c);
 
                 cell.addEventListener('dblclick', (e) => {
                     if (e.target === cell) {
@@ -559,18 +561,189 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
         }
     }
 
-    private makeCellEditable(element: HTMLElement, onChange: (newVal: string) => void): void {
-        element.addEventListener('dblclick', (e) => {
-            e.stopPropagation();
-            this.enterInlineEdit(element, onChange);
+    private getFlattenedVisibleNodes(): TreeGridNode[] {
+        const result: TreeGridNode[] = [];
+        const traverse = (nodes: TreeGridNode[]) => {
+            for (const n of nodes) {
+                result.push(n);
+                if (n.isDirectory && n.isExpanded && n.children && n.children.length > 0) {
+                    traverse(n.children);
+                }
+            }
+        };
+        traverse(this.parsed.rootNodes);
+        return result;
+    }
+
+    private insertNodeAfter(targetNode: TreeGridNode): TreeGridNode {
+        const newNode: TreeGridNode = {
+            id: `tree-node-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+            name: '',
+            rawName: '',
+            rawLine: '',
+            depth: targetNode.depth,
+            isDirectory: true,
+            columns: [],
+            children: [],
+            isExpanded: true,
+        };
+
+        if (targetNode.parent) {
+            newNode.parent = targetNode.parent;
+            const siblings = targetNode.parent.children;
+            const idx = siblings.indexOf(targetNode);
+            siblings.splice(idx + 1, 0, newNode);
+        } else {
+            const idx = this.parsed.rootNodes.indexOf(targetNode);
+            this.parsed.rootNodes.splice(idx + 1, 0, newNode);
+        }
+
+        this.syncChangesToNote();
+        this.render();
+
+        requestAnimationFrame(() => {
+            this.focusCell(newNode.id, 0);
+        });
+
+        return newNode;
+    }
+
+    private deleteNode(node: TreeGridNode): void {
+        const flat = this.getFlattenedVisibleNodes();
+        const idx = flat.indexOf(node);
+        const prevNode = idx > 0 ? flat[idx - 1] : null;
+
+        if (node.parent) {
+            const siblings = node.parent.children;
+            const sIdx = siblings.indexOf(node);
+            if (sIdx !== -1) siblings.splice(sIdx, 1);
+        } else {
+            const rIdx = this.parsed.rootNodes.indexOf(node);
+            if (rIdx !== -1) this.parsed.rootNodes.splice(rIdx, 1);
+        }
+
+        this.syncChangesToNote();
+        this.render();
+
+        if (prevNode) {
+            requestAnimationFrame(() => {
+                this.focusCell(prevNode.id, 0);
+            });
+        }
+    }
+
+    private indentNode(node: TreeGridNode): void {
+        const siblings = node.parent ? node.parent.children : this.parsed.rootNodes;
+        const idx = siblings.indexOf(node);
+        if (idx <= 0) return; // Cannot indent first sibling
+
+        const prevSibling = siblings[idx - 1];
+        siblings.splice(idx, 1);
+
+        node.parent = prevSibling;
+        node.depth = prevSibling.depth + 1;
+        prevSibling.children.push(node);
+        prevSibling.isExpanded = true;
+        prevSibling.isDirectory = true;
+
+        this.syncChangesToNote();
+        this.render();
+
+        requestAnimationFrame(() => {
+            this.focusCell(node.id, 0);
         });
     }
 
-    private enterInlineEdit(element: HTMLElement, onSave: (val: string) => void): void {
+    private unindentNode(node: TreeGridNode): void {
+        if (!node.parent) return; // Already at root level
+
+        const parent = node.parent;
+        const grandparent = parent.parent;
+
+        const siblings = parent.children;
+        const idx = siblings.indexOf(node);
+        if (idx !== -1) siblings.splice(idx, 1);
+
+        node.depth = parent.depth;
+        if (grandparent) {
+            node.parent = grandparent;
+            const gSiblings = grandparent.children;
+            const pIdx = gSiblings.indexOf(parent);
+            gSiblings.splice(pIdx + 1, 0, node);
+        } else {
+            node.parent = undefined;
+            const pIdx = this.parsed.rootNodes.indexOf(parent);
+            this.parsed.rootNodes.splice(pIdx + 1, 0, node);
+        }
+
+        this.syncChangesToNote();
+        this.render();
+
+        requestAnimationFrame(() => {
+            this.focusCell(node.id, 0);
+        });
+    }
+
+    private focusCell(nodeId: string, colIndex: number): void {
+        const selector = `.pakcli-tree-row[data-node-id="${nodeId}"] .pakcli-tree-cell[data-col-index="${colIndex}"] .pakcli-editable-val`;
+        const cell = this.bodyContainerEl.querySelector<HTMLElement>(selector);
+        if (cell) {
+            cell.click();
+        }
+    }
+
+    private focusNextRowCell(currentNode: TreeGridNode, colIndex: number): void {
+        const flat = this.getFlattenedVisibleNodes();
+        const idx = flat.indexOf(currentNode);
+        if (idx !== -1 && idx < flat.length - 1) {
+            const nextNode = flat[idx + 1];
+            this.focusCell(nextNode.id, colIndex);
+        } else if (colIndex === 0) {
+            this.insertNodeAfter(currentNode);
+        }
+    }
+
+    private focusPrevRowCell(currentNode: TreeGridNode, colIndex: number): void {
+        const flat = this.getFlattenedVisibleNodes();
+        const idx = flat.indexOf(currentNode);
+        if (idx > 0) {
+            const prevNode = flat[idx - 1];
+            this.focusCell(prevNode.id, colIndex);
+        }
+    }
+
+    private makeCellEditable(
+        element: HTMLElement,
+        onChange: (newVal: string) => void,
+        node: TreeGridNode,
+        colIndex: number
+    ): void {
+        element.addEventListener('click', (e) => {
+            e.stopPropagation();
+            this.enterInlineEdit(element, onChange, node, colIndex);
+        });
+    }
+
+    private enterInlineEdit(
+        element: HTMLElement,
+        onSave: (val: string) => void,
+        node: TreeGridNode,
+        colIndex: number
+    ): void {
+        if (element.classList.contains('is-editing')) return;
+
         const originalText = element.textContent || '';
         element.contentEditable = 'true';
         element.addClass('is-editing');
         element.focus();
+
+        // Place cursor at the end of the text
+        const range = document.createRange();
+        range.selectNodeContents(element);
+        range.collapse(false);
+        const sel = window.getSelection();
+        sel?.removeAllRanges();
+        sel?.addRange(range);
 
         let isSaved = false;
 
@@ -591,7 +764,47 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
         const onKeyDown = (e: KeyboardEvent) => {
             if (e.key === 'Enter') {
                 e.preventDefault();
-                element.blur();
+                e.stopPropagation();
+                finish(true);
+
+                if (e.shiftKey) {
+                    this.focusPrevRowCell(node, colIndex);
+                } else if (colIndex === 0) {
+                    this.insertNodeAfter(node);
+                } else {
+                    this.focusNextRowCell(node, colIndex);
+                }
+            } else if (e.key === 'Tab') {
+                e.preventDefault();
+                e.stopPropagation();
+                finish(true);
+
+                if (colIndex === 0) {
+                    if (e.shiftKey) {
+                        this.unindentNode(node);
+                    } else {
+                        this.indentNode(node);
+                    }
+                } else {
+                    const targetCol = e.shiftKey
+                        ? Math.max(0, colIndex - 1)
+                        : Math.min(this.columns.length - 1, colIndex + 1);
+                    this.focusCell(node.id, targetCol);
+                }
+            } else if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                finish(true);
+                this.focusNextRowCell(node, colIndex);
+            } else if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                finish(true);
+                this.focusPrevRowCell(node, colIndex);
+            } else if (e.key === 'Backspace' && (element.textContent || '').trim() === '') {
+                if (colIndex === 0) {
+                    e.preventDefault();
+                    finish(false);
+                    this.deleteNode(node);
+                }
             } else if (e.key === 'Escape') {
                 e.preventDefault();
                 finish(false);

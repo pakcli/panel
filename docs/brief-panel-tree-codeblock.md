@@ -18,9 +18,15 @@
      - In **Rendered View**: Dynamically renders authentic monospace ASCII guide branches (`├── `, `└── `, `│   `).
      - Fold indicators use minimalist chevron `v ` when open and `> ` when closed.
      - 100% naturally selectable text across all lines.
-  3. **In-Place Live Editable**:
-     - Double-click any line/cell to edit in-place.
-     - Pressing Enter or clicking outside saves changes directly back to the active note's raw codeblock via Obsidian Vault API.
+  3. **Natural Codeblock Typing UX (Click-to-Type & Keyboard Navigation)**:
+     - Single click on any cell (Column 0 or `#` comments) to immediately begin typing.
+     - `Enter`: In Column 0, inserts a new sibling row below and focuses it; in comment columns, moves down to the next row.
+     - `Shift + Enter`: Moves cursor to the cell in the row above.
+     - `Tab`: In Column 0, indents the item to become a child of the previous sibling; in comment columns, shifts to the next column.
+     - `Shift + Tab`: In Column 0, unindents the item to the parent level; in comment columns, shifts to the previous column.
+     - `ArrowDown` / `ArrowUp`: Navigates up and down rows in the same column.
+     - `Backspace` on empty line: Deletes the line and returns focus to the line above.
+     - All edits immediately sync directly to the active note's raw markdown codeblock.
   4. **Multi-Column Alignment via `space + #` (Max 10 Columns)**:
      - Each occurrence of `space + #` creates a column (`#note1 #note2 ...`).
      - Automatically aligns all `#` comments into clean vertical lines (`clean # sejajar on that one line`).
