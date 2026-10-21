@@ -14,6 +14,7 @@
 
 import { MarkdownRenderChild, MarkdownPostProcessorContext, Notice, TFile } from 'obsidian';
 import { ParsedTreeGrid, TreeGridColumn, TreeGridNode } from './types';
+import { CopyButton, PillGroup } from '../../uiComponents';
 import { parseTreeGrid, serializeTreeToSource, getMaxCol0Length, getAsciiBranchPrefix } from './treeParser';
 
 export class TreeCodeblockRenderer extends MarkdownRenderChild {
@@ -156,44 +157,42 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
             cls: 'pakcli-tree-card-container HyperMD-codeblock-bg',
         });
 
-        // Native Copy Button (📋)
-        const copyBtn = this.cardContainerEl.createEl('button', {
+        // Native Copy Button (📋) using CopyButton from uiComponents
+        new CopyButton({
+            containerEl: this.cardContainerEl,
             cls: 'pakcli-tree-copy-btn',
-            text: '📋',
-            attr: { title: 'Copy clean formatted tree' },
-        });
-        copyBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            const lines: string[] = [];
-            const flatNodes = this.getFlattenedVisibleNodes();
-            for (const node of flatNodes) {
-                const branchPrefix = getAsciiBranchPrefix(node, this.parsed.rootNodes);
-                const chevronPrefix = node.isDirectory
-                    ? (node.children.length > 0 ? (node.isExpanded ? 'v ' : '> ') : '  ')
-                    : (node.depth === 0 ? '  ' : '');
-                const pathSegment = branchPrefix + chevronPrefix + node.name;
-                let lineStr = pathSegment;
-                let curChars = pathSegment.length;
+            tooltip: 'Copy clean formatted tree',
+            textGetter: () => {
+                const lines: string[] = [];
+                const flatNodes = this.getFlattenedVisibleNodes();
+                for (const node of flatNodes) {
+                    const branchPrefix = getAsciiBranchPrefix(node, this.parsed.rootNodes);
+                    const chevronPrefix = node.isDirectory
+                        ? (node.children.length > 0 ? (node.isExpanded ? 'v ' : '> ') : '  ')
+                        : (node.depth === 0 ? '  ' : '');
+                    const pathSegment = branchPrefix + chevronPrefix + node.name;
+                    let lineStr = pathSegment;
+                    let curChars = pathSegment.length;
 
-                for (let c = 1; c < this.columns.length; c++) {
-                    const rawVal = node.columns[c - 1] || '';
-                    const cleanVal = rawVal.replace(/^#+\s*/, '').trim();
+                    for (let c = 1; c < this.columns.length; c++) {
+                        const rawVal = node.columns[c - 1] || '';
+                        const cleanVal = rawVal.replace(/^#+\s*/, '').trim();
 
-                    let targetColStartChars = 0;
-                    for (let k = 0; k < c; k++) {
-                        targetColStartChars += Math.max(4, Math.round(this.columns[k].width / this.charWidthPx));
+                        let targetColStartChars = 0;
+                        for (let k = 0; k < c; k++) {
+                            targetColStartChars += Math.max(4, Math.round(this.columns[k].width / this.charWidthPx));
+                        }
+                        const spacesCount = Math.max(2, targetColStartChars - curChars);
+                        curChars += spacesCount;
+                        if (cleanVal) {
+                            lineStr += ' '.repeat(spacesCount) + cleanVal;
+                            curChars += cleanVal.length;
+                        }
                     }
-                    const spacesCount = Math.max(2, targetColStartChars - curChars);
-                    curChars += spacesCount;
-                    if (cleanVal) {
-                        lineStr += ' '.repeat(spacesCount) + cleanVal;
-                        curChars += cleanVal.length;
-                    }
+                    lines.push(lineStr);
                 }
-                lines.push(lineStr);
-            }
-            navigator.clipboard.writeText(lines.join('\n'));
-            new Notice('✓ Copied tree to clipboard');
+                return lines.join('\n');
+            },
         });
 
         // Main Tree Body (relative wrapper for overlay and code lines)
@@ -327,48 +326,20 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
             wireHit.title = 'Drag to adjust column width • Double-click to auto-fit';
             this.wireGuidelineResizer(wireHit, c);
 
-            // Floating Header Controls (- < > :: +) above comment column (exact match to blue guide)
-            const controlsPill = this.controlsContainerEl.createDiv({ cls: 'pakcli-column-controls-pill' });
-            controlsPill.style.left = `${wireX + 10}px`;
-            controlsPill.style.top = '6px';
-
-            // Delete (-)
-            const delBtn = controlsPill.createSpan({ cls: 'pakcli-pill-btn', text: '-' });
-            delBtn.title = 'Delete column';
-            delBtn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                this.deleteColumn(c + 1);
+            // Floating Header Controls (- < > :: +) above comment column (using PillGroup)
+            const pill = new PillGroup({
+                containerEl: this.controlsContainerEl,
+                cls: 'pakcli-column-controls-pill',
+                items: [
+                    { id: 'del', label: '-', tooltip: 'Delete column', onClick: () => this.deleteColumn(c + 1) },
+                    { id: 'left', label: '<', tooltip: 'Move left', disabled: c === 0, onClick: () => { if (c > 0) this.moveColumn(c + 1, c); } },
+                    { id: 'right', label: '>', tooltip: 'Move right', disabled: c === this.columns.length - 2, onClick: () => { if (c < this.columns.length - 2) this.moveColumn(c + 1, c + 2); } },
+                    { id: 'drag', label: '::', tooltip: 'Drag to reorder', isHandle: true },
+                    { id: 'add', label: '+', tooltip: 'Add new column (Alt+click to duplicate)', onClick: (e) => this.addColumn(c + 1, e.altKey) },
+                ],
             });
-
-            // Shift Left (<)
-            const leftBtn = controlsPill.createSpan({ cls: 'pakcli-pill-btn', text: '<' });
-            leftBtn.title = 'Move left';
-            if (c === 0) leftBtn.addClass('is-disabled');
-            leftBtn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                if (c > 0) this.moveColumn(c + 1, c);
-            });
-
-            // Shift Right (>)
-            const rightBtn = controlsPill.createSpan({ cls: 'pakcli-pill-btn', text: '>' });
-            rightBtn.title = 'Move right';
-            if (c === this.columns.length - 2) rightBtn.addClass('is-disabled');
-            rightBtn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                if (c < this.columns.length - 2) this.moveColumn(c + 1, c + 2);
-            });
-
-            // Drag Handle (::)
-            const dragHandle = controlsPill.createSpan({ cls: 'pakcli-pill-btn pakcli-drag-handle', text: '::' });
-            dragHandle.title = 'Drag to reorder';
-
-            // Add (+)
-            const addBtn = controlsPill.createSpan({ cls: 'pakcli-pill-btn', text: '+' });
-            addBtn.title = 'Add new column (Alt+click to duplicate)';
-            addBtn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                this.addColumn(c + 1, e.altKey);
-            });
+            pill.containerEl.style.left = `${wireX + 10}px`;
+            pill.containerEl.style.top = '6px';
         }
 
         // 2. Render Interactive Chevrons (v / >) matching character position

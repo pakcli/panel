@@ -1,0 +1,145 @@
+/* ==========================================================================
+   inputs.scss - Modular Form & Input Controls
+   ========================================================================== */
+
+/* Search Input with Clear Button */
+.pakcli-search-input-wrap {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    background: var(--background-primary);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: var(--radius-s, 4px);
+    padding: 2px 6px;
+    transition: border-color 0.15s ease;
+
+    &:focus-within {
+        border-color: var(--interactive-accent);
+    }
+
+    .pakcli-search-icon {
+        display: inline-flex;
+        align-items: center;
+        color: var(--text-faint);
+        margin-right: 4px;
+        font-size: 0.85rem;
+    }
+
+    .pakcli-search-input {
+        border: none !important;
+        background: transparent !important;
+        padding: 2px 4px !important;
+        font-size: var(--font-ui-small, 0.82rem);
+        color: var(--text-normal);
+        outline: none !important;
+        box-shadow: none !important;
+    }
+
+    .pakcli-search-clear-btn {
+        display: none;
+        cursor: pointer;
+        font-size: 0.75rem;
+        color: var(--text-faint);
+        margin-left: 4px;
+        padding: 0 2px;
+        border-radius: 2px;
+
+        &:hover {
+            color: var(--text-normal);
+            background: var(--background-modifier-hover);
+        }
+
+        &.is-visible {
+            display: inline-flex;
+        }
+    }
+}
+
+/* Toggle Switch */
+.pakcli-toggle-wrap {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    user-select: none;
+
+    .pakcli-toggle-label {
+        font-size: var(--font-ui-small, 0.82rem);
+        color: var(--text-normal);
+    }
+
+    .pakcli-toggle-switch {
+        cursor: pointer;
+    }
+}
+
+/* Range Slider with Badge */
+.pakcli-range-slider-wrap {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+
+    .pakcli-slider-label {
+        font-size: var(--font-ui-small, 0.82rem);
+        color: var(--text-muted);
+        white-space: nowrap;
+    }
+
+    .pakcli-range-slider {
+        cursor: pointer;
+    }
+
+    .pakcli-slider-badge {
+        font-family: var(--font-monospace, monospace);
+        font-size: 0.75rem;
+        padding: 1px 6px;
+        border-radius: var(--radius-s, 4px);
+        background: var(--background-secondary);
+        color: var(--text-muted);
+        border: 1px solid var(--background-modifier-border);
+    }
+}
+
+/* In-place Editable Text */
+.pakcli-inline-editable {
+    padding: 0 2px;
+    border-radius: 2px;
+    cursor: text;
+    transition: background 0.1s ease;
+
+    &:hover {
+        background: var(--background-modifier-hover);
+        outline: 1px dashed var(--interactive-accent);
+    }
+
+    &.is-editing {
+        padding: 0;
+        outline: none !important;
+
+        .pakcli-inline-input {
+            font-size: inherit;
+            font-family: inherit;
+            padding: 1px 3px;
+            border: 1px solid var(--interactive-accent) !important;
+            border-radius: 2px;
+            background: var(--background-primary);
+            color: var(--text-normal);
+        }
+    }
+}
+
+/* Dropdown Select */
+.pakcli-dropdown-wrap {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+
+    .pakcli-dropdown-label {
+        font-size: var(--font-ui-small, 0.82rem);
+        color: var(--text-muted);
+    }
+
+    .pakcli-select {
+        cursor: pointer;
+    }
+}

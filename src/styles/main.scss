@@ -1,4 +1,8 @@
 ﻿@use 'core';
+@use 'ui/actions';
+@use 'ui/inputs';
+@use 'ui/modals';
+@use 'ui/table';
 @use 'csvEditor';
 @use 'inlineQueries';
 @use 'listView';

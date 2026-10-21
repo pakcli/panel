@@ -1,4 +1,5 @@
 import { App, Modal, Notice, setIcon } from 'obsidian';
+import { ConfirmModal, PromptModal } from '../../uiComponents';
 import type { BubbleGraphView } from './bubbleGraphView';
 import type { BubbleViewScopePreset } from '../../settings';
 
@@ -27,12 +28,7 @@ export function formatTimeAgo(timestamp: number): string {
  * Confirmation Modal with Cancel or Yes buttons.
  * Guarantees explicit user approval for Delete, Duplicate, and Overwrite actions.
  */
-export class ConfirmationModal extends Modal {
-    private message: string;
-    private onConfirm: () => void;
-    private confirmText: string;
-    private isDestructive: boolean;
-
+export class ConfirmationModal extends ConfirmModal {
     constructor(
         app: App,
         title: string,
@@ -41,131 +37,28 @@ export class ConfirmationModal extends Modal {
         confirmText: string = 'Yes',
         isDestructive: boolean = false
     ) {
-        super(app);
-        this.titleEl.setText(title);
-        this.message = message;
-        this.onConfirm = onConfirm;
-        this.confirmText = confirmText;
-        this.isDestructive = isDestructive;
-    }
-
-    onOpen() {
-        const { contentEl } = this;
-        contentEl.empty();
-        contentEl.addClass('pakcli-confirm-modal');
-
-        const msgEl = contentEl.createEl('p', { cls: 'pakcli-confirm-message', text: this.message });
-        msgEl.style.fontSize = '14px';
-        msgEl.style.lineHeight = '1.5';
-        msgEl.style.marginBottom = '20px';
-
-        const btnRow = contentEl.createDiv({ cls: 'pakcli-confirm-btn-row' });
-        btnRow.style.display = 'flex';
-        btnRow.style.justifyContent = 'flex-end';
-        btnRow.style.gap = '10px';
-
-        const cancelBtn = btnRow.createEl('button', {
-            text: 'Cancel',
-            cls: 'pakcli-confirm-cancel-btn'
+        super(app, {
+            title,
+            message,
+            confirmText,
+            isDestructive,
+            onConfirm,
         });
-        cancelBtn.onclick = () => this.close();
-
-        const confirmBtn = btnRow.createEl('button', {
-            text: this.confirmText,
-            cls: `pakcli-confirm-yes-btn mod-cta ${this.isDestructive ? 'mod-warning mod-destructive' : ''}`
-        });
-        confirmBtn.onclick = () => {
-            this.close();
-            this.onConfirm();
-        };
-
-        setTimeout(() => cancelBtn.focus(), 25);
-    }
-
-    onClose() {
-        this.contentEl.empty();
     }
 }
 
-/**
- * Prompt modal to input a name when saving the current view & scope as a new preset.
- */
-export class SavePresetPromptModal extends Modal {
-    private defaultName: string;
-    private onSave: (name: string) => void;
-
+export class SavePresetPromptModal extends PromptModal {
     constructor(app: App, defaultName: string, onSave: (name: string) => void) {
-        super(app);
-        this.defaultName = defaultName;
-        this.onSave = onSave;
-        this.titleEl.setText('Save View × Scope Preset');
-    }
-
-    onOpen() {
-        const { contentEl } = this;
-        contentEl.empty();
-        contentEl.addClass('pakcli-save-preset-modal');
-
-        contentEl.createEl('p', {
-            cls: 'pakcli-modal-desc',
-            text: 'Enter a name for this preset to save current folder scope, view mode, lines, colors, text levels, and simulation state:'
+        super(app, {
+            title: 'Save View × Scope Preset',
+            description: 'Enter a name for this preset to save current folder scope, view mode, lines, colors, text levels, and simulation state:',
+            initialValue: defaultName,
+            submitText: 'Save Preset',
+            onSubmit: onSave,
         });
-
-        const input = contentEl.createEl('input', {
-            type: 'text',
-            value: this.defaultName,
-            cls: 'pakcli-modal-input'
-        });
-        input.style.width = '100%';
-        input.style.marginBottom = '16px';
-        input.style.boxSizing = 'border-box';
-
-        const btnRow = contentEl.createDiv({ cls: 'pakcli-modal-buttons' });
-        btnRow.style.display = 'flex';
-        btnRow.style.justifyContent = 'flex-end';
-        btnRow.style.gap = '10px';
-
-        const cancelBtn = btnRow.createEl('button', { text: 'Cancel' });
-        cancelBtn.onclick = () => this.close();
-
-        const saveBtn = btnRow.createEl('button', { text: 'Save Preset', cls: 'mod-cta' });
-        const doSave = () => {
-            const val = input.value.trim();
-            if (!val) {
-                new Notice('Preset name cannot be empty');
-                return;
-            }
-            this.close();
-            this.onSave(val);
-        };
-
-        saveBtn.onclick = doSave;
-        input.onkeydown = (e) => {
-            if (e.key === 'Enter') {
-                e.preventDefault();
-                doSave();
-            } else if (e.key === 'Escape') {
-                this.close();
-            }
-        };
-
-        setTimeout(() => {
-            input.focus();
-            input.select();
-        }, 30);
-    }
-
-    onClose() {
-        this.contentEl.empty();
     }
 }
 
-/**
- * Preset View × Scope Manager Modal.
- * Shows each preset row with:
- * scope , 2 days ago | 2 hour ago [delete btn], duplicate btn, overwrite btn
- * with confirmation popups on every action button.
- */
 export class PresetViewScopeModal extends Modal {
     private view: BubbleGraphView;
 

@@ -1,0 +1,59 @@
+/* ==========================================================================
+   modals.scss - Universal Modal Foundations
+   ========================================================================== */
+
+.pakcli-base-modal {
+    padding: 16px 20px !important;
+    max-width: 500px;
+
+    .pakcli-modal-header {
+        margin-bottom: 14px;
+        padding-bottom: 8px;
+        border-bottom: 1px solid var(--background-modifier-border);
+
+        .pakcli-modal-title {
+            margin: 0;
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: var(--text-normal);
+        }
+    }
+
+    .pakcli-modal-body {
+        margin-bottom: 18px;
+        font-size: var(--font-ui-medium, 0.9rem);
+        color: var(--text-normal);
+        line-height: 1.5;
+    }
+
+    .pakcli-modal-footer {
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 8px;
+        padding-top: 10px;
+        border-top: 1px solid var(--background-modifier-border);
+    }
+}
+
+.pakcli-prompt-modal {
+    .pakcli-prompt-description {
+        margin-bottom: 10px;
+        color: var(--text-muted);
+        font-size: 0.85rem;
+    }
+
+    .pakcli-prompt-input {
+        width: 100%;
+        padding: 6px 10px;
+        font-size: 0.9rem;
+        border-radius: var(--radius-s, 4px);
+        border: 1px solid var(--background-modifier-border);
+        background: var(--background-primary);
+        color: var(--text-normal);
+
+        &:focus {
+            border-color: var(--interactive-accent);
+        }
+    }
+}

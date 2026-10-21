@@ -1,6 +1,6 @@
 # 📌 Master Brief: Modular UIComponents Architecture (pakcli-panel)
 
-> **Feature Status**: `0` (Draft / Pending Implementation)  
+> **Feature Status**: `1` (Implemented & Verified)  
 > **Target Module**: `pakcli-panel` (`panel`)  
 > **Platform**: Obsidian Desktop & Mobile  
 > **Date**: 2026-10-21  
@@ -110,25 +110,25 @@ panel/src/uiComponents/
 
 | Phase | Description | Status |
 | :--- | :--- | :---: |
-| **Phase 0** | Create brief in `panel/docs/` and commit status 0 | ⏳ In Progress |
-| **Phase 1** | Scaffold `src/uiComponents/` folders (`actions`, `inputs`, `modals`, `table`, `index.ts`) | ⏳ Pending |
-| **Phase 2** | Implement core reusable primitives (`actions`, `inputs`, `modals`, `table`) | ⏳ Pending |
-| **Phase 3** | Migrate & connect feature UI (`panel-tree` controls, `bubblegraph` toolbar/modals) | ⏳ Pending |
-| **Phase 4** | Create modular stylesheets in `src/styles/ui/` | ⏳ Pending |
-| **Phase 5** | Run `npm run build`, verify zero errors, bundle size < 5 MB, commit status 1 | ⏳ Pending |
+| **Phase 0** | Create brief in `panel/docs/` and commit status 0 | ✅ Complete |
+| **Phase 1** | Scaffold `src/uiComponents/` folders (`actions`, `inputs`, `modals`, `table`, `index.ts`) | ✅ Complete |
+| **Phase 2** | Implement core reusable primitives (`actions`, `inputs`, `modals`, `table`) | ✅ Complete |
+| **Phase 3** | Migrate & connect feature UI (`panel-tree` controls, `bubblegraph` modals/toolbar) | ✅ Complete |
+| **Phase 4** | Create modular stylesheets in `src/styles/ui/` | ✅ Complete |
+| **Phase 5** | Run `npm run build`, verify zero errors, bundle size < 5 MB, commit status 1 | ✅ Complete |
 
 ---
 
 ## 6. Acceptance Criteria Checklist
 
-- [ ] Brief created at `panel/docs/brief-modular-uicomponents-architecture.md` with status 0
-- [ ] Status 0 brief committed to git
-- [ ] `src/uiComponents` directory structure created matching specification
-- [ ] Action buttons (`CopyButton`, `PillGroup`, `ActionBtn`) implemented and exported
-- [ ] Inputs (`SearchInput`, `ToggleSwitch`, `InlineEditableText`) implemented and exported
-- [ ] Modals (`ConfirmModal`, `PromptModal`, `BaseModal`) implemented and exported
-- [ ] Table primitives consolidated and re-exported
-- [ ] Bubble graph UI components (toolbar, inspector, preset modals) integrated with `uiComponents` (simulation excluded)
-- [ ] `npm run build` succeeds cleanly with 0 TypeScript errors
-- [ ] Bundle size strictly below 5.0 MB
-- [ ] Status 1 brief updated and committed
+- [x] Brief created at `panel/docs/brief-modular-uicomponents-architecture.md` with status 0
+- [x] Status 0 brief committed to git
+- [x] `src/uiComponents` directory structure created matching specification
+- [x] Action buttons (`CopyButton`, `PillGroup`, `ActionBtn`) implemented and exported
+- [x] Inputs (`SearchInput`, `ToggleSwitch`, `InlineEditableText`) implemented and exported
+- [x] Modals (`ConfirmModal`, `PromptModal`, `BaseModal`) implemented and exported
+- [x] Table primitives consolidated and re-exported
+- [x] Bubble graph UI components (toolbar, inspector, preset modals) integrated with `uiComponents` (simulation excluded)
+- [x] `npm run build` succeeds cleanly with 0 TypeScript errors
+- [x] Bundle size strictly below 5.0 MB (4.62 MB verified)
+- [x] Status 1 brief updated and committed
