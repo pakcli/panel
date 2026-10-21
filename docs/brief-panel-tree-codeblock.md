@@ -1,56 +1,65 @@
-# 📌 Master Brief: `panel-tree` Codeblock Renderer (Tree-Grid, ASCII L-Branching, Live In-Place Editing, Draggable Columns & Sticky Headers)
+# 📌 Master Brief: `panel-tree` Codeblock Renderer (Pure Monospace Codeblock + Floating GUI Overlay Layer)
 
-> **Feature Status**: `1` (Implemented & Verified)  
+> **Feature Status**: `0` (Draft / Pending Pure Codeblock Re-Architecture)  
 > **Target Module**: `pakcli-panel` (`panel`)  
 > **Platform**: Obsidian Desktop & Mobile  
 > **Date**: 2026-10-21  
 
 ---
 
-## 1. Objective & Problem Statement
-- **Problem**: Documenting directory manifests in Obsidian previously resulted in ragged text representations. Comments tagged with `#` were misaligned, parent folder context was lost on scroll, and UI renderers were often either too bloated ("fancy smansy") or read-only without inline editing.
-- **Solution**: Implemented `panel-tree` codeblock processor with:
-  1. **Extension-based Rule**:
-     - Items with file extension (`.json`, `.csv`, `.webp`, `.md`, `.js`, `.html`, `.css`, etc.) or known dotfiles (`.env`, `.gitignore`) are rendered as **Row Items (File Nodes)**.
-     - Items without extension (`data`, `src`, `modules`, `menu`) or with trailing slash (`player/`) are rendered as **Directory Columns / Container Headers**.
-  2. **Authentic Monospace ASCII Branching (`├── `, `└── `) & Chevron Fold (`v ` / `> `)**:
-     - In **Source Mode**: Users write pure plain indentation (tabs/spaces) without manual branch characters.
-     - In **Rendered View**: Dynamically renders authentic monospace ASCII guide branches (`├── `, `└── `, `│   `).
-     - Fold indicators use minimalist chevron `v ` when open and `> ` when closed.
-     - 100% naturally selectable text across all lines.
-  3. **Natural Codeblock Typing UX (Click-to-Type & Keyboard Navigation)**:
-     - Single click on any cell (Column 0 or `#` comments) to immediately begin typing.
-     - `Enter`: In Column 0, inserts a new sibling row below and focuses it; in comment columns, moves down to the next row.
-     - `Shift + Enter`: Moves cursor to the cell in the row above.
-     - `Tab`: In Column 0, indents the item to become a child of the previous sibling; in comment columns, shifts to the next column.
-     - `Shift + Tab`: In Column 0, unindents the item to the parent level; in comment columns, shifts to the previous column.
-     - `ArrowDown` / `ArrowUp`: Navigates up and down rows in the same column.
-     - `Backspace` on empty line: Deletes the line and returns focus to the line above.
-     - All edits immediately sync directly to the active note's raw markdown codeblock.
-  4. **Multi-Column Alignment via `space + #` (Max 10 Columns)**:
-     - Each occurrence of `space + #` creates a column (`#note1 #note2 ...`).
-     - Automatically aligns all `#` comments into clean vertical lines (`clean # sejajar on that one line`).
-  5. **Header Column Controls (`::`, `<`, `>`, `+`, `-`)**:
-     - `::` drag handle for drag-and-drop column reordering.
-     - `<` and `>` buttons for quick one-click column shifting.
-     - `+` button to add or duplicate column.
-     - `-` button to delete the column across all rows and sync to note.
-  6. **Zero Horizontal Cell Lines & Full-Row Hover Highlight**:
-     - 0% spreadsheet borders: all horizontal row lines (`border-bottom`) eliminated so text flows naturally as a genuine codeblock.
-     - Single continuous vertical column guideline separating columns, with no outer border on the far right.
-     - Full-row hover highlight: hovering anywhere on a line highlights the entire row from left to right as a unified rounded block (`var(--background-modifier-hover)`).
-  7. **Column Handle & Live Source Codeblock Spacing Sync**:
-     - The vertical column handle `│` in rendered view lets the user drag to adjust spacing.
-     - Minimum Column 0 width is strictly bounded by the character width of the longest tree line (`minmimal size = chart character of the whole tree line`).
-     - Releasing drag (`mouseup`) or double-clicking to auto-fit **immediately updates the source codeblock in the active markdown note** by padding spaces before `#`.
-     - **No pipe `|` symbols** are written to the markdown file; only aligned spaces.
-  8. **Cascading Sticky Headers (`t -> h1 -> h2 -> h3`)**:
-     - Visual sticky hierarchy where parent directory headers remain pinned at the top as the user scrolls down through nested children.
-  9. **Toggleable Folders**:
-     - Expand/collapse chevrons on each folder node.
-  10. **Custom & Multiple Aliases in Settings**:
-     - Codeblock tag renamable in settings (comma-separated).
-     - Default: `panel-tree, panel-tree-structure, tree-structure`.
+## 1. Problem & Root Cause of Table-Alike Look
+- **Root Cause**: Previous revisions still relied on a CSS Grid layout with individual cell containers (`.pakcli-tree-cell`) for every column on every row. Even when rows had no `#` comments, empty metadata cells were rendered on the right with vertical right-borders, creating visible spreadsheet-like cell grids and horizontal dividers.
+- **Goal (Zero Table Structure)**: Eradicate all cell divs and table/grid structures. Re-architect as a **Pure Codeblock with Floating GUI Overlay Layer**:
+  1. **Base Layer (Codeblock)**: Genuine `<pre><code>` text block where each row is a single, continuous `.pakcli-codeblock-line`. Zero horizontal borders. Rows without comments have no empty cell divs on the right.
+  2. **Overlay Layer (GUI Controls)**: Independent floating top ruler for column controls (`::`, `<`, `>`, `+`, `-`) and vertical draggable guideline wires (`position: absolute`) that adjust the maximum distance / space padding before `#` comments.
+  3. **Whole-Row Hover Highlight**: Hovering anywhere on a row highlights the entire line seamlessly across the codeblock like a modern code editor line highlight.
+
+---
+
+## 2. Architecture: Pure Codeblock + Overlay GUI Layer
+
+```text
+┌────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ [OVERLAY LAYER: Floating Top Column Ruler]                                                             │
+│ <--------- PATH ---------> │ <------------ # ------------> │ <----------- ## ----------->  +           │
+│                            │   ::   <   >   #   +   -      │   ::   <   >   ##   +   -               │
+└────────────────────────────┼───────────────────────────────┼───────────────────────────────────────────┘
+                             │ (Draggable Guideline Overlay) │ (Draggable Guideline Overlay)
+┌────────────────────────────┼───────────────────────────────┼───────────────────────────────────────────┐
+│ [BASE LAYER: Pure Codeblock Lines - NO GRID CELLS, NO HORIZONTAL LINES, NO EMPTY RIGHT BOXES]          │
+│                                                                                                        │
+│ v data                                                                                                 │
+│ ├── v asset                │ # asdasdasdasdasd             │ ## 2                                      │
+│ │   ├── v player                                                                                       │
+│ │   │   ├── yolla.webp                                                                                 │
+│ │   │   └── tisya.webp                                                                                 │
+│ │   ├── v matches                                                                                      │
+│ │   │   └── poster-m01.webp                                                                            │
+│ │   └── v news                                                                                         │
+│ │       └── match-win.webp                                                                             │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Key Differences from Previous Attempt:
+1. **No CSS Grid for the Body**:
+   - Rows are not broken down into multiple cell divs (`.pakcli-tree-cell`).
+   - Each row is a single container (`<div class="pakcli-codeblock-line">`).
+   - If a line has no comment, its DOM contains ONLY the tree branch and item name:
+     `├── v player`
+     There are NO empty `<div>`s sitting to the right!
+2. **Zero Horizontal Lines**:
+   - Absolutely no `border-bottom` or horizontal divider lines between lines.
+3. **Floating Guideline Overlay**:
+   - The vertical column separator lines (`│`) are independent overlay elements (`position: absolute; top: 0; bottom: 0; width: 1px; left: ...px; pointer-events: auto; cursor: col-resize;`).
+   - Dragging the guideline changes the padding offset of `#` in the markdown source.
+4. **Natural Text Codeblock Flow & Whole-Row Hover**:
+   - Monospace font and background match Obsidian's codeblocks.
+   - Hovering over any line triggers a clean, subtle full-row background highlight (`var(--background-modifier-hover)`).
+5. **Interactive Controls Preserved in Overlay**:
+   - Chevron toggle (`v ` / `> `) directly on folder items.
+   - Click-to-type inline editing on names and comments.
+   - Keyboard navigation (`Enter`, `Shift+Enter`, `Tab`, `Shift+Tab`, `ArrowUp`, `ArrowDown`).
+   - Header ruler with `::` drag reorder, `< >` shifting, `+` add/duplicate, and `-` delete column.
 
 ## 2. Technical Architecture & Constraints
 - **Parser**: `treeParser.ts` converts tab/space-indented text lines with `#` column tokens into an AST (`TreeGridNode`), computes `getAsciiBranchPrefix`, and serializes back via `serializeTreeToSource`.
