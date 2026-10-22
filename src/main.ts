@@ -99,12 +99,13 @@ import { VaultHistoryView, VAULT_HISTORY_VIEW_TYPE } from './features/history/Va
 // Tier List Engine (Score & Batch Compare) Imports
 import { TierListManager } from './features/tierlist/TierListManager';
 // Tree Grid Codeblock Renderer
-import { TreeCodeblockRenderer } from './features/treeGrid';
+import { TreeCodeblockRenderer, createTreeLivePreviewPlugin, TreeCascadingManager } from './features/treeGrid';
 import { CascadingStickyHeaderManager } from './features/stickyHeader';
 
 export default class PakCLITablePlugin extends Plugin {
 	declare settings: PakCLITableSettings;
 	stickyHeaderManager!: CascadingStickyHeaderManager;
+	treeCascadingManager!: TreeCascadingManager;
 	ribbonManager!: RibbonManager;
 	router!: AssetRouter;
 	codeblockScaler!: CodeblockScaler;
@@ -971,6 +972,9 @@ export default class PakCLITablePlugin extends Plugin {
 		this.registerEditorExtension([createVirtualMaskExtension(this)]);
 		registerReadingViewSanitizer(this);
 
+		// 13. Register Tree Live Preview Extensions (Interactive rails, chevrons & action badges)
+		this.registerEditorExtension([createTreeLivePreviewPlugin(this)]);
+
 		// Command: Copy Active File as Native OS File
 		this.addCommand({
 			id: 'copy-active-file-native-os',
@@ -1335,6 +1339,10 @@ export default class PakCLITablePlugin extends Plugin {
 		// Initialize Cascading Sticky Headers Manager (VS Code Sticky Scroll)
 		this.stickyHeaderManager = new CascadingStickyHeaderManager(this);
 		this.stickyHeaderManager.init();
+
+		// Initialize Tree Cascading Sticky Headers Manager (panel-tree Sticky Breadcrumbs)
+		this.treeCascadingManager = new TreeCascadingManager(this);
+		this.treeCascadingManager.init();
 
 		// Zoom Commands (Hotkeys Module)
 		this.addCommand({
@@ -2130,6 +2138,9 @@ export default class PakCLITablePlugin extends Plugin {
 		}
 		if (this.stickyHeaderManager) {
 			this.stickyHeaderManager.destroy();
+		}
+		if (this.treeCascadingManager) {
+			this.treeCascadingManager.destroy();
 		}
 		if (this.scrollbackManager) {
 			this.scrollbackManager.destroy();
@@ -7038,15 +7049,61 @@ export default class PakCLITablePlugin extends Plugin {
 
 				new Setting(containerEl)
 					.setName('Codeblock Tags / Aliases')
-					.setDesc('Comma-separated list of codeblock language tags that trigger the Tree Grid renderer. (Default: panel-tree, panel-tree-structure, tree-structure)')
+					.setDesc('Comma-separated list of codeblock language tags that trigger the Tree Grid renderer. (Default: panel-tree, panel-tree-cascading, tree-cascading, panel-tree-structure, tree-structure, tree-interactive)')
 					.addText((text) => {
 						text
-							.setPlaceholder('panel-tree, panel-tree-structure, tree-structure')
-							.setValue(this.settings.panelTreeAliases || 'panel-tree, panel-tree-structure, tree-structure')
+							.setPlaceholder('panel-tree, panel-tree-cascading, tree-cascading, panel-tree-structure, tree-structure')
+							.setValue(this.settings.panelTreeAliases || 'panel-tree, panel-tree-cascading, tree-cascading, panel-tree-structure, tree-structure, tree-interactive')
 							.onChange(async (val) => {
-								this.settings.panelTreeAliases = val.trim() || 'panel-tree, panel-tree-structure, tree-structure';
+								this.settings.panelTreeAliases = val.trim() || 'panel-tree, panel-tree-cascading, tree-cascading, panel-tree-structure, tree-structure, tree-interactive';
 								await this.saveSettings();
 								this.registerTreeGridProcessors();
+							});
+					});
+
+				new Setting(containerEl)
+					.setName('Enable Cascading Sticky Tree Headers')
+					.setDesc('Pins active directory path stickily at the top when scrolling through long panel-tree blocks.')
+					.addToggle((toggle) => {
+						toggle.setValue(this.settings.enableTreeCascading !== false)
+							.onChange(async (val) => {
+								this.settings.enableTreeCascading = val;
+								await this.saveSettings();
+								if (this.treeCascadingManager) {
+									this.treeCascadingManager.setEnabled(val);
+								}
+								new Notice(val ? 'Cascading Tree Headers enabled!' : 'Cascading Tree Headers disabled.');
+							});
+					});
+
+				new Setting(containerEl)
+					.setName('Sticky Quick Action Badges')
+					.setDesc('Show [+File] and [+Folder] quick action buttons inside the sticky tree header.')
+					.addToggle((toggle) => {
+						toggle.setValue(this.settings.treeCascadingShowBadges !== false)
+							.onChange(async (val) => {
+								this.settings.treeCascadingShowBadges = val;
+								await this.saveSettings();
+								if (this.treeCascadingManager) {
+									this.treeCascadingManager.refreshAllViews();
+								}
+							});
+					});
+
+				new Setting(containerEl)
+					.setName('Maximum Sticky Tree Depth')
+					.setDesc('Maximum folder ancestor levels displayed simultaneously in the sticky bar.')
+					.addSlider((slider) => {
+						slider
+							.setLimits(1, 6, 1)
+							.setValue(this.settings.treeCascadingMaxDepth ?? 3)
+							.setDynamicTooltip()
+							.onChange(async (val) => {
+								this.settings.treeCascadingMaxDepth = val;
+								await this.saveSettings();
+								if (this.treeCascadingManager) {
+									this.treeCascadingManager.refreshAllViews();
+								}
 							});
 					});
 			}
@@ -7056,7 +7113,7 @@ export default class PakCLITablePlugin extends Plugin {
 	}
 
 	private registerTreeGridProcessors(): void {
-		const rawAliases = this.settings.panelTreeAliases || 'panel-tree, panel-tree-structure, tree-structure';
+		const rawAliases = this.settings.panelTreeAliases || 'panel-tree, panel-tree-cascading, tree-cascading, panel-tree-structure, tree-structure, tree-interactive';
 		const aliases = rawAliases
 			.split(',')
 			.map((a) => a.trim().toLowerCase())

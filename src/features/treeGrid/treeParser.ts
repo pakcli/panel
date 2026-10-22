@@ -52,6 +52,21 @@ export function isFileName(name: string): boolean {
 }
 
 /**
+ * Detects if a codeblock language identifier represents a Tree Grid / Cascading Tree block.
+ * Recognizes panel-tree, panel-tree-cascading, tree-cascading, tree-structure, tree-interactive,
+ * or any custom alias configured in plugin settings.
+ */
+export function isTreeBlockAlias(rawTag: string, customAliases?: Set<string>): boolean {
+    if (!rawTag) return false;
+    const tag = rawTag.trim().toLowerCase();
+    if (tag === 'panel-tree' || tag === 'tree') return true;
+    if (tag.startsWith('panel-tree') || tag.startsWith('tree-') || tag.endsWith('-tree')) return true;
+    if (tag.includes('cascad') || tag.includes('tree-interactive')) return true;
+    if (customAliases && customAliases.has(tag)) return true;
+    return false;
+}
+
+/**
  * Extracts file extension if any.
  */
 export function getExtension(name: string): string | undefined {
@@ -95,7 +110,7 @@ export function extractNameAndColumns(rawTrimmed: string): {
     let trimmed = rawTrimmed.trim();
 
     // Strip leading ASCII symbols if user wrote V, >, L, ├──, └──, │
-    trimmed = trimmed.replace(/^[Vv>▼▶]\s*/, '');
+    trimmed = trimmed.replace(/^(?:[Vv>▼▶]\s*)+/, '');
     trimmed = trimmed.replace(/^[L├└│]\s*/, '');
     trimmed = trimmed.replace(/^[│\s]*[├└]──\s*/, '');
 
@@ -180,8 +195,10 @@ export function parseTreeGrid(source: string): ParsedTreeGrid {
     for (const rawLine of lines) {
         if (!rawLine.trim()) continue;
 
-        // Skip markdown comments or metadata tags if any
+        // Skip markdown comments, legacy diagram flags or metadata tags if any
         if (rawLine.trim().startsWith('<!--')) continue;
+        if (rawLine.trim().startsWith('-') && rawLine.includes(':')) continue;
+        if (rawLine.toLowerCase().includes('add item')) continue;
 
         const rawIndent = getRawLeadingWhitespace(rawLine);
 
@@ -287,10 +304,7 @@ export function getAsciiBranchPrefix(node: TreeGridNode, rootNodes: TreeGridNode
     }
 
     const isLast = isLastChild(node, rootNodes);
-    const effectiveIsLast = node.isVirtualPrompt
-        ? true
-        : (node.parent?.isDirectory && node.parent.isExpanded ? false : isLast);
-    const branch = effectiveIsLast ? '└── ' : '├── ';
+    const branch = isLast ? '└── ' : '├── ';
 
     return rails.join('') + branch;
 }

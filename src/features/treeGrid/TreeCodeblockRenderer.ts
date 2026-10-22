@@ -17,7 +17,7 @@
  * └────────────────────────────────────────────────────────────────────────┘
  */
 
-import { MarkdownRenderChild, MarkdownPostProcessorContext, Notice, TFile } from 'obsidian';
+import { MarkdownRenderChild, MarkdownPostProcessorContext, MarkdownView, Notice, TFile } from 'obsidian';
 import { ParsedTreeGrid, TreeGridColumn, TreeGridNode } from './types';
 import { CopyButton, PillGroup } from '../../uiComponents';
 import { parseTreeGrid, serializeTreeToSource, getMaxCol0Length, getAsciiBranchPrefix, isFileName, getExtension } from './treeParser';
@@ -58,14 +58,18 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
     }
 
     onload(): void {
-        this.render();
-        requestAnimationFrame(() => {
-            this.measureCharWidth();
-            this.renderTopHUD();
-        });
+        this.renderRaw();
 
-        // ⚡ Dynamic Listener: Reacts to Live Editing & updates HUD in real-time
+        // ⚡ Dynamic Listener: Reacts to Live Editing & updates RAW codeblock in real-time
         this.setupDynamicLiveListener();
+    }
+
+    private renderRaw(): void {
+        const { containerEl } = this;
+        containerEl.empty();
+        containerEl.addClass('pakcli-tree-raw-container');
+        const pre = containerEl.createEl('pre', { cls: 'language-panel-tree HyperMD-codeblock' });
+        pre.createEl('code', { text: this.source, cls: 'language-panel-tree' });
     }
 
     private measureCharWidth(): void {
@@ -149,20 +153,6 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
                     if (n.children && n.children.length > 0) {
                         traverse(n.children);
                     }
-                    // Rule #006: Always 1 extra typeable line if parent is directory (without .extension)
-                    const virtualPrompt: TreeGridNode = {
-                        id: `prompt-${n.id}`,
-                        name: '',
-                        rawName: '',
-                        depth: n.depth + 1,
-                        isDirectory: false,
-                        columns: [],
-                        children: [],
-                        parent: n,
-                        isExpanded: false,
-                        isVirtualPrompt: true,
-                    };
-                    result.push(virtualPrompt);
                 }
             }
         };
@@ -250,61 +240,6 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
             // LAYER 1: Authentic ASCII tree branch prefix: ├── , └── , │
             const branchPrefix = getAsciiBranchPrefix(node, this.parsed.rootNodes);
 
-            // Rule #006: Extra Typeable Sub-branch Line (└── kosong its typeable)
-            if (node.isVirtualPrompt) {
-                if (branchPrefix) {
-                    lineEl.createSpan({ text: branchPrefix });
-                }
-
-                const promptContainer = lineEl.createSpan({ cls: 'pakcli-tree-prompt-container' });
-                const placeholderSpan = promptContainer.createSpan({
-                    cls: 'pakcli-tree-prompt-placeholder',
-                    text: '+ add item...',
-                });
-
-                const activateInput = () => {
-                    promptContainer.empty();
-                    const inputEl = promptContainer.createEl('input', {
-                        type: 'text',
-                        cls: 'pakcli-tree-prompt-input',
-                        placeholder: 'Name (e.g. file.webp or folder)',
-                    });
-                    inputEl.focus();
-
-                    let committed = false;
-                    const commit = async () => {
-                        if (committed) return;
-                        committed = true;
-                        const val = inputEl.value.trim();
-                        if (val && node.parent) {
-                            await this.insertChildNode(node.parent, val);
-                        } else {
-                            this.render();
-                        }
-                    };
-
-                    inputEl.addEventListener('keydown', (e) => {
-                        if (e.key === 'Enter') {
-                            e.preventDefault();
-                            commit();
-                        } else if (e.key === 'Escape') {
-                            e.preventDefault();
-                            committed = true;
-                            this.render();
-                        }
-                    });
-
-                    inputEl.addEventListener('blur', () => {
-                        commit();
-                    });
-                };
-
-                placeholderSpan.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    activateInput();
-                });
-                continue;
-            }
 
             // Folder chevron indicator: v  or >  (or spaces for alignment/leaf files)
             const hasChildren = node.isDirectory && node.children && node.children.length > 0;
@@ -342,7 +277,7 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
      */
     public getPlainTextForCopy(): string {
         const lines: string[] = [];
-        const visibleNodes = this.getFlattenedVisibleNodes().filter((n) => !n.isVirtualPrompt);
+        const visibleNodes = this.getFlattenedVisibleNodes();
         for (const node of visibleNodes) {
             const branchPrefix = getAsciiBranchPrefix(node, this.parsed.rootNodes);
             const hasChildren = node.isDirectory && node.children && node.children.length > 0;
@@ -473,9 +408,12 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
         }
     }
 
+    private liveUpdateTimer: any = null;
+
     /**
      * ⚡ Dynamic Live Editing Listener:
      * Listens to live user typing in the note and updates HUD in real-time.
+     * Uses 250ms debounce to ensure live typing and overwriting are never blocked!
      */
     private setupDynamicLiveListener(): void {
         const app = this.plugin?.app;
@@ -488,20 +426,23 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
 
                 const activeFile = app.workspace.getActiveFile();
                 if (activeFile && activeFile.path === this.ctx.sourcePath) {
-                    const sectionInfo = this.ctx.getSectionInfo?.(this.containerEl);
-                    if (sectionInfo) {
-                        const fileContent = editor.getValue();
-                        const lines = fileContent.split(/\r?\n/);
-                        if (sectionInfo.lineStart < lines.length && sectionInfo.lineEnd <= lines.length) {
-                            const newSource = lines.slice(sectionInfo.lineStart + 1, sectionInfo.lineEnd).join('\n');
-                            if (newSource.trim() !== this.source.trim()) {
-                                this.source = newSource;
-                                this.parsed = parseTreeGrid(newSource);
-                                this.initColumns();
-                                this.render();
+                    if (this.liveUpdateTimer) clearTimeout(this.liveUpdateTimer);
+                    this.liveUpdateTimer = setTimeout(() => {
+                        const sectionInfo = this.ctx.getSectionInfo?.(this.containerEl);
+                        if (sectionInfo) {
+                            const fileContent = editor.getValue();
+                            const lines = fileContent.split(/\r?\n/);
+                            if (sectionInfo.lineStart < lines.length && sectionInfo.lineEnd <= lines.length) {
+                                const newSource = lines.slice(sectionInfo.lineStart + 1, sectionInfo.lineEnd).join('\n');
+                                if (newSource.trim() !== this.source.trim()) {
+                                    this.source = newSource;
+                                    this.parsed = parseTreeGrid(newSource);
+                                    this.initColumns();
+                                    this.renderRaw();
+                                }
                             }
                         }
-                    }
+                    }, 250);
                 }
             })
         );
@@ -663,12 +604,30 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
             );
             const newSource = newLines.join('\n');
 
+            const activeView = app.workspace.getActiveViewOfType(MarkdownView);
+            const sectionInfo = this.ctx.getSectionInfo?.(this.containerEl);
+
+            if (
+                activeView &&
+                activeView.file?.path === this.ctx.sourcePath &&
+                sectionInfo &&
+                sectionInfo.lineStart !== undefined &&
+                sectionInfo.lineEnd !== undefined
+            ) {
+                const editor = activeView.editor;
+                const from = { line: sectionInfo.lineStart + 1, ch: 0 };
+                const to = { line: sectionInfo.lineEnd, ch: 0 };
+                editor.replaceRange(newSource + '\n', from, to);
+                this.source = newSource;
+                new Notice('✓ Updated codeblock lines');
+                return;
+            }
+
             const fileContent = await app.vault.read(file);
 
             let updatedContent = '';
             let replaced = false;
 
-            const sectionInfo = this.ctx.getSectionInfo?.(this.containerEl);
             if (sectionInfo && sectionInfo.lineStart !== undefined && sectionInfo.lineEnd !== undefined) {
                 const lines = fileContent.split(/\r?\n/);
                 if (sectionInfo.lineStart < lines.length && sectionInfo.lineEnd < lines.length) {
