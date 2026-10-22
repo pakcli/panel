@@ -341,33 +341,21 @@ export class CascadingStickyHeaderManager {
 
     session.lastChainKey = chainKey;
     session.barEl.empty();
+    session.barEl.addClass('markdown-rendered');
 
-    const showBadges = this.settings.stickyHeaderShowBadges;
+    const innerEl = session.barEl.createDiv({ cls: 'pakcli-sticky-inner' });
 
     for (let i = 0; i < chain.length; i++) {
       const item = chain[i];
-      const rowEl = session.barEl.createDiv({
+      const rowEl = innerEl.createDiv({
         cls: `pakcli-sticky-row level-${item.level}`
       });
 
-      // Hierarchical indentation (compact on mobile, spacious on desktop)
-      const indentFactor = Platform.isMobile ? 8 : 14;
-      const basePadding = Platform.isMobile ? 6 : 10;
-      const indentPx = i * indentFactor + basePadding;
-      rowEl.style.paddingLeft = `${indentPx}px`;
-
-      // Optional Level Badge (native styled)
-      if (showBadges) {
-        rowEl.createSpan({
-          text: `H${item.level}`,
-          cls: `pakcli-sticky-badge badge-h${item.level}`
-        });
-      }
-
-      // Plain Native Heading Text
-      rowEl.createSpan({
+      // Exact native heading tag: <h1>, <h2>, <h3>... (Same style as the document headers)
+      const tag = `h${Math.min(6, Math.max(1, item.level))}` as keyof HTMLElementTagNameMap;
+      rowEl.createEl(tag, {
         text: item.heading,
-        cls: 'pakcli-sticky-text'
+        cls: 'pakcli-sticky-heading'
       });
 
       // Click to Jump navigation
@@ -378,7 +366,7 @@ export class CascadingStickyHeaderManager {
       });
     }
 
-    session.barEl.style.display = 'flex';
+    session.barEl.style.display = 'block';
   }
 
   /**
