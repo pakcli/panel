@@ -1069,6 +1069,18 @@ export class CodeblockScaler {
 			// Position at bottom of the codeblock (clamped to viewport bottom if block extends below)
 			const barTop = Math.min(rect.bottom, viewH) - BAR_H;
 
+			// Guard against overlapping top cascading sticky headers
+			const contentEl = pre.closest('.view-content');
+			const stickyBar = contentEl?.querySelector('.pakcli-cascading-sticky-bar') as HTMLElement | null;
+			const minTop = (stickyBar && stickyBar.style.display !== 'none')
+				? stickyBar.getBoundingClientRect().bottom
+				: (pre.closest('.markdown-preview-view')?.getBoundingClientRect().top ?? 0);
+
+			if (barTop <= minTop) {
+				bar.style.setProperty('display', 'none', 'important');
+				return;
+			}
+
 			bar.style.setProperty('display', 'block', 'important');
 			bar.style.setProperty('left', `${rect.left}px`, 'important');
 			bar.style.setProperty('width', `${cw}px`, 'important');
@@ -2843,7 +2855,13 @@ export class CodeblockScaler {
 			return;
 		}
 		const barTop = Math.min(last.bottom, sr.bottom, window.innerHeight) - BAR_H;
-		if (barTop < Math.max(first.top, sr.top)) {
+		const contentEl = anchor.closest('.view-content');
+		const stickyBar = contentEl?.querySelector('.pakcli-cascading-sticky-bar') as HTMLElement | null;
+		let minTop = Math.max(first.top, sr.top);
+		if (stickyBar && stickyBar.style.display !== 'none') {
+			minTop = Math.max(minTop, stickyBar.getBoundingClientRect().bottom);
+		}
+		if (barTop <= minTop) {
 			hide();
 			return;
 		}
