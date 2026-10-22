@@ -1,4 +1,4 @@
-﻿import { AssetRouterSettings } from './features/tree/types';
+import { AssetRouterSettings } from './features/tree/types';
 import { TablitePluginData as SQLSealSettings, DEFAULT_PLUGIN_DATA as DEFAULT_SQLSEAL_SETTINGS, CalcPreset, DEFAULT_CALC_PRESETS } from './features/sqlseal/types';
 export type { CalcPreset };
 export { DEFAULT_CALC_PRESETS };
@@ -247,6 +247,8 @@ export interface PakCLITableSettings extends
     vscodeTabsMode?: 'default' | 'active';
     tabTitleMaxChars?: number;
     panelTreeAliases?: string;
+    enableCascadingStickyHeaders?: boolean;
+    stickyHeaderMaxDepth?: number;
     [key: string]: unknown;
 }
 
@@ -391,5 +393,7 @@ export const DEFAULT_TABLE_SETTINGS: PakCLITableSettings = {
     vscodeTabsMode: 'active',
     tabTitleMaxChars: 15,
     panelTreeAliases: 'panel-tree, panel-tree-structure, tree-structure',
+    enableCascadingStickyHeaders: true,
+    stickyHeaderMaxDepth: 3,
 };
 

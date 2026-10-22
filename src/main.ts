@@ -1,4 +1,4 @@
-﻿import { Plugin, Notice, Setting, PluginSettingTab, ButtonComponent, DropdownComponent, ToggleComponent, TFile, TFolder, TAbstractFile, Menu, TextComponent, setIcon, normalizePath } from 'obsidian';
+import { Plugin, Notice, Setting, PluginSettingTab, ButtonComponent, DropdownComponent, ToggleComponent, TFile, TFolder, TAbstractFile, Menu, TextComponent, setIcon, normalizePath } from 'obsidian';
 import { PakCLITableSettings, DEFAULT_TABLE_SETTINGS, DEFAULT_BUBBLE_GRAPH_SETTINGS, RelationshipTierConfig, DEFAULT_RELATIONSHIP_TIERS, RelationshipFolderEntry, RelationshipViewStructure, RelationshipSortOrder, DictionaryFolderEntry, DictionarySubfolderMode, HtmlSnapshotMode, BubbleTimelapseDurationMode } from './settings';
 import { handleArtifactRename, moveArtifactsBetweenFolders } from './features/sqlseal/utils/views';
 import { SplitViewManager, FolderSuggestModal } from './features/explorer/splitViewManager';
@@ -100,9 +100,11 @@ import { VaultHistoryView, VAULT_HISTORY_VIEW_TYPE } from './features/history/Va
 import { TierListManager } from './features/tierlist/TierListManager';
 // Tree Grid Codeblock Renderer
 import { TreeCodeblockRenderer } from './features/treeGrid';
+import { CascadingStickyHeaderManager } from './features/stickyHeader';
 
 export default class PakCLITablePlugin extends Plugin {
 	declare settings: PakCLITableSettings;
+	stickyHeaderManager!: CascadingStickyHeaderManager;
 	ribbonManager!: RibbonManager;
 	router!: AssetRouter;
 	codeblockScaler!: CodeblockScaler;
@@ -1330,6 +1332,10 @@ export default class PakCLITablePlugin extends Plugin {
 		this.tierListManager = new TierListManager(this);
 		await this.tierListManager.init();
 
+		// Initialize Cascading Sticky Headers Manager (VS Code Sticky Scroll)
+		this.stickyHeaderManager = new CascadingStickyHeaderManager(this);
+		this.stickyHeaderManager.init();
+
 		// Zoom Commands (Hotkeys Module)
 		this.addCommand({
 			id: 'pakcli-zoom-in',
@@ -2121,6 +2127,9 @@ export default class PakCLITablePlugin extends Plugin {
 		}
 		if (this.zoomManager) {
 			this.zoomManager.destroy();
+		}
+		if (this.stickyHeaderManager) {
+			this.stickyHeaderManager.destroy();
 		}
 		if (this.scrollbackManager) {
 			this.scrollbackManager.destroy();
@@ -4092,6 +4101,52 @@ export default class PakCLITablePlugin extends Plugin {
 						btn.setButtonText('⏪ Test Scrollback')
 							.onClick(() => {
 								this.scrollbackManager.executeScrollback();
+							});
+					});
+			}
+		});
+
+		// 0.8. Cascading Sticky Headers (VS Code Sticky Scroll Architecture)
+		settingsTab.registerLocalSection({
+			id: 'table-sticky-headers',
+			category: 'table',
+			title: 'Cascading Sticky Headers',
+			icon: 'heading',
+			isInstalled: true,
+			render: (containerEl) => {
+				new Setting(containerEl)
+					.setName('Cascading Sticky Headers (VS Code Sticky Scroll)')
+					.setDesc('Pins active ancestor heading hierarchies (H1 > H2 > H3) at the top of the editor during scrolling, with click-to-jump navigation in Live Preview and Reading View.')
+					.setHeading();
+
+				new Setting(containerEl)
+					.setName('Enable Cascading Sticky Headers')
+					.setDesc('Display sticky headings at the top of markdown views while scrolling.')
+					.addToggle((toggle) => {
+						toggle.setValue(this.settings.enableCascadingStickyHeaders !== false)
+							.onChange(async (val) => {
+								this.settings.enableCascadingStickyHeaders = val;
+								await this.saveSettings();
+								if (this.stickyHeaderManager) {
+									this.stickyHeaderManager.setEnabled(val);
+								}
+								new Notice(val ? 'Cascading Sticky Headers enabled!' : 'Cascading Sticky Headers disabled.');
+							});
+					});
+
+				new Setting(containerEl)
+					.setName('Maximum Sticky Depth')
+					.setDesc('Maximum number of heading levels to pin simultaneously (1 - 6).')
+					.addSlider((slider) => {
+						slider.setLimits(1, 6, 1)
+							.setValue(this.settings.stickyHeaderMaxDepth ?? 3)
+							.setDynamicTooltip()
+							.onChange(async (val) => {
+								this.settings.stickyHeaderMaxDepth = val;
+								await this.saveSettings();
+								if (this.stickyHeaderManager) {
+									this.stickyHeaderManager.setMaxDepth(val);
+								}
 							});
 					});
 			}

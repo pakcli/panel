@@ -1,6 +1,6 @@
 # 📌 Master Brief: Cascading Sticky Headers for Whole Page (pakcli-panel)
 
-> **Feature Status**: `0` (Draft / Pending Implementation)  
+> **Feature Status**: `1` (Completed & Verified)  
 > **Target Module**: `pakcli-panel` (`panel`)  
 > **Platform**: Obsidian Desktop & Mobile (Live Preview & Reading View)  
 > **Date**: 2026-10-22  
@@ -69,24 +69,24 @@ Implement an active, dynamic **`CascadingStickyHeaderManager`** (VS Code Sticky 
 
 | Phase | Description | Status |
 | :--- | :--- | :---: |
-| **Phase 0** | Create brief in `panel/docs/` and commit status 0 | ⏳ In Progress |
-| **Phase 1** | Implement `CascadingStickyHeaderManager.ts` with scroll listeners for Live Preview & Reading View | ⏳ Pending |
-| **Phase 2** | Add settings toggle and register manager in `panel/src/main.ts` | ⏳ Pending |
-| **Phase 3** | Replace flawed static CSS in `panel/src/styles/main.scss` with clean stylesheet in `panel/src/styles/stickyHeader.scss` | ⏳ Pending |
-| **Phase 4** | Build & verify bundle size (< 5.0 MB) | ⏳ Pending |
-| **Phase 5** | Update brief to Status 1 and commit | ⏳ Pending |
+| **Phase 0** | Create brief in `panel/docs/` and commit status 0 | ✅ Completed |
+| **Phase 1** | Implement `CascadingStickyHeaderManager.ts` with scroll listeners for Live Preview & Reading View | ✅ Completed |
+| **Phase 2** | Add settings toggle and register manager in `panel/src/main.ts` | ✅ Completed |
+| **Phase 3** | Replace flawed static CSS in `panel/src/styles/main.scss` with clean stylesheet in `panel/src/styles/stickyHeader.scss` | ✅ Completed |
+| **Phase 4** | Build & verify bundle size (< 5.0 MB) | ✅ Completed |
+| **Phase 5** | Update brief to Status 1 and commit | ✅ Completed |
 
 ---
 
 ## 4. Acceptance Criteria Checklist
 
-- [ ] Brief created at `panel/docs/brief-cascading-sticky-headers.md` with status 0
-- [ ] Status 0 brief committed to git
-- [ ] Active ancestor headings (`h1 -> h2 -> h3`) correctly identified on scroll
-- [ ] Sticky header bar rendered at top of editor view in Live Preview
-- [ ] Sticky header bar rendered at top of view in Reading View
-- [ ] Clicking any pinned heading scrolls editor to that section
-- [ ] Flawed static CSS in `main.scss` removed
-- [ ] Settings toggle added to plugin settings tab
-- [ ] Production build succeeds with bundle size < 5.0 MB
-- [ ] Status 1 brief updated and committed
+- [x] Brief created at `panel/docs/brief-cascading-sticky-headers.md` with status 0
+- [x] Status 0 brief committed to git
+- [x] Active ancestor headings (`h1 -> h2 -> h3`) correctly identified on scroll
+- [x] Sticky header bar rendered at top of editor view in Live Preview
+- [x] Sticky header bar rendered at top of view in Reading View
+- [x] Clicking any pinned heading scrolls editor to that section
+- [x] Flawed static CSS in `main.scss` removed
+- [x] Settings toggle added to plugin settings tab
+- [x] Production build succeeds with bundle size < 5.0 MB (4.63 MB)
+- [x] Status 1 brief updated and committed

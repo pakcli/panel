@@ -20,7 +20,7 @@
 import { MarkdownRenderChild, MarkdownPostProcessorContext, Notice, TFile } from 'obsidian';
 import { ParsedTreeGrid, TreeGridColumn, TreeGridNode } from './types';
 import { CopyButton, PillGroup } from '../../uiComponents';
-import { parseTreeGrid, serializeTreeToSource, getMaxCol0Length, getAsciiBranchPrefix } from './treeParser';
+import { parseTreeGrid, serializeTreeToSource, getMaxCol0Length, getAsciiBranchPrefix, isFileName, getExtension } from './treeParser';
 
 export class TreeCodeblockRenderer extends MarkdownRenderChild {
     private source: string;
