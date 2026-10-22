@@ -1,4 +1,4 @@
-import { App, MarkdownView, TFile } from 'obsidian';
+import { App, MarkdownView, Platform, TFile } from 'obsidian';
 import type PakCLITablePlugin from '../../main';
 import { StickyHeadingItem, StickyHeaderSettings, DEFAULT_STICKY_HEADER_SETTINGS } from './types';
 
@@ -133,6 +133,9 @@ export class CascadingStickyHeaderManager {
       view.contentEl.classList.add('pakcli-sticky-parent');
 
       const barEl = createDiv({ cls: 'pakcli-cascading-sticky-bar' });
+      if (Platform.isMobile) {
+        barEl.addClass('is-mobile-style');
+      }
       barEl.style.display = 'none';
       view.contentEl.prepend(barEl);
 
@@ -347,8 +350,10 @@ export class CascadingStickyHeaderManager {
         cls: `pakcli-sticky-row level-${item.level}`
       });
 
-      // Subtle hierarchical indentation based on depth in chain
-      const indentPx = i * 14 + 10;
+      // Hierarchical indentation (compact on mobile, spacious on desktop)
+      const indentFactor = Platform.isMobile ? 8 : 14;
+      const basePadding = Platform.isMobile ? 6 : 10;
+      const indentPx = i * indentFactor + basePadding;
       rowEl.style.paddingLeft = `${indentPx}px`;
 
       // Optional Level Badge (native styled)
