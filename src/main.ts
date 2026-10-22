@@ -4135,6 +4135,20 @@ export default class PakCLITablePlugin extends Plugin {
 					});
 
 				new Setting(containerEl)
+					.setName('Show Heading Level Badges')
+					.setDesc('Display [H1], [H2] level badges beside headings in the sticky bar.')
+					.addToggle((toggle) => {
+						toggle.setValue(this.settings.stickyHeaderShowBadges !== false)
+							.onChange(async (val) => {
+								this.settings.stickyHeaderShowBadges = val;
+								await this.saveSettings();
+								if (this.stickyHeaderManager) {
+									this.stickyHeaderManager.setShowBadges(val);
+								}
+							});
+					});
+
+				new Setting(containerEl)
 					.setName('Maximum Sticky Depth')
 					.setDesc('Maximum number of heading levels to pin simultaneously (1 - 6).')
 					.addSlider((slider) => {

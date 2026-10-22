@@ -66,11 +66,16 @@ export class CascadingStickyHeaderManager {
     this.refreshAllViews(true);
   }
 
+  public setShowBadges(show: boolean): void {
+    this.refreshAllViews(true);
+  }
+
   private get settings(): StickyHeaderSettings {
     const s = this.plugin.settings as any;
     return {
       enableCascadingStickyHeaders: s?.enableCascadingStickyHeaders !== false,
       stickyHeaderMaxDepth: typeof s?.stickyHeaderMaxDepth === 'number' ? s.stickyHeaderMaxDepth : DEFAULT_STICKY_HEADER_SETTINGS.stickyHeaderMaxDepth,
+      stickyHeaderShowBadges: s?.stickyHeaderShowBadges !== false,
     };
   }
 
@@ -334,6 +339,8 @@ export class CascadingStickyHeaderManager {
     session.lastChainKey = chainKey;
     session.barEl.empty();
 
+    const showBadges = this.settings.stickyHeaderShowBadges;
+
     for (let i = 0; i < chain.length; i++) {
       const item = chain[i];
       const rowEl = session.barEl.createDiv({
@@ -344,13 +351,15 @@ export class CascadingStickyHeaderManager {
       const indentPx = i * 14 + 10;
       rowEl.style.paddingLeft = `${indentPx}px`;
 
-      // Level Badge
-      rowEl.createSpan({
-        text: `H${item.level}`,
-        cls: `pakcli-sticky-badge badge-h${item.level}`
-      });
+      // Optional Level Badge (native styled)
+      if (showBadges) {
+        rowEl.createSpan({
+          text: `H${item.level}`,
+          cls: `pakcli-sticky-badge badge-h${item.level}`
+        });
+      }
 
-      // Heading Text
+      // Plain Native Heading Text
       rowEl.createSpan({
         text: item.heading,
         cls: 'pakcli-sticky-text'

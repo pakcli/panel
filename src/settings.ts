@@ -249,6 +249,7 @@ export interface PakCLITableSettings extends
     panelTreeAliases?: string;
     enableCascadingStickyHeaders?: boolean;
     stickyHeaderMaxDepth?: number;
+    stickyHeaderShowBadges?: boolean;
     [key: string]: unknown;
 }
 
@@ -395,5 +396,6 @@ export const DEFAULT_TABLE_SETTINGS: PakCLITableSettings = {
     panelTreeAliases: 'panel-tree, panel-tree-structure, tree-structure',
     enableCascadingStickyHeaders: true,
     stickyHeaderMaxDepth: 3,
+    stickyHeaderShowBadges: true,
 };
 

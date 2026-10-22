@@ -8,9 +8,11 @@ export interface StickyHeadingItem {
 export interface StickyHeaderSettings {
   enableCascadingStickyHeaders: boolean;
   stickyHeaderMaxDepth: number;
+  stickyHeaderShowBadges: boolean;
 }
 
 export const DEFAULT_STICKY_HEADER_SETTINGS: StickyHeaderSettings = {
   enableCascadingStickyHeaders: true,
   stickyHeaderMaxDepth: 3,
+  stickyHeaderShowBadges: true,
 };
