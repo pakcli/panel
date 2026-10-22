@@ -23,15 +23,16 @@ Implement an active, dynamic **`CascadingStickyHeaderManager`** (VS Code Sticky 
    - Queries `app.metadataCache.getFileCache(activeFile)?.headings`.
    - On scroll, determines the exact chain of active ancestor headings for the top visible line.
 3. **Pinned Cascading Sticky Bar**:
-   - Renders a floating, opaque, themed sticky breadcrumb bar at the top of the editor view.
-   - Pinned entries cascade in order:
+   - Renders a floating, opaque, themed sticky container at the top of the editor view.
+   - Pinned entries render as real HTML heading tags (`<h1>`, `<h2>`, `<h3>`...) inside `.markdown-rendered`, inheriting the theme's exact font size, font weight, and colors:
      ```text
-     H1  1. System Architecture
-       H2  1.2 Database Engine
-         H3  1.2.4 Index Optimization
+     Brief: Fixing Theme CSS File Size & CSS Lint Warnings (H1 style)
+     2. Technical Root Cause (H2 style)
+     A. Why did css-masks trigger despite comments? (H3 style)
      ```
+   - Zero badges (`[H1]`, `[H2]`) and zero staircase indentation; headings align flush with the document content.
    - Automatically hides when the user is above the first heading.
-   - Updates dynamically as sections scroll past.
+   - Updates dynamically as sections scroll past without collisions.
 4. **Click-to-Jump Navigation**: Clicking any heading in the sticky stack instantly and smoothly scrolls the viewport directly to that heading.
 5. **Settings Toggle**: Controlled via `enableCascadingStickyHeaders` in plugin settings.
 
