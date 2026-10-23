@@ -411,6 +411,63 @@ export function resolveNoteSpacing(input: unknown, defaultGap = 1): number {
 }
 
 /**
+ * Calculates the target note column ruler for an entire panel-tree block.
+ * Respects in-block -spacing parameters, longest node visual width + gap,
+ * and existing aligned comment columns in the document.
+ */
+export function getTreeBlockTargetCol(lines: string[], customGap?: unknown): number {
+    let detectedGap = customGap;
+    if (detectedGap === undefined) {
+        for (const line of lines) {
+            const m = line.trim().match(/^(?:[-#]\s*(?:spacing|gap|note-gap|note-spacing)\s*:\s*)(.+)$/i);
+            if (m) {
+                detectedGap = m[1].trim();
+                break;
+            }
+        }
+    }
+    const gap = resolveNoteSpacing(detectedGap, 1);
+
+    let maxPreWidth = 0;
+    let maxExistingCol = 0;
+
+    for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed || trimmed.startsWith('<!--') || (trimmed.startsWith('-') && trimmed.includes(':'))) {
+            continue;
+        }
+
+        const leadMatch = line.match(/^[\t ]*/);
+        const indent = leadMatch ? leadMatch[0] : '';
+        const content = line.slice(indent.length);
+
+        let indentVisualWidth = 0;
+        for (const ch of indent) {
+            indentVisualWidth += ch === '\t' ? 4 : 1;
+        }
+
+        const hashMatch = /(?:[ \t]+\|[ \t]*|[ \t]+)#|\s+##+\s*|(?<=\S)#/.exec(content);
+        let name = content;
+        if (hashMatch) {
+            name = content.slice(0, hashMatch.index).trim();
+            const colBeforeHash = indentVisualWidth + hashMatch.index;
+            if (colBeforeHash > maxExistingCol) {
+                maxExistingCol = colBeforeHash;
+            }
+        } else {
+            name = content.trim();
+        }
+
+        const preVisualWidth = indentVisualWidth + name.length;
+        if (preVisualWidth > maxPreWidth) {
+            maxPreWidth = preVisualWidth;
+        }
+    }
+
+    return Math.max(maxPreWidth + gap, maxExistingCol);
+}
+
+/**
  * Aligns all "#" comment notes across tree block lines into a uniform vertical column.
  * - Default spacing: Longest word length + 1 space.
  * - Supports customGap as a number (e.g. 2, 4) or sentence input (checks word count).
@@ -427,21 +484,9 @@ export function alignTreeBlockNotes(lines: string[], customGap?: unknown): strin
         preVisualWidth: number;
     }
 
-    // 1. Detect in-block parameter if customGap is not passed
-    let detectedGap = customGap;
-    if (detectedGap === undefined) {
-        for (const line of lines) {
-            const m = line.trim().match(/^(?:[-#]\s*(?:spacing|gap|note-gap|note-spacing)\s*:\s*)(.+)$/i);
-            if (m) {
-                detectedGap = m[1].trim();
-                break;
-            }
-        }
-    }
-    const gap = resolveNoteSpacing(detectedGap, 1);
+    const targetCol = getTreeBlockTargetCol(lines, customGap);
 
     const parsedLines: LineInfo[] = [];
-    let maxPreWidth = 0;
     let hasAnyComment = false;
 
     for (const line of lines) {
@@ -487,11 +532,6 @@ export function alignTreeBlockNotes(lines: string[], customGap?: unknown): strin
         }
         const preVisualWidth = indentVisualWidth + name.length;
 
-        // Only lines that actually have comments determine the note column
-        if (comment !== null && preVisualWidth > maxPreWidth) {
-            maxPreWidth = preVisualWidth;
-        }
-
         parsedLines.push({
             raw: line,
             isTreeLine: true,
@@ -505,9 +545,6 @@ export function alignTreeBlockNotes(lines: string[], customGap?: unknown): strin
     if (!hasAnyComment) {
         return lines;
     }
-
-    // Default spacing: longest word visual width + 1 space (or custom gap)
-    const targetCol = maxPreWidth + gap;
 
     return parsedLines.map((pl) => {
         if (!pl.isTreeLine || pl.comment === null) {

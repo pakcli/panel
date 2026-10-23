@@ -20,7 +20,8 @@ import {
     isTreeBlockAlias,
     getAsciiBranchPrefix,
     alignTreeBlockNotes,
-    resolveNoteSpacing
+    resolveNoteSpacing,
+    getTreeBlockTargetCol
 } from '../treeParser';
 import { TreeCascadingSettings, DEFAULT_TREE_CASCADING_SETTINGS, TreeCrumbItem } from './types';
 
@@ -39,6 +40,7 @@ interface ParsedBlockTree {
     nodesByLine: Map<number, TreeGridNode>;
     nodeLineMap: Map<TreeGridNode, number>;
     noteSpacing?: string | number;
+    targetCol: number;
 }
 
 export class TreeCascadingManager {
@@ -593,6 +595,7 @@ export class TreeCascadingManager {
                 children: [],
                 parent: parent || undefined,
                 isExpanded: true,
+                trailingContent: parsedCols.trailingContent,
             };
 
             if (parent) {
@@ -607,7 +610,10 @@ export class TreeCascadingManager {
             nodeLineMap.set(node, item.lineNo);
         }
 
-        return { startLine, endLine, rootNodes, nodesByLine, nodeLineMap, noteSpacing };
+        const rawLines = lines.map((l) => l.text);
+        const targetCol = getTreeBlockTargetCol(rawLines, noteSpacing ?? this.settings.treeNoteSpacing);
+
+        return { startLine, endLine, rootNodes, nodesByLine, nodeLineMap, noteSpacing, targetCol };
     }
 
     private renderChain(
@@ -633,18 +639,6 @@ export class TreeCascadingManager {
         session.barEl.empty();
         session.barEl.style.height = 'auto';
         session.barEl.style.minHeight = '0px';
-
-        // Find max visual prefix width among nodes in this block that have notes
-        let maxNotePreWidth = 0;
-        for (const node of block.nodesByLine.values()) {
-            if (node.columns && node.columns.length > 0) {
-                const r = getAsciiBranchPrefix(node, block.rootNodes);
-                const w = (r ? r.length : 0) + 2 + node.name.length;
-                if (w > maxNotePreWidth) {
-                    maxNotePreWidth = w;
-                }
-            }
-        }
 
         const innerEl = session.barEl.createDiv({ cls: 'pakcli-tree-cascading-inner' });
 
@@ -704,16 +698,26 @@ export class TreeCascadingManager {
                 }
             }
 
-            // Aligned trailing note (word [badge] <spaces> #note)
+            // Trailing note aligned with the page content codeblock
+            let noteText = '';
             if (hasNote) {
-                const spacingSetting = block.noteSpacing ?? this.settings.treeNoteSpacing;
-                const gap = resolveNoteSpacing(spacingSetting, 1);
-                const curPreWidth = (rails ? rails.length : 0) + 2 + item.name.length;
-                const padCount = Math.max(1, (maxNotePreWidth - curPreWidth) + gap);
-                const pad = ' '.repeat(padCount);
+                noteText = item.node.columns.join(' # ');
+            } else if (item.node.trailingContent) {
+                const clean = item.node.trailingContent.replace(/^[#\s]+/, '').trim();
+                if (clean) {
+                    noteText = clean;
+                }
+            }
+
+            if (noteText) {
+                const visualIndent = item.node.depth * 4;
+                const preVisualWidth = visualIndent + item.name.length;
+                const spacesCount = Math.max(1, block.targetCol - preVisualWidth);
+                const pad = ' '.repeat(spacesCount);
+
                 rowEl.createSpan({
                     cls: 'pakcli-tree-node-trailing',
-                    text: `${pad}# ${item.node.columns.join(' # ')}`
+                    text: `${pad}# ${noteText}`,
                 });
             }
 
