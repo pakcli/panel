@@ -176,7 +176,8 @@ class TreeBadgesWidget extends WidgetType {
         readonly insertPosProvider: () => number,
         readonly lineInfo: LinePositionInfo,
         readonly blockInfo: BlockPositionInfo,
-        readonly noteSpacing?: string
+        readonly noteSpacing?: string,
+        readonly isSelected: boolean = false
     ) {
         super();
     }
@@ -185,13 +186,14 @@ class TreeBadgesWidget extends WidgetType {
         return (
             this.node.id === other.node.id &&
             this.node.columns.join('|') === other.node.columns.join('|') &&
-            this.lineInfo.lineNo === other.lineInfo.lineNo
+            this.lineInfo.lineNo === other.lineInfo.lineNo &&
+            this.isSelected === other.isSelected
         );
     }
 
     toDOM(): HTMLElement {
         const container = document.createElement('span');
-        container.className = 'pakcli-tree-badges';
+        container.className = this.isSelected ? 'pakcli-tree-badges is-selected' : 'pakcli-tree-badges';
         container.setAttribute('contenteditable', 'false');
 
         const isDir = this.node.isDirectory;
@@ -643,7 +645,9 @@ function buildDecorations(view: EditorView, plugin: any): DecorationSet {
             for (let i = 0; i < parsedLines.length; i++) {
                 const pl = parsedLines[i];
                 const bl = pl.blockLine;
-                const isCursorOnLine = view.hasFocus && selection.head >= bl.from && selection.head <= bl.to;
+                const isLineSelected = (selection.head >= bl.from && selection.head <= bl.to) ||
+                    (selection.to >= bl.from && selection.from <= bl.to);
+                const isCursorOnLine = view.hasFocus && isLineSelected;
 
                 const shouldHide = (pl.isGhost && !isCursorOnLine) || (pl.node && isNodeHidden(pl.node));
 
@@ -663,11 +667,12 @@ function buildDecorations(view: EditorView, plugin: any): DecorationSet {
 
                 const node = pl.node;
 
-                // 1. Visible line decoration
+                // 1. Visible line decoration: tag active/selected line for badge visibility
+                const lineCls = isLineSelected ? 'pakcli-tree-line is-selected-line cm-active' : 'pakcli-tree-line';
                 builder.add(
                     bl.from,
                     bl.from,
-                    Decoration.line({ attributes: { class: 'pakcli-tree-line' } })
+                    Decoration.line({ attributes: { class: lineCls } })
                 );
 
                 // 2. Compute rails
@@ -763,7 +768,8 @@ function buildDecorations(view: EditorView, plugin: any): DecorationSet {
                                 insertPosProvider,
                                 { lineNo: pl.blockLine.lineNo, from: pl.blockLine.from, to: pl.blockLine.to },
                                 { startLine: block.startLine, endLine: block.endLine },
-                                noteSpacing
+                                noteSpacing,
+                                isLineSelected
                             ),
                             side: 1,
                         })
