@@ -454,6 +454,13 @@ export function getTreeBlockTargetCol(lines: string[], customGap?: unknown): num
             if (colBeforeHash > maxExistingCol) {
                 maxExistingCol = colBeforeHash;
             }
+        } else if (content.includes('|')) {
+            const pipeIdx = content.indexOf('|');
+            name = content.slice(0, pipeIdx).trim();
+            const colBeforePipe = indentVisualWidth + pipeIdx;
+            if (colBeforePipe > maxExistingCol) {
+                maxExistingCol = colBeforePipe;
+            }
         } else {
             name = content.trim();
         }
@@ -516,6 +523,15 @@ export function alignTreeBlockNotes(lines: string[], customGap?: unknown): strin
             name = content.slice(0, hashMatch.index).trim();
             const rest = content.slice(hashMatch.index).trim();
             // Clean comment: strip leading # and spaces
+            const cleanComment = rest.replace(/^[#\s]+/, '').trim();
+            if (cleanComment.length > 0) {
+                comment = cleanComment;
+                hasAnyComment = true;
+            }
+        } else if (content.includes('|')) {
+            const pipeIdx = content.indexOf('|');
+            name = content.slice(0, pipeIdx).trim();
+            const rest = content.slice(pipeIdx + 1).trim();
             const cleanComment = rest.replace(/^[#\s]+/, '').trim();
             if (cleanComment.length > 0) {
                 comment = cleanComment;

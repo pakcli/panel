@@ -14,10 +14,10 @@
  * - 100% Fail-safe: Any unexpected document state is caught and returns Decoration.none
  */
 
-import { EditorView, ViewPlugin, ViewUpdate, Decoration, DecorationSet, WidgetType } from '@codemirror/view';
-import { RangeSetBuilder } from '@codemirror/state';
+import { EditorView, ViewPlugin, ViewUpdate, Decoration, DecorationSet, WidgetType, keymap } from '@codemirror/view';
+import { RangeSetBuilder, Prec, Extension } from '@codemirror/state';
 import { Plugin, Notice } from 'obsidian';
-import { isFileName, getExtension, extractNameAndColumns, getRawLeadingWhitespace, isLastChild, isTreeBlockAlias, alignTreeBlockNotes } from './treeParser';
+import { isFileName, getExtension, extractNameAndColumns, getRawLeadingWhitespace, isLastChild, isTreeBlockAlias, alignTreeBlockNotes, getTreeBlockTargetCol } from './treeParser';
 import { TreeGridNode } from './types';
 
 // Track collapsed folders by unique path (e.g. "data/asset/player")
@@ -752,8 +752,148 @@ function buildDecorations(view: EditorView, plugin: any): DecorationSet {
     }
 }
 
-export function createTreeLivePreviewPlugin(plugin: Plugin) {
-    return ViewPlugin.fromClass(
+export function handleTreeTabTrigger(view: EditorView, plugin: Plugin): boolean {
+    const sel = view.state.selection.main;
+    if (!sel.empty) {
+        return false;
+    }
+
+    const doc = view.state.doc;
+    const line = doc.lineAt(sel.head);
+    const lineText = line.text;
+    const col = sel.head - line.from;
+    const beforeCursor = lineText.slice(0, col);
+    const afterCursor = lineText.slice(col);
+
+    // Trigger match: line before cursor ends with | or # (e.g. "word|", "word |", "word #")
+    const triggerMatch = beforeCursor.match(/^([\t ]*)(.+?)(?:\s*([|#])\s*)$/);
+    if (!triggerMatch) {
+        return false;
+    }
+
+    const indent = triggerMatch[1];
+    const rawNamePart = triggerMatch[2];
+
+    const cleanName = rawNamePart
+        .replace(/^(?:[Vv>▼▶]\s*)+/, '')
+        .replace(/^[├└│|L\s─\-+▼▶vV><]+/g, '')
+        .trim();
+
+    if (!cleanName || !/[a-zA-Z0-9_\.]/.test(cleanName)) {
+        return false;
+    }
+
+    // Verify cursor is inside a panel-tree block
+    const userAliases = ((plugin as any).settings?.panelTreeAliases || '')
+        .split(',')
+        .map((a: string) => a.trim().toLowerCase())
+        .filter(Boolean);
+    const aliases = new Set(userAliases);
+    aliases.add('panel-tree');
+    aliases.add('panel-tree-cascading');
+    aliases.add('tree-cascading');
+    aliases.add('tree-interactive');
+    aliases.add('panel-tree-cascading-sticky-note');
+    aliases.add('panel-tree-cascading-note-sticky');
+    aliases.add('panel-tree-cascading-postit');
+    aliases.add('panel-tree-postit-cascading');
+
+    let inBlock = false;
+    let blockStartLine = -1;
+    for (let l = line.number; l >= 1; l--) {
+        const text = doc.line(l).text.trim();
+        if (text.startsWith('```')) {
+            const m = text.match(/^```+\s*([a-zA-Z0-9_-]+)/);
+            if (m && isTreeBlockAlias(m[1], aliases)) {
+                inBlock = true;
+                blockStartLine = l;
+            }
+            break;
+        }
+    }
+
+    if (!inBlock || line.number <= blockStartLine) {
+        return false;
+    }
+
+    let blockEndLine = doc.lines + 1;
+    for (let l = line.number; l <= doc.lines; l++) {
+        const text = doc.line(l).text.trim();
+        if (l > blockStartLine && text.match(/^```+\s*$/)) {
+            blockEndLine = l;
+            break;
+        }
+    }
+
+    if (line.number >= blockEndLine) {
+        return false;
+    }
+
+    // Collect block lines to determine targetCol
+    const blockLines: string[] = [];
+    for (let l = blockStartLine + 1; l < blockEndLine; l++) {
+        blockLines.push(doc.line(l).text);
+    }
+
+    const noteSpacing = (plugin as any)?.settings?.treeNoteSpacing || '1';
+    const targetCol = getTreeBlockTargetCol(blockLines, noteSpacing);
+
+    let indentVisualWidth = 0;
+    for (const ch of indent) {
+        indentVisualWidth += (ch === '\t' ? 4 : 1);
+    }
+    const preVisualWidth = indentVisualWidth + cleanName.length;
+    const spacesCount = Math.max(1, targetCol - preVisualWidth);
+    const pad = ' '.repeat(spacesCount);
+
+    const existingNote = afterCursor.replace(/^[|#\s]+/, '').trim();
+    let newText = `${indent}${cleanName}${pad}# `;
+    if (existingNote) {
+        newText += existingNote;
+    }
+
+    const newCursorPos = line.from + (indent + cleanName + pad + '# ').length;
+
+    view.dispatch({
+        changes: {
+            from: line.from,
+            to: line.to,
+            insert: newText,
+        },
+        selection: { anchor: newCursorPos, head: newCursorPos },
+        scrollIntoView: true,
+    });
+
+    return true;
+}
+
+export function createTreeTabKeymap(plugin: Plugin): Extension[] {
+    return [
+        Prec.highest(
+            keymap.of([
+                {
+                    key: 'Tab',
+                    run: (v) => handleTreeTabTrigger(v, plugin),
+                },
+            ])
+        ),
+        EditorView.domEventHandlers({
+            keydown(event: KeyboardEvent, view: EditorView) {
+                if (event.key === 'Tab' && !event.shiftKey && !event.ctrlKey && !event.altKey && !event.metaKey) {
+                    if (handleTreeTabTrigger(view, plugin)) {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        return true;
+                    }
+                }
+                return false;
+            },
+        }),
+    ];
+}
+
+export function createTreeLivePreviewPlugin(plugin: Plugin): Extension[] {
+    const viewPlugin = ViewPlugin.fromClass(
         class {
             decorations: DecorationSet;
             private lastCollapsedVersion = 0;
@@ -789,4 +929,6 @@ export function createTreeLivePreviewPlugin(plugin: Plugin) {
             decorations: (v) => v.decorations,
         }
     );
+
+    return [viewPlugin, ...createTreeTabKeymap(plugin)];
 }
