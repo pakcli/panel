@@ -3643,6 +3643,18 @@ pre:hover .pakcli-cb-prompt-btn,
     color: var(--text-muted) !important;
     flex-shrink: 0 !important;
 
+    &.badge-codeblock-fence {
+      background: rgba(236, 72, 153, 0.15) !important;
+      color: #f472b6 !important;
+      border: 1px solid rgba(236, 72, 153, 0.3) !important;
+    }
+
+    &.badge-codeblock-scaffold {
+      background: rgba(14, 165, 233, 0.15) !important;
+      color: #38bdf8 !important;
+      border: 1px solid rgba(14, 165, 233, 0.3) !important;
+    }
+
     &.badge-directive {
       background: rgba(99, 102, 241, 0.15) !important;
       color: #818cf8 !important;

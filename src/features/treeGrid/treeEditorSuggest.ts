@@ -1,13 +1,24 @@
 /**
  * treeEditorSuggest.ts
- * Interactive inline autocomplete for panel-tree codeblocks in Obsidian.
+ * Native-grade interactive inline autocomplete for panel-tree codeblocks and fence language types in Obsidian.
  *
- * Provides intelligent, context-aware suggestions for:
- * 1. Frontmatter directives: f?dependencies:, f?status:, f?tier:, f?priority:, f?tags:, etc.
- * 2. Preset values: active/wip/done for status, S/A/B/C/D for tier, critical/high/medium for priority.
- * 3. Vault note wikilinks: [[NoteName]] inside dependencies or notes.
- * 4. Tree configuration directives: # badges: folder, # note-spacing: 1/2, # layout: cascading.
- * 5. Architectural line starters: v folder/, file.md, component.tsx.
+ * Supported Autocomplete Modes:
+ * 1. Fence Language Types: Triggers on ```, ```pa, ```panel, ```tree, ```postit, suggesting:
+ *    - panel-tree-postit-cascading
+ *    - panel-tree-cascading
+ *    - panel-tree
+ *    - panel-tree-structure
+ *    - panel-tree-interactive
+ *    - panel-tree-cascading-postit
+ *    - panel-tree-cascading-note-sticky
+ *    - tree-cascading / tree-structure
+ * 2. Bare-Line Scaffolder: Triggers when typing panel-tree* or tree-* as plain text on a line,
+ *    instantly offering 1-click scaffolding of a full closed codeblock.
+ * 3. Inside Codeblock Directives: Triggers on f?, f, dep, status, tier, priority, tags, author, summary.
+ * 4. Directive Preset Values: Triggers after f?status:, f?tier:, f?priority:, f?type:.
+ * 5. Vault Wikilinks: Triggers on [[ anywhere inside codeblock lines or dependencies.
+ * 6. Tree Settings: Triggers on # for layout, badges, and note-spacing configs.
+ * 7. Line Starters: Triggers at beginning of lines for v folder/, > folder/, file.md, component.tsx.
  */
 
 import { App, Editor, EditorPosition, EditorSuggest, EditorSuggestContext, EditorSuggestTriggerInfo, TFile } from 'obsidian';
@@ -15,6 +26,8 @@ import { isTreeBlockAlias } from './treeParser';
 import type PakCLIPlugin from '../../main';
 
 export type PanelTreeSuggestionKind =
+    | 'codeblock-fence'
+    | 'codeblock-scaffold'
     | 'directive'
     | 'preset-value'
     | 'wikilink'
@@ -40,7 +53,91 @@ interface TreeSuggestMatch {
 }
 
 // ───────────────────────────────────────────────────────────────────────────
-// Preset Dictionaries
+// 1. Codeblock Fence Types Dictionaries
+// ───────────────────────────────────────────────────────────────────────────
+
+const FENCE_TYPE_SUGGESTIONS: PanelTreeSuggestionItem[] = [
+    {
+        kind: 'codeblock-fence',
+        label: 'panel-tree-postit-cascading',
+        insertText: 'panel-tree-postit-cascading',
+        detail: 'Post-It sticky note card cascading tree architecture',
+        badge: 'Post-It',
+    },
+    {
+        kind: 'codeblock-fence',
+        label: 'panel-tree-cascading',
+        insertText: 'panel-tree-cascading',
+        detail: 'Diagonal cascading branches with floating sticky notes & guidelines',
+        badge: 'Cascading',
+    },
+    {
+        kind: 'codeblock-fence',
+        label: 'panel-tree',
+        insertText: 'panel-tree',
+        detail: 'Interactive multi-column directory tree grid with real-time editing',
+        badge: 'Tree Grid',
+    },
+    {
+        kind: 'codeblock-fence',
+        label: 'panel-tree-structure',
+        insertText: 'panel-tree-structure',
+        detail: 'Clean directory structure and file architecture hierarchy',
+        badge: 'Structure',
+    },
+    {
+        kind: 'codeblock-fence',
+        label: 'panel-tree-interactive',
+        insertText: 'panel-tree-interactive',
+        detail: 'Interactive tree grid with checkboxes, action pills, and status filtering',
+        badge: 'Interactive',
+    },
+    {
+        kind: 'codeblock-fence',
+        label: 'panel-tree-cascading-postit',
+        insertText: 'panel-tree-cascading-postit',
+        detail: 'Alias: Post-it sticky note cascading tree layout',
+        badge: 'Post-It',
+    },
+    {
+        kind: 'codeblock-fence',
+        label: 'panel-tree-cascading-note-sticky',
+        insertText: 'panel-tree-cascading-note-sticky',
+        detail: 'Alias: Sticky note cascading tree with guideline wires',
+        badge: 'Sticky',
+    },
+    {
+        kind: 'codeblock-fence',
+        label: 'tree-cascading',
+        insertText: 'tree-cascading',
+        detail: 'Shorthand alias: Cascading diagonal branch layout',
+        badge: 'Alias',
+    },
+    {
+        kind: 'codeblock-fence',
+        label: 'tree-structure',
+        insertText: 'tree-structure',
+        detail: 'Shorthand alias: Directory structure tree layout',
+        badge: 'Alias',
+    },
+    {
+        kind: 'codeblock-fence',
+        label: 'timeline-narrative',
+        insertText: 'timeline-narrative',
+        detail: 'Interactive narrative flowchart with jumps and sentence nodes',
+        badge: 'Timeline',
+    },
+    {
+        kind: 'codeblock-fence',
+        label: 'timeline-tree',
+        insertText: 'timeline-tree',
+        detail: 'Hierarchical timeline tree view with milestone connections',
+        badge: 'Timeline',
+    },
+];
+
+// ───────────────────────────────────────────────────────────────────────────
+// 2. Directives & Presets Dictionaries
 // ───────────────────────────────────────────────────────────────────────────
 
 const DIRECTIVE_SUGGESTIONS: PanelTreeSuggestionItem[] = [
@@ -142,6 +239,7 @@ const TYPE_PRESETS: PanelTreeSuggestionItem[] = [
     { kind: 'preset-value', label: 'hook', insertText: 'hook', detail: 'State Controller / React Hook', badge: 'Type' },
     { kind: 'preset-value', label: 'util', insertText: 'util', detail: 'Utility Function or Helper', badge: 'Type' },
     { kind: 'preset-value', label: 'model', insertText: 'model', detail: 'Data Schema or Type Definition', badge: 'Type' },
+    { kind: 'preset-value', label: 'doc', insertText: 'doc', detail: 'Documentation or Reference Note', badge: 'Type' },
 ];
 
 const SETTING_SUGGESTIONS: PanelTreeSuggestionItem[] = [
@@ -150,12 +248,15 @@ const SETTING_SUGGESTIONS: PanelTreeSuggestionItem[] = [
     { kind: 'setting', label: '# badges: none', insertText: '# badges: none', detail: 'Hide line badges', badge: 'Config' },
     { kind: 'setting', label: '# note-spacing: 1', insertText: '# note-spacing: 1', detail: 'Compact 1-space comment alignment', badge: 'Config' },
     { kind: 'setting', label: '# note-spacing: 2', insertText: '# note-spacing: 2', detail: 'Spaced 2-space comment alignment', badge: 'Config' },
-    { kind: 'setting', label: '# layout: tree', insertText: '# layout: tree', detail: 'Standard vertical tree layout', badge: 'Config' },
+    { kind: 'setting', label: '# note-gap: 24', insertText: '# note-gap: 24', detail: 'Fixed column gap width in pixels', badge: 'Config' },
     { kind: 'setting', label: '# layout: cascading', insertText: '# layout: cascading', detail: 'Cascading diagonal branch layout', badge: 'Config' },
+    { kind: 'setting', label: '# layout: postit', insertText: '# layout: postit', detail: 'Post-it sticky note cards layout', badge: 'Config' },
+    { kind: 'setting', label: '# layout: tree', insertText: '# layout: tree', detail: 'Standard vertical tree layout', badge: 'Config' },
 ];
 
 const STARTER_SUGGESTIONS: PanelTreeSuggestionItem[] = [
-    { kind: 'starter', label: 'v folder/', insertText: 'v folder/', detail: 'Collapsible folder branch', badge: 'Branch', cursorOffset: 9 },
+    { kind: 'starter', label: 'v folder/', insertText: 'v folder/', detail: 'Collapsible folder branch node', badge: 'Folder', cursorOffset: 9 },
+    { kind: 'starter', label: '> folder/', insertText: '> folder/', detail: 'Collapsed folder branch node', badge: 'Folder', cursorOffset: 9 },
     { kind: 'starter', label: 'feature.md', insertText: 'feature.md', detail: 'Markdown document note', badge: 'File', cursorOffset: 10 },
     { kind: 'starter', label: 'component.tsx', insertText: 'component.tsx', detail: 'UI Component file', badge: 'File', cursorOffset: 13 },
     { kind: 'starter', label: 'service.ts', insertText: 'service.ts', detail: 'TypeScript service module', badge: 'File', cursorOffset: 10 },
@@ -171,15 +272,56 @@ export class PanelTreeEditorSuggest extends EditorSuggest<PanelTreeSuggestionIte
     }
 
     /**
-     * Determines whether the cursor is inside a panel-tree codeblock and matches an active trigger.
+     * Determines whether active cursor matches a trigger:
+     * 1. Codeblock fence typing (```panel*, ```tree*)
+     * 2. Bare-line codeblock scaffolding (panel-tree*)
+     * 3. Inside codeblock directives, presets, wikilinks, settings, starters
      */
     onTrigger(cursor: EditorPosition, editor: Editor, _file: TFile): EditorSuggestTriggerInfo | null {
         const lineCount = editor.lineCount();
+        const currentLine = editor.getLine(cursor.line);
+        const textBeforeCursor = currentLine.slice(0, cursor.ch);
+
+        // ─── TRIGGER MODE 1: Codeblock Fence Line (```<lang>) ───
+        const fenceMatch = textBeforeCursor.match(/^```+([a-zA-Z0-9_-]*)$/);
+        if (fenceMatch) {
+            const query = fenceMatch[1].toLowerCase();
+            const colStart = cursor.ch - fenceMatch[1].length;
+            const colEnd = cursor.ch;
+
+            const filtered = this.getFenceTypeSuggestions(query);
+            if (filtered.length > 0) {
+                return {
+                    start: { line: cursor.line, ch: colStart },
+                    end: { line: cursor.line, ch: colEnd },
+                    query,
+                };
+            }
+        }
+
+        // ─── TRIGGER MODE 2: Bare Line Codeblock Scaffolder (panel-tree* without backticks) ───
+        const scaffoldMatch = textBeforeCursor.match(/^(\s*)(panel(?:-tree)?(?:-[a-zA-Z0-9_-]*)?|tree(?:-[a-zA-Z0-9_-]*)?)$/i);
+        if (scaffoldMatch) {
+            const query = scaffoldMatch[2].toLowerCase();
+            const colStart = scaffoldMatch[1].length;
+            const colEnd = cursor.ch;
+
+            const filtered = this.getScaffoldSuggestions(query);
+            if (filtered.length > 0) {
+                return {
+                    start: { line: cursor.line, ch: colStart },
+                    end: { line: cursor.line, ch: colEnd },
+                    query,
+                };
+            }
+        }
+
+        // ─── TRIGGER MODE 3: Inside a Panel-Tree Codeblock ───
+        // 1. Scan upwards to find opening fence
         let codeblockStart = -1;
         let codeblockEnd = -1;
 
-        // 1. Scan upwards to verify we are inside a panel-tree codeblock fence
-        for (let l = cursor.line; l >= 0; l--) {
+        for (let l = cursor.line - 1; l >= 0; l--) {
             const line = editor.getLine(l);
             const openMatch = line.match(/^```+\s*([a-zA-Z0-9_-]+)/);
             if (openMatch) {
@@ -187,35 +329,37 @@ export class PanelTreeEditorSuggest extends EditorSuggest<PanelTreeSuggestionIte
                     codeblockStart = l;
                     break;
                 } else {
-                    return null; // Inside another non-tree codeblock
+                    return null; // Inside an unrelated non-tree codeblock
                 }
             }
-            if (l < cursor.line && /^```+/.test(line.trim())) {
-                return null; // Closing fence found before start
+            if (/^```+/.test(line.trim())) {
+                return null; // Closing fence of previous block
             }
         }
 
-        if (codeblockStart === -1 || codeblockStart === cursor.line) {
-            return null; // Not inside codeblock or on the opening fence line
+        if (codeblockStart === -1) {
+            return null; // Not inside a tree codeblock
         }
 
-        // 2. Scan downwards to find closing fence
-        for (let l = cursor.line; l < lineCount; l++) {
+        // 2. Scan downwards (codeblock is valid even if closing fence is not yet typed)
+        for (let l = cursor.line + 1; l < lineCount; l++) {
             const line = editor.getLine(l);
             if (/^```+\s*$/.test(line.trim())) {
                 codeblockEnd = l;
                 break;
             }
+            if (/^```+\s*[a-zA-Z0-9_-]+/.test(line.trim())) {
+                // Next codeblock started
+                break;
+            }
         }
 
-        if (codeblockEnd === -1 || cursor.line >= codeblockEnd) {
-            return null; // Unclosed or on closing fence line
+        if (codeblockEnd !== -1 && cursor.line >= codeblockEnd) {
+            return null; // On or past the closing fence
         }
 
-        // 3. Inspect line text before cursor for active triggers
-        const currentLine = editor.getLine(cursor.line);
-        const match = this.detectTriggerMatch(currentLine, cursor.ch);
-
+        // 3. Inspect line text before cursor for active inside-codeblock triggers
+        const match = this.detectInsideCodeblockMatch(currentLine, cursor.ch);
         if (!match || match.items.length === 0) {
             return null;
         }
@@ -232,7 +376,22 @@ export class PanelTreeEditorSuggest extends EditorSuggest<PanelTreeSuggestionIte
      */
     getSuggestions(context: EditorSuggestContext): PanelTreeSuggestionItem[] {
         const line = context.editor.getLine(context.start.line);
-        const match = this.detectTriggerMatch(line, context.end.ch);
+        const textBefore = line.slice(0, context.end.ch);
+
+        // 1. Fence check
+        const fenceMatch = textBefore.match(/^```+([a-zA-Z0-9_-]*)$/);
+        if (fenceMatch) {
+            return this.getFenceTypeSuggestions(fenceMatch[1].toLowerCase());
+        }
+
+        // 2. Bare-line scaffold check
+        const scaffoldMatch = textBefore.match(/^(\s*)(panel(?:-tree)?(?:-[a-zA-Z0-9_-]*)?|tree(?:-[a-zA-Z0-9_-]*)?)$/i);
+        if (scaffoldMatch) {
+            return this.getScaffoldSuggestions(scaffoldMatch[2].toLowerCase());
+        }
+
+        // 3. Inside codeblock match
+        const match = this.detectInsideCodeblockMatch(line, context.end.ch);
         return match ? match.items : [];
     }
 
@@ -254,18 +413,65 @@ export class PanelTreeEditorSuggest extends EditorSuggest<PanelTreeSuggestionIte
     }
 
     /**
-     * Applies the selected suggestion with cursor positioning.
+     * Applies the selected suggestion with intelligent cursor positioning and codeblock auto-closing.
      */
     selectSuggestion(item: PanelTreeSuggestionItem, _evt: MouseEvent | KeyboardEvent): void {
         if (!this.context) return;
         const editor = this.context.editor;
-        const insertText = item.insertText;
+        const lineCount = editor.lineCount();
+        const startLine = this.context.start.line;
 
+        // A. Codeblock Fence Selection (```pa -> ```panel-tree-postit-cascading)
+        if (item.kind === 'codeblock-fence') {
+            let hasClosingBelow = false;
+            for (let l = startLine + 1; l < lineCount; l++) {
+                const text = editor.getLine(l).trim();
+                if (/^```+\s*$/.test(text)) {
+                    hasClosingBelow = true;
+                    break;
+                }
+                if (/^```+/.test(text)) break;
+            }
+
+            if (hasClosingBelow) {
+                // Editing existing fence: replace language identifier only
+                editor.replaceRange(item.insertText, this.context.start, this.context.end);
+                editor.setCursor({
+                    line: startLine,
+                    ch: this.context.start.ch + item.insertText.length,
+                });
+            } else {
+                // New codeblock: insert language, boilerplate item, and closing fence
+                const insertSnippet = `${item.insertText}\nv data\n\`\`\`\n`;
+                editor.replaceRange(insertSnippet, this.context.start, this.context.end);
+                editor.setCursor({
+                    line: startLine + 1,
+                    ch: 6, // right after "v data"
+                });
+            }
+            return;
+        }
+
+        // B. Bare-Line Scaffold Selection (panel-tree... on empty line -> full ```panel-tree...``` block)
+        if (item.kind === 'codeblock-scaffold') {
+            const scaffold = `\`\`\`${item.insertText}\nv data\n\`\`\`\n`;
+            const lineStart = { line: startLine, ch: 0 };
+            const lineEnd = { line: startLine, ch: editor.getLine(startLine).length };
+            editor.replaceRange(scaffold, lineStart, lineEnd);
+            editor.setCursor({
+                line: startLine + 1,
+                ch: 6, // right after "v data"
+            });
+            return;
+        }
+
+        // C. Standard Inside-Codeblock Replacement
+        const insertText = item.insertText;
         editor.replaceRange(insertText, this.context.start, this.context.end);
 
         const offset = item.cursorOffset !== undefined ? item.cursorOffset : insertText.length;
         editor.setCursor({
-            line: this.context.start.line,
+            line: startLine,
             ch: this.context.start.ch + offset,
         });
     }
@@ -274,7 +480,32 @@ export class PanelTreeEditorSuggest extends EditorSuggest<PanelTreeSuggestionIte
     // Internal Detection & Matching Logic
     // ───────────────────────────────────────────────────────────────────────
 
-    private detectTriggerMatch(line: string, cursorCh: number): TreeSuggestMatch | null {
+    private getFenceTypeSuggestions(query: string): PanelTreeSuggestionItem[] {
+        if (!query) return FENCE_TYPE_SUGGESTIONS;
+        const q = query.toLowerCase();
+        return FENCE_TYPE_SUGGESTIONS.filter((item) =>
+            item.insertText.toLowerCase().includes(q) ||
+            item.detail.toLowerCase().includes(q) ||
+            item.badge.toLowerCase().includes(q)
+        );
+    }
+
+    private getScaffoldSuggestions(query: string): PanelTreeSuggestionItem[] {
+        const q = query.toLowerCase();
+        return FENCE_TYPE_SUGGESTIONS
+            .filter((item) =>
+                item.insertText.toLowerCase().includes(q) ||
+                item.detail.toLowerCase().includes(q)
+            )
+            .map((item) => ({
+                ...item,
+                kind: 'codeblock-scaffold' as PanelTreeSuggestionKind,
+                label: `\`\`\`${item.insertText}`,
+                detail: `Insert ${item.detail} codeblock`,
+            }));
+    }
+
+    private detectInsideCodeblockMatch(line: string, cursorCh: number): TreeSuggestMatch | null {
         const textBeforeCursor = line.slice(0, cursorCh);
 
         // A. Wikilink Trigger: [[ inside dependencies or notes
@@ -289,8 +520,8 @@ export class PanelTreeEditorSuggest extends EditorSuggest<PanelTreeSuggestionIte
             }
         }
 
-        // B. Preset Values Trigger: f?status:, f?tier:, f?priority:, f?type:
-        const presetMatch = textBeforeCursor.match(/(f\?(?:status|tier|priority|type)):\s*([a-zA-Z0-9_-]*)$/i);
+        // B. Preset Values Trigger: f?status:, f?tier:, f?priority:, f?type: (or bare status:, tier:, etc.)
+        const presetMatch = textBeforeCursor.match(/(?:f\?)?(status|tier|priority|type):\s*([a-zA-Z0-9_-]*)$/i);
         if (presetMatch) {
             const directive = presetMatch[1].toLowerCase();
             const query = (presetMatch[2] || '').toLowerCase();
@@ -298,10 +529,10 @@ export class PanelTreeEditorSuggest extends EditorSuggest<PanelTreeSuggestionIte
             const colEnd = cursorCh;
 
             let sourceList: PanelTreeSuggestionItem[] = [];
-            if (directive === 'f?status') sourceList = STATUS_PRESETS;
-            else if (directive === 'f?tier') sourceList = TIER_PRESETS;
-            else if (directive === 'f?priority') sourceList = PRIORITY_PRESETS;
-            else if (directive === 'f?type') sourceList = TYPE_PRESETS;
+            if (directive === 'status') sourceList = STATUS_PRESETS;
+            else if (directive === 'tier') sourceList = TIER_PRESETS;
+            else if (directive === 'priority') sourceList = PRIORITY_PRESETS;
+            else if (directive === 'type') sourceList = TYPE_PRESETS;
 
             const filtered = sourceList.filter((item) =>
                 item.insertText.toLowerCase().includes(query) || item.detail.toLowerCase().includes(query)
@@ -312,19 +543,20 @@ export class PanelTreeEditorSuggest extends EditorSuggest<PanelTreeSuggestionIte
             }
         }
 
-        // C. Directive Name Trigger: f? or f?dep...
-        const directiveMatch = textBeforeCursor.match(/(?:^|\s)(f\?[a-zA-Z0-9_-]*)$/i);
+        // C. Directive Name Trigger: f?, f, dep, status, tier, priority, tags, author, summary, type
+        const directiveMatch = textBeforeCursor.match(/(?:^|\s)(f(?:\?[a-zA-Z0-9_-]*)?|dep(?:endencies)?|stat(?:us)?|tier|prio(?:rity)?|tag(?:s)?|auth(?:or)?|sum(?:mary)?|type)$/i);
         if (directiveMatch) {
-            const query = directiveMatch[1].toLowerCase();
-            const colStart = cursorCh - query.length;
+            const raw = directiveMatch[1].toLowerCase();
+            const colStart = cursorCh - raw.length;
             const colEnd = cursorCh;
 
+            const queryClean = raw.startsWith('f?') ? raw.slice(2) : (raw === 'f' ? '' : raw);
             const filtered = DIRECTIVE_SUGGESTIONS.filter((item) =>
-                item.insertText.toLowerCase().includes(query) || item.detail.toLowerCase().includes(query)
+                !queryClean || item.insertText.toLowerCase().includes(queryClean) || item.detail.toLowerCase().includes(queryClean)
             );
 
             if (filtered.length > 0) {
-                return { kind: 'directive', query, colStart, colEnd, items: filtered };
+                return { kind: 'directive', query: raw, colStart, colEnd, items: filtered };
             }
         }
 
@@ -345,7 +577,7 @@ export class PanelTreeEditorSuggest extends EditorSuggest<PanelTreeSuggestionIte
         }
 
         // E. Starter Snippets Trigger: at the beginning of empty or single-character lines
-        const starterMatch = textBeforeCursor.match(/^(\s*)([vfc]?)$/i);
+        const starterMatch = textBeforeCursor.match(/^(\s*)([vfc>s]?)$/i);
         if (starterMatch && cursorCh <= starterMatch[1].length + 1) {
             const query = (starterMatch[2] || '').toLowerCase();
             const colStart = cursorCh - query.length;
