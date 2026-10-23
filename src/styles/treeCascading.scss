@@ -124,8 +124,7 @@
       }
     }
 
-    .pakcli-tree-node-name,
-    .pakcli-tree-node-trailing {
+    .pakcli-tree-node-name {
       display: inline;
       font-family: inherit;
       font-size: inherit;
@@ -140,6 +139,19 @@
         text-decoration-thickness: 1.5px !important;
         text-underline-offset: 3px !important;
       }
+    }
+
+    .pakcli-tree-node-trailing {
+      display: inline-block;
+      font-family: inherit;
+      font-size: inherit;
+      font-weight: normal !important;
+      color: var(--text-normal) !important;
+      letter-spacing: inherit;
+      line-height: inherit;
+      white-space: pre;
+      /* Offset sticky cascade note 18px to the left to align with page content */
+      transform: translateX(-18px);
     }
 
     &.is-current {
