@@ -135,9 +135,22 @@
     line-height: 1;
     height: 14px;
     user-select: none;
-    opacity: 1 !important;
     z-index: 2;
     pointer-events: auto;
+
+    /* Unselected lines: strictly 10% visible */
+    opacity: 0.1 !important;
+    transition: opacity 0.15s ease;
+
+    /* Selected line (where typing) OR hovered: 100% visible */
+    .cm-line.is-selected-line &,
+    &.is-selected,
+    .cm-line:hover &,
+    &:hover,
+    .pakcli-tree-sticky-line.is-current &,
+    .pakcli-tree-sticky-line:hover & {
+        opacity: 1 !important;
+    }
 }
 
 .pakcli-tree-badge {
@@ -152,24 +165,19 @@
     cursor: pointer;
     font-family: var(--font-monospace, monospace);
     font-weight: 500;
-    opacity: 1 !important;
-
-    /* Unselected lines: strictly 12% visible for both text & border */
-    color: color-mix(in srgb, var(--text-normal, #888888) 12%, var(--code-background, var(--background-primary, #ffffff)));
-    border: 1px solid color-mix(in srgb, var(--text-normal, #888888) 12%, var(--code-background, var(--background-primary, #ffffff)));
+    color: var(--text-normal, inherit);
+    border: 1px solid var(--text-muted, var(--background-modifier-border));
     background: transparent;
-    transition: color 0.15s ease, border-color 0.15s ease, background-color 0.15s ease;
+    transition: all 0.15s ease;
 
-    /* Selected line OR hovered line: fully visible */
     .cm-line.is-selected-line &,
     .pakcli-tree-badges.is-selected &,
     .cm-line:hover &,
     .pakcli-tree-badges:hover &,
     .pakcli-tree-sticky-line.is-current &,
     .pakcli-tree-sticky-line:hover & {
-        color: var(--text-normal, #dcddde) !important;
-        border-color: var(--text-muted, var(--background-modifier-border-hover, #666666)) !important;
         font-weight: 600;
+        border-color: var(--text-normal, currentColor);
     }
 
     /* Individual badge hover: interactive highlight */
@@ -177,20 +185,6 @@
         background: var(--background-modifier-hover);
         color: var(--text-normal, #ffffff) !important;
         border-color: var(--interactive-accent, #00b0ff) !important;
-    }
-
-    &.pakcli-badge-file,
-    &.pakcli-badge-folder,
-    &.pakcli-badge-note {
-        /* Strictly inherit unselected 12% visible vs selected/hover rules */
-        color: inherit;
-        border-color: inherit;
-
-        &:hover {
-            background: var(--background-modifier-hover);
-            color: var(--text-normal, #ffffff) !important;
-            border-color: var(--interactive-accent, #00b0ff) !important;
-        }
     }
 }
 

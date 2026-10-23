@@ -191,6 +191,15 @@ class TreeBadgesWidget extends WidgetType {
         );
     }
 
+    updateDOM(dom: HTMLElement): boolean {
+        if (this.isSelected) {
+            dom.classList.add('is-selected');
+        } else {
+            dom.classList.remove('is-selected');
+        }
+        return true;
+    }
+
     toDOM(): HTMLElement {
         const container = document.createElement('span');
         container.className = this.isSelected ? 'pakcli-tree-badges is-selected' : 'pakcli-tree-badges';
@@ -645,8 +654,9 @@ function buildDecorations(view: EditorView, plugin: any): DecorationSet {
             for (let i = 0; i < parsedLines.length; i++) {
                 const pl = parsedLines[i];
                 const bl = pl.blockLine;
-                const isLineSelected = (selection.head >= bl.from && selection.head <= bl.to) ||
-                    (selection.to >= bl.from && selection.from <= bl.to);
+                const isLineSelected = selection.empty
+                    ? (selection.head >= bl.from && selection.head <= bl.to)
+                    : (selection.from <= bl.to && selection.to >= bl.from);
                 const isCursorOnLine = view.hasFocus && isLineSelected;
 
                 const shouldHide = (pl.isGhost && !isCursorOnLine) || (pl.node && isNodeHidden(pl.node));

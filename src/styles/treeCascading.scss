@@ -89,9 +89,14 @@
         line-height: 1;
         height: 14px;
         user-select: none;
-        opacity: 1 !important;
+        opacity: 0.1 !important;
         z-index: 2;
         pointer-events: auto;
+        transition: opacity 0.15s ease;
+
+        &:hover {
+          opacity: 1 !important;
+        }
       }
     }
 
@@ -147,17 +152,21 @@
     }
 
     .pakcli-tree-badge {
-      color: color-mix(in srgb, var(--text-normal, #888888) 12%, var(--code-background, var(--background-primary, #ffffff))) !important;
-      border: 1px solid color-mix(in srgb, var(--text-normal, #888888) 12%, var(--code-background, var(--background-primary, #ffffff))) !important;
+      color: var(--text-normal, inherit) !important;
+      border: 1px solid var(--text-muted, var(--background-modifier-border)) !important;
       font-weight: 500;
-      opacity: 1 !important;
-      transition: color 0.15s ease, border-color 0.15s ease, background-color 0.15s ease;
+      transition: all 0.15s ease;
 
       &:hover {
         color: var(--text-normal, #ffffff) !important;
         border-color: var(--interactive-accent, #00b0ff) !important;
         background: var(--background-modifier-hover) !important;
       }
+    }
+
+    &.is-current .pakcli-tree-badges,
+    &:hover .pakcli-tree-badges {
+      opacity: 1 !important;
     }
 
     &.is-current .pakcli-tree-badge,
