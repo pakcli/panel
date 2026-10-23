@@ -15,7 +15,7 @@
   margin: 0 !important;
   padding: 0 !important;
   z-index: 45;
-  
+
   /* 100% Solid opaque background - Zero blur, Zero transparency */
   background-color: var(--background-primary) !important;
   background-image: linear-gradient(var(--code-background, var(--background-primary-alt)), var(--code-background, var(--background-primary-alt))) !important;
@@ -151,7 +151,7 @@
       line-height: inherit;
       white-space: pre;
       /* Offset sticky cascade note 18px to the left to align with page content */
-      transform: translateX(-18px);
+      transform: translateX(-60px);
     }
 
     &.is-current {

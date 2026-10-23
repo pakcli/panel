@@ -1,3 +1,4 @@
+import { DependencyInspectorView, DEPENDENCY_INSPECTOR_VIEW_TYPE } from './features/tierlist/views/DependencyInspectorView';
 import { Plugin, Notice, Setting, PluginSettingTab, ButtonComponent, DropdownComponent, ToggleComponent, TFile, TFolder, TAbstractFile, Menu, TextComponent, setIcon, normalizePath } from 'obsidian';
 import { PakCLITableSettings, DEFAULT_TABLE_SETTINGS, DEFAULT_BUBBLE_GRAPH_SETTINGS, RelationshipTierConfig, DEFAULT_RELATIONSHIP_TIERS, RelationshipFolderEntry, RelationshipViewStructure, RelationshipSortOrder, DictionaryFolderEntry, DictionarySubfolderMode, HtmlSnapshotMode, BubbleTimelapseDurationMode } from './settings';
 import { handleArtifactRename, moveArtifactsBetweenFolders } from './features/sqlseal/utils/views';
@@ -790,6 +791,8 @@ export default class PakCLITablePlugin extends Plugin {
 		}
 
 		// Register CSV View
+		this.registerView(DEPENDENCY_INSPECTOR_VIEW_TYPE, (leaf) => new DependencyInspectorView(leaf));
+		this.addCommand({ id: 'open-dependency-inspector', name: 'Open 3-Tier Dependency Inspector', callback: () => { const rightLeaf = this.app.workspace.getRightLeaf(false); if (rightLeaf) { rightLeaf.setViewState({ type: DEPENDENCY_INSPECTOR_VIEW_TYPE, active: true }); this.app.workspace.revealLeaf(rightLeaf); } } });
 		this.registerView(CSV_VIEW_TYPE, (leaf) => new CsvView(leaf, this));
 		this.registerExtensions(['csv'], CSV_VIEW_TYPE);
 
