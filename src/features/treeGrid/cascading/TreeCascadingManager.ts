@@ -19,7 +19,8 @@ import {
     getExtension,
     isTreeBlockAlias,
     getAsciiBranchPrefix,
-    alignTreeBlockNotes
+    alignTreeBlockNotes,
+    resolveNoteSpacing
 } from '../treeParser';
 import { TreeCascadingSettings, DEFAULT_TREE_CASCADING_SETTINGS, TreeCrumbItem } from './types';
 
@@ -37,6 +38,7 @@ interface ParsedBlockTree {
     rootNodes: TreeGridNode[];
     nodesByLine: Map<number, TreeGridNode>;
     nodeLineMap: Map<TreeGridNode, number>;
+    noteSpacing?: string | number;
 }
 
 export class TreeCascadingManager {
@@ -544,11 +546,23 @@ export class TreeCascadingManager {
         const nodesByLine = new Map<number, TreeGridNode>();
         const nodeLineMap = new Map<TreeGridNode, number>();
         const stack: { node: TreeGridNode; rawIndent: number }[] = [];
+        let noteSpacing: string | number | undefined;
 
         for (const item of lines) {
             const raw = item.text;
             const trimmed = raw.trim();
-            if (!trimmed || trimmed.toLowerCase().includes('add item') || trimmed.startsWith('<!--')) {
+            if (!trimmed || trimmed.toLowerCase().includes('add item')) {
+                continue;
+            }
+
+            // In-block note spacing metadata (e.g. -spacing: 4, -gap: 2)
+            const spacingMatch = trimmed.match(/^(?:[-#]\s*(?:spacing|gap|note-gap|note-spacing)\s*:\s*)(.+)$/i);
+            if (spacingMatch) {
+                noteSpacing = spacingMatch[1].trim();
+                continue;
+            }
+
+            if (trimmed.startsWith('<!--')) {
                 continue;
             }
 
@@ -593,7 +607,7 @@ export class TreeCascadingManager {
             nodeLineMap.set(node, item.lineNo);
         }
 
-        return { startLine, endLine, rootNodes, nodesByLine, nodeLineMap };
+        return { startLine, endLine, rootNodes, nodesByLine, nodeLineMap, noteSpacing };
     }
 
     private renderChain(
@@ -621,18 +635,22 @@ export class TreeCascadingManager {
         session.barEl.style.minHeight = '0px';
 
         const innerEl = session.barEl.createDiv({ cls: 'pakcli-tree-cascading-inner' });
+        const tableEl = innerEl.createDiv({ cls: 'pakcli-tree-cascading-table' });
 
         for (let i = 0; i < chain.length; i++) {
             const item = chain[i];
             const isCurrent = i === chain.length - 1;
 
-            const rowEl = innerEl.createDiv({
+            const rowEl = tableEl.createDiv({
                 cls: `cm-line HyperMD-codeblock HyperMD-codeblock-bg pakcli-tree-line pakcli-tree-sticky-line${isCurrent ? ' is-current' : ''}`,
                 attr: { title: `Jump to ${item.name} (Line ${item.lineNo + 1})` },
             });
 
+            // Column 1: Left content (Rails + Chevron + Name + Badges)
+            const leftCell = rowEl.createSpan({ cls: 'pakcli-tree-sticky-left' });
+
             // Tree branch rails & chevron prefix (Exact authentic codeblock tree rails)
-            const prefixEl = rowEl.createSpan({ cls: 'pakcli-tree-prefix' });
+            const prefixEl = leftCell.createSpan({ cls: 'pakcli-tree-prefix' });
             const rails = getAsciiBranchPrefix(item.node, block.rootNodes);
             const chevron = 'v ';
 
@@ -642,7 +660,7 @@ export class TreeCascadingManager {
             prefixEl.createSpan({ cls: 'pakcli-tree-chevron', text: chevron });
 
             // Folder Name
-            rowEl.createSpan({ cls: 'pakcli-tree-node-name', text: item.name });
+            leftCell.createSpan({ cls: 'pakcli-tree-node-name', text: item.name });
 
             const hasNote = Boolean(item.node.columns && item.node.columns.length > 0);
 
@@ -654,7 +672,7 @@ export class TreeCascadingManager {
 
             const badgesMode = this.settings.treeBadgesDisplayMode ?? (this.settings.treeCascadingShowBadges ? 'folder' : 'none');
             if (badgesMode !== 'none') {
-                badgesWrap = rowEl.createSpan({ cls: 'pakcli-tree-badges' });
+                badgesWrap = leftCell.createSpan({ cls: 'pakcli-tree-badges' });
 
                 fileBadge = badgesWrap.createSpan({
                     cls: 'pakcli-tree-badge pakcli-badge-file',
@@ -678,11 +696,24 @@ export class TreeCascadingManager {
                 }
             }
 
-            // Straight up text for trailing content / note (word [badge] #note)
-            if (item.node.trailingContent) {
-                rowEl.createSpan({ cls: 'pakcli-tree-node-trailing', text: item.node.trailingContent });
-            } else if (hasNote) {
-                rowEl.createSpan({ cls: 'pakcli-tree-node-trailing', text: '   # ' + item.node.columns.join(' # ') });
+            // Column 2: Aligned trailing note across all rows in sticky cascading header
+            const spacingSetting = block.noteSpacing ?? this.settings.treeNoteSpacing;
+            const gap = resolveNoteSpacing(spacingSetting, 1);
+
+            let noteText = '';
+            if (hasNote) {
+                noteText = '# ' + item.node.columns.join(' # ');
+            } else if (item.node.trailingContent) {
+                const clean = item.node.trailingContent.replace(/^[#\s]+/, '').trim();
+                if (clean) {
+                    noteText = '# ' + clean;
+                }
+            }
+
+            const trailingEl = rowEl.createSpan({ cls: 'pakcli-tree-node-trailing' });
+            if (noteText) {
+                trailingEl.textContent = noteText;
+                trailingEl.style.paddingLeft = `${gap}ch`;
             }
 
             if (this.settings.treeCascadingShowBadges && badgesWrap && fileBadge && folderBadge) {
