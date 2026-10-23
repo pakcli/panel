@@ -884,43 +884,85 @@ export function handleTreeTabTrigger(view: EditorView, plugin: Plugin): boolean 
         return false;
     }
 
-    // 4. Collect block lines to determine targetCol
+    // 4. Normalize excessive indentation deeper than parentDepth + 1
+    const indentStack: number[] = [0];
+    let parentDepth = 0;
+    for (let l = blockStartLine + 1; l < line.number; l++) {
+        const text = doc.line(l).text;
+        const trimmed = text.trim();
+        if (!trimmed || trimmed.startsWith('<!--') || (trimmed.startsWith('-') && trimmed.includes(':'))) {
+            continue;
+        }
+        const m = text.match(/^[\t ]*/);
+        const ind = m ? m[0] : '';
+        let indWidth = 0;
+        for (const ch of ind) {
+            indWidth += ch === '\t' ? 4 : 1;
+        }
+        if (indWidth > indentStack[indentStack.length - 1]) {
+            indentStack.push(indWidth);
+        } else {
+            while (indentStack.length > 1 && indWidth < indentStack[indentStack.length - 1]) {
+                indentStack.pop();
+            }
+        }
+        parentDepth = indentStack.length - 1;
+    }
+
+    let normalizedIndent = indent;
+    let rawIndentCount = 0;
+    for (const ch of indent) {
+        rawIndentCount += ch === '\t' ? 1 : 0.25;
+    }
+    if (rawIndentCount > parentDepth + 1) {
+        normalizedIndent = '\t'.repeat(parentDepth + 1);
+    }
+
+    // 5. Collect block lines and align entire tree block
     const blockLines: string[] = [];
+    const currentLineIdx = line.number - (blockStartLine + 1);
+
     for (let l = blockStartLine + 1; l < blockEndLine; l++) {
         if (l === line.number) {
-            blockLines.push(`${indent}${cleanName}`);
+            blockLines.push(`${normalizedIndent}${cleanName}   # ${existingNote}`);
         } else {
             blockLines.push(doc.line(l).text);
         }
     }
 
     const noteSpacing = (plugin as any)?.settings?.treeNoteSpacing || '1';
-    const targetCol = getTreeBlockTargetCol(blockLines, noteSpacing);
+    const alignedLines = alignTreeBlockNotes(blockLines, noteSpacing);
 
-    let indentVisualWidth = 0;
-    for (const ch of indent) {
-        indentVisualWidth += (ch === '\t' ? 4 : 1);
+    const blockStartPos = doc.line(blockStartLine + 1).from;
+    const blockEndPos = doc.line(blockEndLine - 1).to;
+
+    // Calculate cursor position right after "# " on the current line
+    const currentAligned = alignedLines[currentLineIdx] || `${normalizedIndent}${cleanName} # ${existingNote}`;
+    const noteHashIdx = currentAligned.indexOf('#');
+    const newCursorInLine = noteHashIdx >= 0 ? noteHashIdx + 2 : currentAligned.length;
+
+    let offsetInBlock = 0;
+    for (let i = 0; i < currentLineIdx; i++) {
+        offsetInBlock += alignedLines[i].length + 1; // + 1 for \n
     }
-    const preVisualWidth = indentVisualWidth + cleanName.length;
-    const spacesCount = Math.max(1, targetCol - preVisualWidth);
-    const pad = ' '.repeat(spacesCount);
+    const newCursorPos = blockStartPos + offsetInBlock + newCursorInLine;
 
-    let newText = `${indent}${cleanName}${pad}# `;
-    if (existingNote) {
-        newText += existingNote;
-    }
-
-    const newCursorPos = line.from + (indent + cleanName + pad + '# ').length;
+    const scroller = view.scrollDOM;
+    const savedScrollTop = scroller ? scroller.scrollTop : null;
 
     view.dispatch({
         changes: {
-            from: line.from,
-            to: line.to,
-            insert: newText,
+            from: blockStartPos,
+            to: blockEndPos,
+            insert: alignedLines.join('\n'),
         },
         selection: { anchor: newCursorPos, head: newCursorPos },
         scrollIntoView: true,
     });
+
+    if (scroller && savedScrollTop !== null) {
+        scroller.scrollTop = savedScrollTop;
+    }
 
     return true;
 }

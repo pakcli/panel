@@ -418,7 +418,10 @@ export function getTreeBlockTargetCol(lines: string[], customGap?: unknown): num
     const gap = resolveNoteSpacing(detectedGap, 1);
 
     let maxPreWidth = 0;
-    let maxExistingCol = 0;
+    const existingCols: number[] = [];
+
+    // Track hierarchy depth to prevent excessive stray tabs from distorting widths
+    const indentStack: number[] = [0];
 
     for (const line of lines) {
         const trimmed = line.trim();
@@ -427,40 +430,85 @@ export function getTreeBlockTargetCol(lines: string[], customGap?: unknown): num
         }
 
         const leadMatch = line.match(/^[\t ]*/);
-        const indent = leadMatch ? leadMatch[0] : '';
-        const content = line.slice(indent.length);
+        const indentStr = leadMatch ? leadMatch[0] : '';
+        const content = line.slice(indentStr.length);
 
-        let indentVisualWidth = 0;
-        for (const ch of indent) {
-            indentVisualWidth += ch === '\t' ? 4 : 1;
+        let rawIndent = 0;
+        for (const ch of indentStr) {
+            rawIndent += ch === '\t' ? 4 : 1;
         }
+
+        if (rawIndent > indentStack[indentStack.length - 1]) {
+            indentStack.push(rawIndent);
+        } else {
+            while (indentStack.length > 1 && rawIndent < indentStack[indentStack.length - 1]) {
+                indentStack.pop();
+            }
+        }
+        const depth = indentStack.length - 1;
+        const indentVisualWidth = depth * 4;
 
         const hashMatch = /(?:[ \t]+\|[ \t]*|[ \t]+)#|\s+##+\s*|(?<=\S)#/.exec(content);
         let name = content;
+        let hasComment = false;
+        let commentText = '';
+        let colBeforeSep = 0;
+
         if (hashMatch) {
             name = content.slice(0, hashMatch.index).trim();
-            const colBeforeHash = indentVisualWidth + hashMatch.index;
-            if (colBeforeHash > maxExistingCol) {
-                maxExistingCol = colBeforeHash;
-            }
+            hasComment = true;
+            commentText = content.slice(hashMatch.index).replace(/^[#\s]+/, '').trim();
+            colBeforeSep = indentVisualWidth + hashMatch.index;
         } else if (content.includes('|')) {
             const pipeIdx = content.indexOf('|');
             name = content.slice(0, pipeIdx).trim();
-            const colBeforePipe = indentVisualWidth + pipeIdx;
-            if (colBeforePipe > maxExistingCol) {
-                maxExistingCol = colBeforePipe;
-            }
+            hasComment = true;
+            commentText = content.slice(pipeIdx + 1).replace(/^[|#\s]+/, '').trim();
+            colBeforeSep = indentVisualWidth + pipeIdx;
         } else {
             name = content.trim();
         }
 
-        const preVisualWidth = indentVisualWidth + name.length;
-        if (preVisualWidth > maxPreWidth) {
-            maxPreWidth = preVisualWidth;
+        const cleanName = name
+            .replace(/^(?:[Vv>▼▶]\s*)+/, '')
+            .replace(/^[├└│|L\s─\-+▼▶vV><]+/g, '')
+            .trim();
+
+        if (cleanName) {
+            const preVisualWidth = indentVisualWidth + cleanName.length;
+            if (preVisualWidth > maxPreWidth) {
+                maxPreWidth = preVisualWidth;
+            }
+        }
+
+        if (hasComment && commentText.length > 0 && colBeforeSep > 0) {
+            existingCols.push(colBeforeSep);
         }
     }
 
-    return Math.max(maxPreWidth + gap, maxExistingCol);
+    const baseTargetCol = maxPreWidth + gap;
+
+    if (existingCols.length > 0) {
+        // Find the mode / dominant column among existing notes
+        const colCounts = new Map<number, number>();
+        for (const col of existingCols) {
+            colCounts.set(col, (colCounts.get(col) || 0) + 1);
+        }
+        let bestCol = 0;
+        let bestCount = 0;
+        for (const [col, count] of colCounts.entries()) {
+            if (count > bestCount || (count === bestCount && col < bestCol)) {
+                bestCol = col;
+                bestCount = count;
+            }
+        }
+        // If an established column exists (>= 2 notes aligned or >= 50% of notes) and accommodates all names
+        if (bestCol >= baseTargetCol && (bestCount >= 2 || bestCount >= existingCols.length / 2)) {
+            return bestCol;
+        }
+    }
+
+    return baseTargetCol;
 }
 
 /**
@@ -485,6 +533,9 @@ export function alignTreeBlockNotes(lines: string[], customGap?: unknown): strin
     const parsedLines: LineInfo[] = [];
     let hasAnyComment = false;
 
+    // Track hierarchy depth to normalize indentation
+    const indentStack: number[] = [0];
+
     for (const line of lines) {
         const trimmed = line.trim();
         if (!trimmed || trimmed.startsWith('<!--') || (trimmed.startsWith('-') && trimmed.includes(':'))) {
@@ -500,8 +551,24 @@ export function alignTreeBlockNotes(lines: string[], customGap?: unknown): strin
         }
 
         const leadMatch = line.match(/^[\t ]*/);
-        const indent = leadMatch ? leadMatch[0] : '';
-        const content = line.slice(indent.length);
+        const indentStr = leadMatch ? leadMatch[0] : '';
+        const content = line.slice(indentStr.length);
+
+        let rawIndent = 0;
+        for (const ch of indentStr) {
+            rawIndent += ch === '\t' ? 4 : 1;
+        }
+
+        if (rawIndent > indentStack[indentStack.length - 1]) {
+            indentStack.push(rawIndent);
+        } else {
+            while (indentStack.length > 1 && rawIndent < indentStack[indentStack.length - 1]) {
+                indentStack.pop();
+            }
+        }
+        const depth = indentStack.length - 1;
+        const normalizedIndent = '\t'.repeat(depth);
+        const indentVisualWidth = depth * 4;
 
         // Check for comment separator
         const hashMatch = /(?:[ \t]+\|[ \t]*|[ \t]+)#|\s+##+\s*|(?<=\S)#/.exec(content);
@@ -511,36 +578,26 @@ export function alignTreeBlockNotes(lines: string[], customGap?: unknown): strin
         if (hashMatch) {
             name = content.slice(0, hashMatch.index).trim();
             const rest = content.slice(hashMatch.index).trim();
-            // Clean comment: strip leading # and spaces
             const cleanComment = rest.replace(/^[#\s]+/, '').trim();
-            if (cleanComment.length > 0) {
-                comment = cleanComment;
-                hasAnyComment = true;
-            }
+            comment = cleanComment;
+            hasAnyComment = true;
         } else if (content.includes('|')) {
             const pipeIdx = content.indexOf('|');
             name = content.slice(0, pipeIdx).trim();
             const rest = content.slice(pipeIdx + 1).trim();
-            const cleanComment = rest.replace(/^[#\s]+/, '').trim();
-            if (cleanComment.length > 0) {
-                comment = cleanComment;
-                hasAnyComment = true;
-            }
+            const cleanComment = rest.replace(/^[|#\s]+/, '').trim();
+            comment = cleanComment;
+            hasAnyComment = true;
         } else {
             name = content.trim();
         }
 
-        // Compute visual width of indent + name (expanding \t to 4 spaces)
-        let indentVisualWidth = 0;
-        for (const ch of indent) {
-            indentVisualWidth += ch === '\t' ? 4 : 1;
-        }
         const preVisualWidth = indentVisualWidth + name.length;
 
         parsedLines.push({
             raw: line,
             isTreeLine: true,
-            indent,
+            indent: normalizedIndent,
             name,
             comment,
             preVisualWidth,
@@ -558,6 +615,7 @@ export function alignTreeBlockNotes(lines: string[], customGap?: unknown): strin
 
         const spacesCount = Math.max(1, targetCol - pl.preVisualWidth);
         const pad = ' '.repeat(spacesCount);
-        return `${pl.indent}${pl.name}${pad}# ${pl.comment}`;
+        const commentPart = pl.comment ? `# ${pl.comment}` : '# ';
+        return `${pl.indent}${pl.name}${pad}${commentPart}`;
     });
 }
