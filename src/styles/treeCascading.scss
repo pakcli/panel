@@ -47,17 +47,8 @@
     color: var(--text-normal);
   }
 
-  .pakcli-tree-cascading-table {
-    display: table !important;
-    width: 100% !important;
-    border-collapse: separate !important;
-    border-spacing: 0 !important;
-    margin: 0 !important;
-    padding: 0 !important;
-  }
-
   .pakcli-tree-sticky-line {
-    display: table-row !important;
+    display: block !important;
     height: auto !important;
     min-height: 0 !important;
     line-height: var(--line-height-normal, 1.5) !important;
@@ -83,28 +74,9 @@
     &:hover {
       background-color: var(--background-modifier-hover, rgba(0, 0, 0, 0.04)) !important;
 
-      .pakcli-tree-sticky-left,
-      .pakcli-tree-node-trailing {
-        background-color: transparent !important;
-      }
-
       .pakcli-tree-badges {
         opacity: 1;
       }
-    }
-
-    .pakcli-tree-sticky-left {
-      display: table-cell !important;
-      vertical-align: middle !important;
-      white-space: pre !important;
-      width: 1% !important; /* shrink-wraps to widest folder name + badges */
-      padding: 0 !important;
-      margin: 0 !important;
-      color: var(--text-normal) !important;
-      font-family: inherit;
-      font-size: inherit;
-      line-height: inherit;
-      box-sizing: border-box !important;
     }
 
     .pakcli-tree-prefix {
@@ -126,7 +98,8 @@
       }
     }
 
-    .pakcli-tree-node-name {
+    .pakcli-tree-node-name,
+    .pakcli-tree-node-trailing {
       display: inline;
       font-family: inherit;
       font-size: inherit;
@@ -135,21 +108,6 @@
       letter-spacing: inherit;
       line-height: inherit;
       white-space: pre;
-    }
-
-    .pakcli-tree-node-trailing {
-      display: table-cell !important;
-      vertical-align: middle !important;
-      white-space: pre !important;
-      padding: 0 !important;
-      margin: 0 !important;
-      font-family: inherit;
-      font-size: inherit;
-      font-weight: normal !important;
-      color: var(--text-normal) !important;
-      letter-spacing: inherit;
-      line-height: inherit;
-      box-sizing: border-box !important;
     }
 
     &.is-current {

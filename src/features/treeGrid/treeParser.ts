@@ -487,7 +487,8 @@ export function alignTreeBlockNotes(lines: string[], customGap?: unknown): strin
         }
         const preVisualWidth = indentVisualWidth + name.length;
 
-        if (preVisualWidth > maxPreWidth) {
+        // Only lines that actually have comments determine the note column
+        if (comment !== null && preVisualWidth > maxPreWidth) {
             maxPreWidth = preVisualWidth;
         }
 

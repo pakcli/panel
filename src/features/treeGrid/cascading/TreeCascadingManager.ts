@@ -634,23 +634,31 @@ export class TreeCascadingManager {
         session.barEl.style.height = 'auto';
         session.barEl.style.minHeight = '0px';
 
+        // Find max visual prefix width among nodes in this block that have notes
+        let maxNotePreWidth = 0;
+        for (const node of block.nodesByLine.values()) {
+            if (node.columns && node.columns.length > 0) {
+                const r = getAsciiBranchPrefix(node, block.rootNodes);
+                const w = (r ? r.length : 0) + 2 + node.name.length;
+                if (w > maxNotePreWidth) {
+                    maxNotePreWidth = w;
+                }
+            }
+        }
+
         const innerEl = session.barEl.createDiv({ cls: 'pakcli-tree-cascading-inner' });
-        const tableEl = innerEl.createDiv({ cls: 'pakcli-tree-cascading-table' });
 
         for (let i = 0; i < chain.length; i++) {
             const item = chain[i];
             const isCurrent = i === chain.length - 1;
 
-            const rowEl = tableEl.createDiv({
+            const rowEl = innerEl.createDiv({
                 cls: `cm-line HyperMD-codeblock HyperMD-codeblock-bg pakcli-tree-line pakcli-tree-sticky-line${isCurrent ? ' is-current' : ''}`,
                 attr: { title: `Jump to ${item.name} (Line ${item.lineNo + 1})` },
             });
 
-            // Column 1: Left content (Rails + Chevron + Name + Badges)
-            const leftCell = rowEl.createSpan({ cls: 'pakcli-tree-sticky-left' });
-
             // Tree branch rails & chevron prefix (Exact authentic codeblock tree rails)
-            const prefixEl = leftCell.createSpan({ cls: 'pakcli-tree-prefix' });
+            const prefixEl = rowEl.createSpan({ cls: 'pakcli-tree-prefix' });
             const rails = getAsciiBranchPrefix(item.node, block.rootNodes);
             const chevron = 'v ';
 
@@ -660,7 +668,7 @@ export class TreeCascadingManager {
             prefixEl.createSpan({ cls: 'pakcli-tree-chevron', text: chevron });
 
             // Folder Name
-            leftCell.createSpan({ cls: 'pakcli-tree-node-name', text: item.name });
+            rowEl.createSpan({ cls: 'pakcli-tree-node-name', text: item.name });
 
             const hasNote = Boolean(item.node.columns && item.node.columns.length > 0);
 
@@ -672,7 +680,7 @@ export class TreeCascadingManager {
 
             const badgesMode = this.settings.treeBadgesDisplayMode ?? (this.settings.treeCascadingShowBadges ? 'folder' : 'none');
             if (badgesMode !== 'none') {
-                badgesWrap = leftCell.createSpan({ cls: 'pakcli-tree-badges' });
+                badgesWrap = rowEl.createSpan({ cls: 'pakcli-tree-badges' });
 
                 fileBadge = badgesWrap.createSpan({
                     cls: 'pakcli-tree-badge pakcli-badge-file',
@@ -696,24 +704,17 @@ export class TreeCascadingManager {
                 }
             }
 
-            // Column 2: Aligned trailing note across all rows in sticky cascading header
-            const spacingSetting = block.noteSpacing ?? this.settings.treeNoteSpacing;
-            const gap = resolveNoteSpacing(spacingSetting, 1);
-
-            let noteText = '';
+            // Aligned trailing note (word [badge] <spaces> #note)
             if (hasNote) {
-                noteText = '# ' + item.node.columns.join(' # ');
-            } else if (item.node.trailingContent) {
-                const clean = item.node.trailingContent.replace(/^[#\s]+/, '').trim();
-                if (clean) {
-                    noteText = '# ' + clean;
-                }
-            }
-
-            const trailingEl = rowEl.createSpan({ cls: 'pakcli-tree-node-trailing' });
-            if (noteText) {
-                trailingEl.textContent = noteText;
-                trailingEl.style.paddingLeft = `${gap}ch`;
+                const spacingSetting = block.noteSpacing ?? this.settings.treeNoteSpacing;
+                const gap = resolveNoteSpacing(spacingSetting, 1);
+                const curPreWidth = (rails ? rails.length : 0) + 2 + item.name.length;
+                const padCount = Math.max(1, (maxNotePreWidth - curPreWidth) + gap);
+                const pad = ' '.repeat(padCount);
+                rowEl.createSpan({
+                    cls: 'pakcli-tree-node-trailing',
+                    text: `${pad}# ${item.node.columns.join(' # ')}`
+                });
             }
 
             if (this.settings.treeCascadingShowBadges && badgesWrap && fileBadge && folderBadge) {
