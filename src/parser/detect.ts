@@ -1,5 +1,3 @@
-import jschardet from "jschardet";
-
 export interface DetectResult {
   encoding: string;
   delimiter: string;
@@ -11,26 +9,23 @@ export type Delimiter = (typeof DELIMITERS)[number];
 /** Max bytes to sample for encoding detection — 4KB is more than enough */
 const ENCODING_SAMPLE_SIZE = 4096;
 
+/**
+ * Ultra-lightweight, zero-dependency character encoding detector.
+ * Eliminates massive jschardet CJK distribution matrices (saving ~250KB).
+ */
 export function detectEncoding(buffer: ArrayBuffer): string {
   const bytes = new Uint8Array(buffer);
-  // Only sample the first few KB — charset detection doesn't need the whole file
-  const sampleLen = Math.min(bytes.length, ENCODING_SAMPLE_SIZE);
-  const codes = new Array<string>(sampleLen);
-  for (let i = 0; i < sampleLen; i++) {
-    codes[i] = String.fromCharCode(bytes[i]);
-  }
-  const binaryStr = codes.join("");
+  if (bytes.length >= 3 && bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf) return "utf-8";
+  if (bytes.length >= 2 && bytes[0] === 0xff && bytes[1] === 0xfe) return "utf-16le";
+  if (bytes.length >= 2 && bytes[0] === 0xfe && bytes[1] === 0xff) return "utf-16be";
 
-  const result = jschardet.detect(binaryStr);
-  const enc = (result.encoding || "utf-8").toLowerCase();
-  if (enc.includes("utf-8") || enc === "ascii") return "utf-8";
-  if (enc.includes("gb") || enc.includes("gb2312") || enc.includes("gbk"))
-    return "gbk";
-  if (enc.includes("latin") || enc.includes("iso-8859") || enc.includes("windows-1252"))
+  const sample = bytes.subarray(0, Math.min(bytes.length, ENCODING_SAMPLE_SIZE));
+  try {
+    new TextDecoder("utf-8", { fatal: true }).decode(sample);
+    return "utf-8";
+  } catch {
     return "windows-1252";
-  if (enc.includes("shift_jis") || enc.includes("shift-jis"))
-    return "shift_jis";
-  return enc;
+  }
 }
 
 export function detectDelimiter(text: string): Delimiter {

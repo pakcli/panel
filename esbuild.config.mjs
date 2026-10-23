@@ -27,7 +27,7 @@ const wasmPlugin = {
 		build.onLoad({ filter: /\.wasm$/, namespace: 'wasm-binary' }, async (args) => {
 			const contents = readFileSync(args.path);
 			const zlib = await import('node:zlib');
-			const deflated = zlib.deflateSync(contents);
+			const deflated = zlib.deflateSync(contents, { level: 9 });
 			const deflatedBase64 = deflated.toString('base64');
 			
 			return {
@@ -129,7 +129,7 @@ const workerPlugin = {
 			const wasmPath = join(process.cwd(), 'node_modules/wa-sqlite/dist/wa-sqlite-async.wasm');
 			const wasmContents = readFileSync(wasmPath);
 			const zlib = await import('node:zlib');
-			const deflated = zlib.deflateSync(wasmContents);
+			const deflated = zlib.deflateSync(wasmContents, { level: 9 });
 			const deflatedBase64 = deflated.toString('base64');
 
 			return {
@@ -303,6 +303,7 @@ const context = await esbuild.context({
 		"react": "preact/compat",
 		"react-dom": "preact/compat",
 		"react/jsx-runtime": "preact/jsx-runtime",
+		"leaflet": "leaflet/dist/leaflet.js",
 	},
 	define: {
 		'process.env.NODE_ENV': JSON.stringify(prod ? 'production' : 'development'),
@@ -329,8 +330,8 @@ if (prod) {
 	const inputs = res.metafile.outputs['dist/main.js'].inputs;
 	const sorted = Object.entries(inputs)
 		.sort((a,b) => (b[1].bytesInOutput||0) - (a[1].bytesInOutput||0))
-		.slice(0, 15);
-	console.log("=== TOP 15 BUNDLE INPUTS ===");
+		.slice(0, 35);
+	console.log("=== TOP 35 BUNDLE INPUTS ===");
 	for (const [k, v] of sorted) {
 		console.log(`${(v.bytesInOutput/1024/1024).toFixed(2)} MB -> ${k}`);
 	}
