@@ -1,4 +1,4 @@
-﻿import { App, Plugin, TFile } from "obsidian";
+import { App, Plugin, TFile } from "obsidian";
 import { AFileSyncTable } from "./abstractFileSyncTable";
 import { sanitise } from "../../../../utils/sanitiseColumn";
 import { SqlocalDatabaseProxy } from "../../../database/sqlocal/sqlocalDatabaseProxy";
@@ -34,15 +34,15 @@ async function getFileRowCount(app: App, file: TFile): Promise<number | null> {
         } else if (ext === 'json' || ext === 'json5') {
             const content = await app.vault.read(file);
             if (!content || !content.trim()) return 0;
-            let parsed;
+            let parsed: unknown = null;
             try {
                 parsed = JSON.parse(content);
             } catch {
                 try {
                     parsed = parseJson5(content);
                 } catch {
-                    // Fail silently/gracefully on corrupted or incomplete JSON (e.g. empty or mid-write state)
-                    return null;
+                    // Silently ignore corrupted or mid-write JSON states (e.g. audio_player_state.json)
+                    return 0;
                 }
             }
             if (Array.isArray(parsed)) return parsed.length;
@@ -54,9 +54,9 @@ async function getFileRowCount(app: App, file: TFile): Promise<number | null> {
             const lines = content.split('\n').map(l => l.trim()).filter(Boolean);
             return lines.length;
         }
-    } catch (e) {
-        // Log softly as debug/warn rather than uncaught error dump
-        console.debug("Silent row count fallback for file:", file.path);
+    } catch {
+        // Silently return null for unparseable files without polluting console
+        return null;
     }
     return null;
 }
@@ -95,9 +95,14 @@ export class FilesFileSyncTable extends AFileSyncTable {
 
     async onFileCreate(file: TFile): Promise<void> {
         const data = await fileData(this.app, file, extractFrontmatterFromFile(file, this.plugin))
-        const lowerExisting = new Set(this.columns.map(c => c.toLowerCase())); const unexistingColumns = Object.keys(data).filter(x => !lowerExisting.has(x.toLowerCase()))
+        const lowerExisting = new Set(this.columns.map(c => c.toLowerCase()));
+        const unexistingColumns = Object.keys(data).filter(x => !lowerExisting.has(x.toLowerCase()))
         if (unexistingColumns.length) {
-            await this.db.addColumns(this.tableName, unexistingColumns)
+            try {
+                await this.db.addColumns(this.tableName, unexistingColumns)
+            } catch (err) {
+                console.warn(`[PakCLI] Non-fatal addColumns warning for ${file.path}:`, err);
+            }
             this.columns = (await this.db.getColumns(this.tableName)) ?? []
         }
         await this.db.insertData(this.tableName, [data])
@@ -107,7 +112,11 @@ export class FilesFileSyncTable extends AFileSyncTable {
         this.columns = (await this.db.getColumns(this.tableName)) ?? []
 
         for (const file of files) {
-            await this.onFileCreate(file)
+            try {
+                await this.onFileCreate(file)
+            } catch (err) {
+                console.warn(`[PakCLI] Failed to index file ${file.path}:`, err);
+            }
         }
     }
 

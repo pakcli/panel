@@ -596,9 +596,27 @@ export class SqlocalWorkerDatabase {
     async addColumns(tableName: string, newColumns: string[]) {
         if (!this.connection) throw new Error('Database not connected');
 
-        for (const column of newColumns) {
-            const sql = `ALTER TABLE "${tableName}" ADD COLUMN "${column}" TEXT`;
+        let existingSet = new Set<string>();
+        try {
+            const cols = await this.getColumns(tableName);
+            if (cols && cols.length) {
+                existingSet = new Set(cols.map(c => c.toLowerCase().trim()));
+            }
+        } catch {
+            // Ignore error getting existing columns
+        }
 
+        const seenInBatch = new Set<string>();
+        for (const column of newColumns) {
+            const cleanCol = (column || '').trim();
+            if (!cleanCol) continue;
+            const lower = cleanCol.toLowerCase();
+            if (existingSet.has(lower) || seenInBatch.has(lower)) {
+                continue;
+            }
+            seenInBatch.add(lower);
+
+            const sql = `ALTER TABLE "${tableName}" ADD COLUMN "${cleanCol}" TEXT`;
             const str = this.sqlite3.str_new(this.connection, sql);
             try {
                 const prepared = await this.sqlite3.prepare_v2(this.connection, this.sqlite3.str_value(str));
@@ -606,8 +624,20 @@ export class SqlocalWorkerDatabase {
                     await this.sqlite3.step(prepared.stmt);
                     await this.sqlite3.finalize(prepared.stmt);
                 }
+                existingSet.add(lower);
+            } catch (err: any) {
+                const errMsg = String(err?.message || err || '').toLowerCase();
+                if (errMsg.includes('duplicate column') || errMsg.includes('already exists')) {
+                    existingSet.add(lower);
+                    continue;
+                }
+                console.warn(`[PakCLI] Could not add column "${cleanCol}" to table "${tableName}":`, err);
             } finally {
-                this.sqlite3.str_finish(str);
+                try {
+                    this.sqlite3.str_finish(str);
+                } catch {
+                    // Safe cleanup
+                }
             }
         }
     }
