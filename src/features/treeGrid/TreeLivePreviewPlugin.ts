@@ -603,7 +603,11 @@ function buildDecorations(view: EditorView, plugin: any): DecorationSet {
 
                 if (parent) {
                     parent.children.push(node);
-                    parent.isDirectory = true;
+                    if (!isFileName(parent.name)) {
+                        parent.isDirectory = true;
+                    } else {
+                        parent.hasExtensionConflict = true;
+                    }
                 } else {
                     rootNodes.push(node);
                 }
@@ -680,6 +684,23 @@ function buildDecorations(view: EditorView, plugin: any): DecorationSet {
                         Decoration.widget({
                             widget: new TreeBranchWidget(rails, node, view),
                             side: -1,
+                        })
+                    );
+                }
+
+                // If node has extension conflict (is a file but has children indented beneath it),
+                // mark name with red wavy underline
+                const nameStart = Math.min(bl.to, bl.from + leadLen);
+                const nameEnd = Math.min(bl.to, nameStart + node.rawName.length);
+                if (node.hasExtensionConflict && nameEnd > nameStart) {
+                    builder.add(
+                        nameStart,
+                        nameEnd,
+                        Decoration.mark({
+                            attributes: {
+                                class: 'pakcli-tree-has-ext-conflict',
+                                title: `Invalid hierarchy: "${node.name}" has an extension and cannot contain child items`,
+                            },
                         })
                     );
                 }
@@ -765,30 +786,28 @@ export function handleTreeTabTrigger(view: EditorView, plugin: Plugin): boolean 
     const beforeCursor = lineText.slice(0, col);
     const afterCursor = lineText.slice(col);
 
-    // Trigger match: line before cursor ends with | or # (e.g. "word|", "word |", "word #")
-    const triggerMatch = beforeCursor.match(/^([\t ]*)(.+?)(?:\s*([|#])\s*)$/);
-    if (!triggerMatch) {
+    // 1. Leading indent extraction
+    const leadMatch = beforeCursor.match(/^([\t ]*)/);
+    const indent = leadMatch ? leadMatch[1] : '';
+    const textBefore = beforeCursor.slice(indent.length);
+
+    // If cursor is in the leading indent (before any text), allow default indentation
+    if (textBefore.trim() === '') {
         return false;
     }
 
-    const indent = triggerMatch[1];
-    const rawNamePart = triggerMatch[2];
-
-    const cleanName = rawNamePart
-        .replace(/^(?:[Vv>▼▶]\s*)+/, '')
-        .replace(/^[├└│|L\s─\-+▼▶vV><]+/g, '')
-        .trim();
-
-    if (!cleanName || !/[a-zA-Z0-9_\.]/.test(cleanName)) {
+    // If cursor is already inside an existing '#' note comment, do not re-trigger
+    const hashIdx = textBefore.indexOf('#');
+    if (hashIdx >= 0 && hashIdx < textBefore.length - 1) {
         return false;
     }
 
-    // Verify cursor is inside a panel-tree block
-    const userAliases = ((plugin as any).settings?.panelTreeAliases || '')
+    // 2. Verify cursor is inside a panel-tree block
+    const userAliases: string[] = ((plugin as any).settings?.panelTreeAliases || '')
         .split(',')
         .map((a: string) => a.trim().toLowerCase())
         .filter(Boolean);
-    const aliases = new Set(userAliases);
+    const aliases = new Set<string>(userAliases);
     aliases.add('panel-tree');
     aliases.add('panel-tree-cascading');
     aliases.add('tree-cascading');
@@ -829,10 +848,50 @@ export function handleTreeTabTrigger(view: EditorView, plugin: Plugin): boolean 
         return false;
     }
 
-    // Collect block lines to determine targetCol
+    // 3. Extract name part and existing note
+    let rawNamePart = '';
+    let existingNote = '';
+
+    const delimMatch = textBefore.match(/^(.*?)\s*([|#])\s*$/);
+    if (delimMatch) {
+        // Triggered via explicit delimiter | or # (e.g. "word|", "word |", "word #")
+        rawNamePart = delimMatch[1];
+        existingNote = afterCursor.replace(/^[|#\s]+/, '').trim();
+    } else {
+        // Triggered via Tab between words or at end of line
+        // e.g. "name file" + Tab before "tambahan" -> turns "tambahan" into "# tambahan"
+        // Or "name file" + Tab at end of line -> turns into "name file # "
+        if (afterCursor.trim() !== '') {
+            const atBoundary = /[\t\s|#]$/.test(textBefore) || /^[\t\s|#]/.test(afterCursor);
+            if (!atBoundary) {
+                // In the middle of a word without boundary spaces: do not trigger
+                return false;
+            }
+            rawNamePart = textBefore;
+            existingNote = afterCursor.replace(/^[|#\s]+/, '').trim();
+        } else {
+            rawNamePart = textBefore;
+            existingNote = '';
+        }
+    }
+
+    const cleanName = rawNamePart
+        .replace(/^(?:[Vv>▼▶]\s*)+/, '')
+        .replace(/^[├└│|L\s─\-+▼▶vV><]+/g, '')
+        .trim();
+
+    if (!cleanName || !/[a-zA-Z0-9_\.]/.test(cleanName)) {
+        return false;
+    }
+
+    // 4. Collect block lines to determine targetCol
     const blockLines: string[] = [];
     for (let l = blockStartLine + 1; l < blockEndLine; l++) {
-        blockLines.push(doc.line(l).text);
+        if (l === line.number) {
+            blockLines.push(`${indent}${cleanName}`);
+        } else {
+            blockLines.push(doc.line(l).text);
+        }
     }
 
     const noteSpacing = (plugin as any)?.settings?.treeNoteSpacing || '1';
@@ -846,7 +905,6 @@ export function handleTreeTabTrigger(view: EditorView, plugin: Plugin): boolean 
     const spacesCount = Math.max(1, targetCol - preVisualWidth);
     const pad = ' '.repeat(spacesCount);
 
-    const existingNote = afterCursor.replace(/^[|#\s]+/, '').trim();
     let newText = `${indent}${cleanName}${pad}# `;
     if (existingNote) {
         newText += existingNote;

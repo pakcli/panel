@@ -600,7 +600,11 @@ export class TreeCascadingManager {
 
             if (parent) {
                 parent.children.push(node);
-                parent.isDirectory = true;
+                if (!isFileName(parent.name)) {
+                    parent.isDirectory = true;
+                } else {
+                    parent.hasExtensionConflict = true;
+                }
             } else {
                 rootNodes.push(node);
             }
@@ -654,39 +658,53 @@ export class TreeCascadingManager {
             // Tree branch rails & chevron prefix (Exact authentic codeblock tree rails)
             const prefixEl = rowEl.createSpan({ cls: 'pakcli-tree-prefix' });
             const rails = getAsciiBranchPrefix(item.node, block.rootNodes);
-            const chevron = 'v ';
+            const chevron = item.node.isDirectory ? 'v ' : '';
 
             if (rails) {
                 prefixEl.createSpan({ cls: 'pakcli-tree-rails', text: rails });
             }
-            prefixEl.createSpan({ cls: 'pakcli-tree-chevron', text: chevron });
+            if (chevron) {
+                prefixEl.createSpan({ cls: 'pakcli-tree-chevron', text: chevron });
+            }
 
-            // Folder Name
-            rowEl.createSpan({ cls: 'pakcli-tree-node-name', text: item.name });
+            // Node Name
+            const nameEl = rowEl.createSpan({ cls: 'pakcli-tree-node-name', text: item.name });
+            if (item.node.hasExtensionConflict) {
+                nameEl.addClass('pakcli-tree-has-ext-conflict');
+                nameEl.setAttribute('title', `Invalid hierarchy: "${item.name}" has an extension and cannot contain child items`);
+            }
 
             const hasNote = Boolean(item.node.columns && item.node.columns.length > 0);
 
-            // Badges (+File, +Folder, +Note) right beside folder name (word [badge] #note)
+            // Badges (+File, +Folder, +Note) right beside node name (word [badge] #note)
             let badgesWrap: HTMLElement | null = null;
             let fileBadge: HTMLElement | null = null;
             let folderBadge: HTMLElement | null = null;
             let noteBadge: HTMLElement | null = null;
 
             const badgesMode = this.settings.treeBadgesDisplayMode ?? (this.settings.treeCascadingShowBadges ? 'folder' : 'none');
-            if (badgesMode !== 'none') {
+            const shouldRenderBadges = badgesMode === 'all'
+                ? (item.node.isDirectory || !hasNote)
+                : badgesMode === 'folder'
+                    ? item.node.isDirectory
+                    : false;
+
+            if (shouldRenderBadges) {
                 badgesWrap = rowEl.createSpan({ cls: 'pakcli-tree-badges' });
 
-                fileBadge = badgesWrap.createSpan({
-                    cls: 'pakcli-tree-badge pakcli-badge-file',
-                    text: '+File',
-                    attr: { title: `Add file inside ${item.name}` },
-                });
+                if (item.node.isDirectory) {
+                    fileBadge = badgesWrap.createSpan({
+                        cls: 'pakcli-tree-badge pakcli-badge-file',
+                        text: '+File',
+                        attr: { title: `Add file inside ${item.name}` },
+                    });
 
-                folderBadge = badgesWrap.createSpan({
-                    cls: 'pakcli-tree-badge pakcli-badge-folder',
-                    text: '+Folder',
-                    attr: { title: `Add folder inside ${item.name}` },
-                });
+                    folderBadge = badgesWrap.createSpan({
+                        cls: 'pakcli-tree-badge pakcli-badge-folder',
+                        text: '+Folder',
+                        attr: { title: `Add folder inside ${item.name}` },
+                    });
+                }
 
                 // Only show +Note badge if note is NOT yet present
                 if (!hasNote && this.settings.treeCascadingShowNoteBadge !== false) {

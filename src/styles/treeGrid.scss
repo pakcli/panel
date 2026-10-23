@@ -108,6 +108,12 @@
     }
 }
 
+.pakcli-tree-has-ext-conflict {
+    text-decoration: underline wavy var(--text-error, #f44336) !important;
+    text-decoration-thickness: 1.5px !important;
+    text-underline-offset: 3px !important;
+}
+
 .pakcli-tree-badges {
     display: inline-flex;
     align-items: center;

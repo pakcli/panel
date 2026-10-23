@@ -159,20 +159,6 @@ export function extractNameAndColumns(rawTrimmed: string): {
         };
     }
 
-    // 3. 2 or more consecutive spaces or tab followed by non-whitespace
-    const spaceColMatch = /(?:\t|[ ]{2,})(?=\S)/.exec(trimmed);
-    if (spaceColMatch) {
-        const namePart = trimmed.slice(0, spaceColMatch.index).trim();
-        const trailing = trimmed.slice(namePart.length);
-        const rest = trimmed.slice(spaceColMatch.index).trim();
-        return {
-            name: namePart.replace(/[\/\\]$/, ''),
-            rawName: namePart,
-            trailingContent: trailing,
-            columns: [rest],
-        };
-    }
-
     return {
         name: trimmed.replace(/[\/\\]$/, ''),
         rawName: trimmed,
@@ -251,11 +237,14 @@ export function parseTreeGrid(source: string): ParsedTreeGrid {
             const parent = nodeStack[nodeStack.length - 1].node;
             node.parent = parent;
             parent.children.push(node);
+            if (!isFileName(parent.name)) {
+                parent.isDirectory = true;
+            } else {
+                parent.hasExtensionConflict = true;
+            }
         }
 
-        if (isDir) {
-            nodeStack.push({ node, depth });
-        }
+        nodeStack.push({ node, depth });
     }
 
     // Total columns = Name column (0) + comment columns
