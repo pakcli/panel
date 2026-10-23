@@ -649,7 +649,6 @@ export class TreeCascadingManager {
             let fileBadge: HTMLElement | null = null;
             let folderBadge: HTMLElement | null = null;
             let noteBadge: HTMLElement | null = null;
-            let postitEl: HTMLElement | null = null;
 
             if (this.settings.treeCascadingShowBadges) {
                 badgesWrap = rowEl.createSpan({ cls: 'pakcli-tree-badges' });
@@ -676,16 +675,11 @@ export class TreeCascadingManager {
                 }
             }
 
-            // Post-it note pill or trailing content AFTER badges (word [badge] #note)
-            if (hasNote) {
-                const noteText = item.node.columns.join(' # ');
-                postitEl = rowEl.createSpan({
-                    cls: 'pakcli-tree-postit-pill',
-                    text: `📌 ${noteText}`,
-                    attr: { title: `Click to edit note for ${item.name}` },
-                });
-            } else if (item.node.trailingContent) {
+            // Straight up text for trailing content / note (word [badge] #note)
+            if (item.node.trailingContent) {
                 rowEl.createSpan({ cls: 'pakcli-tree-node-trailing', text: item.node.trailingContent });
+            } else if (hasNote) {
+                rowEl.createSpan({ cls: 'pakcli-tree-node-trailing', text: '   # ' + item.node.columns.join(' # ') });
             }
 
             if (this.settings.treeCascadingShowBadges && badgesWrap && fileBadge && folderBadge) {
@@ -800,14 +794,6 @@ export class TreeCascadingManager {
 
                 if (noteBadge) {
                     noteBadge.addEventListener('click', (e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        activateNoteInput();
-                    });
-                }
-
-                if (postitEl) {
-                    postitEl.addEventListener('click', (e) => {
                         e.preventDefault();
                         e.stopPropagation();
                         activateNoteInput();

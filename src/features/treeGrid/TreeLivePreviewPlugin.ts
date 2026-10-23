@@ -716,27 +716,6 @@ function buildDecorations(view: EditorView, plugin: any): DecorationSet {
                         })
                     );
                 }
-
-                // 4. Post-it Note Tag (Decoration.mark on "# note") when cursor is not on this line
-                if (!isCursorOnLine && hasNote) {
-                    const hashMatch = /(?:[ \t]+\|[ \t]*|[ \t]+)#|\s+##+\s*|(?<=\S)#/.exec(text);
-                    if (hashMatch) {
-                        const hashIdxInMatch = hashMatch[0].indexOf('#');
-                        const hashOffset = hashMatch.index + (hashIdxInMatch >= 0 ? hashIdxInMatch : 0);
-                        const markFrom = Math.min(bl.to, bl.from + hashOffset);
-                        const markTo = Math.min(bl.to, bl.from + trimmedEndOffset);
-                        if (markFrom < markTo && markFrom >= badgePos) {
-                            builder.add(
-                                markFrom,
-                                markTo,
-                                Decoration.mark({
-                                    class: 'pakcli-tree-postit-tag',
-                                    attributes: { title: 'Click to edit note' },
-                                })
-                            );
-                        }
-                    }
-                }
             }
         }
 
