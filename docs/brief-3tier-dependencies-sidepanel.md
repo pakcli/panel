@@ -1,4 +1,4 @@
-# 📋 Brief: 3-Tier Dependency Triage & Interactive Right Sidepanel Inspector
+# 📋 Brief: 4-Tier Dependency Triage & Interactive Right Sidepanel Inspector
 
 > **Feature Status**: `0` (Draft / Pending Implementation)  
 > **Target Module**: `pakcli-panel` (`panel`)  
@@ -10,78 +10,114 @@
 
 ## 1. Executive Summary & Core Objective
 
-Sering kali pengguna merasa terbebani untuk membedakan dependensi teknis mana yang harus dimasukkan ke frontmatter YAML (`dependencies: [...]`) dan mana yang cukup disebut di dalam teks biasa. Jika semua wikilink disedot mentah-mentah, daftar perbandingan (*Compare Hub* & *Venn Diagram*) menjadi penuh sampah (*bloated*).
+Sering kali pengguna merasa terbebani untuk membedakan dependensi teknis mana yang harus dimasukkan ke frontmatter YAML (`dependencies: [...]`) dan mana yang cukup disebut di dalam teks biasa. Jika semua wikilink disedot mentah-mentah, daftar perbandingan (*Compare Hub* & *Venn Diagram*) menjadi penuh sampah (*bloated*). Terlebih lagi, link yang belum dibuat filenya (*unresolved phantom links*) sering membingungkan pengguna.
 
-Fitur ini menghadirkan **3-Tier Dependency Triage Engine** dan **Interactive Right Sidepanel Inspector** dengan **Universal 3-Color Scope Radio Buttons**, **Drag & Drop Triage**, **Right-Click Context Menu**, **Dual View Modes (`Grouped` vs `Ungrouped`)**, dan **Collapse Repetitive Multiplier**:
-
-1. **Universal 3-Color Column Radio Buttons**:
-   - Selalu tampil dan aktif baik di mode **`Grouped`** maupun **`Ungrouped`**.
-   - ⚪ **Soft Mention (White / Slate)**: Link sebutan narasi biasa.
-   - 🟡 **Contextual (Yellow / Amber)**: Alat/aturan fungsional ber-specs.
-   - 🔴 **Dependencies (Red / Rose)**: Hard prasyarat mutlak di YAML frontmatter.
-   - `🔘 All`: Pilihan default untuk melihat keseluruhan.
-2. **Drag & Drop Triage (Khusus Mode `Grouped`)**:
-   - Menggunakan library bawaan `SortableJS` (yang sudah terpasang di modul Tierlist).
-   - Pengguna bisa **menyeret kartu link (Drag & Drop)** dari zona ⚪ Soft $\rightarrow$ 🟡 Contextual $\rightarrow$ 🔴 Hard (Dependencies).
-   - Menyeret kartu ke zona 🔴 **Hard otomatis menuliskan link ke frontmatter YAML** di file markdown secara instan!
+Fitur ini menghadirkan **4-Tier Dependency Triage Engine** dan **Interactive Right Sidepanel Inspector** dengan spesifikasi produksi **10/10 Bulletproof**:
+1. **4 Groups di Mode `Grouped` (Dengan Zona Oranye Khusus Unresolved)**:
+   - 🔴 **Hard Dependencies**: Prasyarat mutlak di YAML frontmatter.
+   - 🟡 **Contextual Dependencies**: Alat/aturan fungsional ber-specs.
+   - ⚪ **Soft Mentions**: Sebutan narasi biasa yang sudah ada filenya.
+   - 🟠 **Unresolved / Phantom Links**: Link yang belum memiliki file fisik di vault atau belum terhubung ke URL.
+2. **Universal 4-Color Scope Radio Buttons**:
+   - `🔘 All`
+   - `🔴 Hard (Red)`
+   - `🟡 Contextual (Yellow)`
+   - `⚪ Soft (White)`
+   - `🟠 Unresolved (Orange)`: **Quick Scope Filter** untuk langsung memburu dan menyelesaikan link-link gantung!
+3. **Hover & Click Quick-Resolve Action**:
+   - Pada kartu 🟠 **Unresolved**, terdapat tombol aksi cepat:
+     - `[📄 Create Note]`: Otomatis membuat file `.md` baru di folder yang sesuai (`tools/`, `rules/`, atau root) dan langsung menghubungkannya.
+     - `[🔗 Set as URL]`: Mengubah wikilink menjadi direct URL eksternal jika ternyata rujukan tersebut adalah link web/video.
+4. **Drag & Drop Triage (SortableJS)**:
+   - Pengguna bisa menyeret kartu link antar 4 zona.
+   - Menyeret kartu ke zona 🔴 **Hard otomatis menuliskan link ke frontmatter YAML**.
    - Menyeret keluar dari 🔴 **Hard otomatis menghapusnya dari YAML**.
-3. **Right-Click Context Menu**:
-   - Klik kanan pada kartu/item mana saja memunculkan menu instan:
-     - 🔴 *Move to Hard Dependencies (Pin to YAML)*
-     - 🟡 *Move to Contextual Tools/Rules*
-     - ⚪ *Demote to Soft Mention*
-     - 📄 *Open Note in New Tab / Split*
-4. **🔁 Collapse Repetitive Toggle**:
-   - Mode `Collapsed (ON)`: Menyatukan link yang disebut berulang kali menjadi 1 baris dengan badge multiplier redup (`badge:[x3]`).
-   - Mode `Uncollapsed (OFF)`: Menampilkan setiap baris kemunculan sesuai urutan teks.
-5. **Smart Dropdown Sorter**:
+5. **🔁 Collapse Repetitive Multiplier**:
+   - Mention ganda digabung menjadi satu kartu dengan badge redup `badge:[x3]`.
+6. **Smart Dropdown Sorter**:
    - ⏳ *Pertama Mention* (First $\rightarrow$ Last), ⌛ *Terakhir Mention*, 🔥 *Popular / Frequency*, 🔤 *A-Z / Z-A*.
+7. **🛡️ Rock-Solid Safety Net & Undo/Redo Engine**:
+   - Menggunakan pattern `HistoryEntry[]` yang mencatat snapshot mutasi YAML dan aksi drag & drop dengan tombol `[↩️ Undo]`.
 
 ---
 
-## 2. Definisi 3 Tingkat Dependensi & Penyimpanan Fisiknya
+## 2. Definisi 4 Tingkat Dependensi & Penyimpanan Fisiknya
 
 Semua data tersimpan secara alami di dalam satu file Markdown lokal tanpa database eksternal:
 
 | Kategori & Warna | Lokasi Penyimpanan Fisik di `.md` | Logika Identifikasi Otomatis | Peran di Compare Hub |
 | :--- | :--- | :--- | :--- |
 | 🔴 **Dependencies** *(Red / Rose)* | **Frontmatter YAML** (`dependencies: [...]`) | Tertulis di blok metadata atas, ATAU diseret (dragged) / di-pin ke zona Red. | **Mutlak / Prasyarat Utama**: Masuk ke baris perbandingan & simpul utama Venn. |
-| 🟡 **Contextual** *(Yellow / Amber)* | **Body Teks Markdown** (`[[wikilink]]` biasa) | Link menunjuk ke `/tools/`, `/rules/`, `/workflows/`, atau note target punya `specs`. | **Alat & SOP Fungsional**: Melengkapi perbandingan alat di Compare Hub. |
-| ⚪ **Soft Mention** *(White / Gray)* | **Body Teks Markdown** (`[[wikilink]]` biasa) | Link catatan umum tanpa spesifikasi teknis (hanya sebutan narasi). | **Diabaikan dari Compare**: Hanya tampil sebagai referensi sampingan. |
+| 🟡 **Contextual** *(Yellow / Amber)* | **Body Teks Markdown** (`[[wikilink]]` biasa) | Link menunjuk ke file eksis di `/tools/`, `/rules/`, `/workflows/`, atau punya `specs`. | **Alat & SOP Fungsional**: Melengkapi perbandingan alat di Compare Hub. |
+| ⚪ **Soft Mention** *(White / Gray)* | **Body Teks Markdown** (`[[wikilink]]` biasa) | Link menunjuk ke file eksis umum tanpa spesifikasi teknis (hanya sebutan narasi). | **Diabaikan dari Compare**: Hanya tampil sebagai referensi sampingan. |
+| 🟠 **Unresolved** *(Orange / Amber)* | **Body Teks Markdown** (`[[wikilink]]` gantung) | `app.metadataCache.getFirstLinkpathDest(link) === null` (File belum ada di vault). | **Peringatan / Action Item**: Menunggu resolusi via `[Create Note]` atau `[Set URL]`. |
 
 ---
 
-## 3. Desain UI/UX: Interactive Right Sidepanel
+## 3. The 10/10 Bulletproof Safety Net Architecture
+
+### A. Atomic Frontmatter Mutation
+- **Wajib menggunakan Obsidian Native API**:
+  ```typescript
+  await this.app.fileManager.processFrontMatter(tfile, (fm) => {
+      if (!fm.dependencies) fm.dependencies = [];
+      const list: string[] = Array.isArray(fm.dependencies) ? fm.dependencies : [fm.dependencies];
+      if (action === 'pin' && !list.includes(targetLink)) list.push(targetLink);
+      if (action === 'unpin') fm.dependencies = list.filter((x) => x !== targetLink);
+  });
+  ```
+
+### B. History Stack & Undo/Redo Engine (`HistoryEntry`)
+- Setiap aksi mutasi menyimpan snapshot JSON ke stack undo/redo hingga 30 aksi terakhir.
+- Toast safety notification:
+  > *"Pushed `[[kabel-data-3.3v]]` to Hard Dependencies. `[↩️ Undo]`"*
+
+### C. Quick-Resolve Engine (Hover & Click Resolution)
+- Memeriksa eksistensi file:
+  ```typescript
+  const resolvedFile = this.app.metadataCache.getFirstLinkpathDest(cleanLink, activeFile.path);
+  const isResolved = resolvedFile instanceof TFile;
+  ```
+- Jika `!isResolved`:
+  - Kartu diberi border putus-putus (*dashed line*) oranye.
+  - Saat di-hover, muncul tombol aksi:
+    1. **`[📄 Create Note]`**: Menjalankan `app.vault.create(`${folder}/${cleanLink}.md`, "---\ncategory: ...\n---\n")`.
+    2. **`[🔗 Set URL]`**: Membuka prompt modal untuk mengubah teks `[[nama]]` menjadi `[nama](https://url...)`.
+
+---
+
+## 4. Desain UI/UX: Interactive Right Sidepanel
 
 Panel ini terdaftar sebagai Obsidian Native `ItemView` (`viewType: 'pakcli-dependency-inspector'`) dan selalu sinkron dengan catatan aktif (`active-leaf-change`).
 
-### A. Desktop Right Sidepanel Wireframe
+### Desktop Right Sidepanel Wireframe
 
-#### 1. Header Toolbar & Universal 3-Color Radio Buttons
+#### 1. Header Toolbar & Universal 4-Color Radio Buttons
 ```text
 ┌──────────────────────────────────────────────────────────────┐
-│ 🧭 DEPENDENCY INSPECTOR                                      │
+│ 🧭 DEPENDENCY INSPECTOR                 [ ↩️ Undo ] [ ↪️ Redo ]│
 │ File: esp32-firmware-flash.md                                │
 ├──────────────────────────────────────────────────────────────┤
 │ [ 🗂️ Grouped | 📜 Ungrouped ]   [ 🔁 Collapse Repetitive: ON ]│
 │ Dropdown Sorter: [ ⏳ Pertama Mention ▼                     ]│
 │                                                              │
 │ Scope Filter Radio Buttons (Aktif di Grouped & Ungrouped):   │
-│ (•) All   ( ) ⚪ Soft (2)   ( ) 🟡 Contextual (3)   ( ) 🔴 Hard (2) │
+│ (•) All (8)  ( ) 🔴 Hard (2)  ( ) 🟡 Contextual (2)          │
+│              ( ) ⚪ Soft (2)  ( ) 🟠 Unresolved (2)          │
 │                                                              │
 │ 🔍 [ Cari link...                                          ] │
 ├──────────────────────────────────────────────────────────────┤
 ```
 
-#### 2. Tampilan Mode `Grouped` (Drag & Drop + Right Click)
+#### 2. Tampilan Mode `Grouped` (4 ZONA DENGAN DRAG & DROP)
 ```text
 │ 🔴 HARD DEPENDENCIES (2) [Frontmatter Zone - Drop Target]    │
 │ ┌──────────────────────────────────────────────────────────┐ │
 │ │ 🔴 [::] [[esptool.py]]          badge:[x1]  [Right-click]│ │
-│ │    Runtime • Python Package                              │ │
+│ │    Runtime • Python Package • 🟢 Resolved                │ │
 │ ├──────────────────────────────────────────────────────────┤ │
 │ │ 🔴 [::] [[kabel-data-3.3v]]     badge:[x1]  [Right-click]│ │
-│ │    Hardware • USB-C Data Cable                           │ │
+│ │    Hardware • USB-C Data Cable • 🟢 Resolved             │ │
 │ └──────────────────────────────────────────────────────────┘ │
 │                               ▲                              │
 │                    (Drag & Drop antar Zona)                  │
@@ -89,25 +125,35 @@ Panel ini terdaftar sebagai Obsidian Native `ItemView` (`viewType: 'pakcli-depen
 │ 🟡 CONTEXTUAL TOOLS & RULES (2) [Has Specs - Drop Target]    │
 │ ┌──────────────────────────────────────────────────────────┐ │
 │ │ 🟡 [::] [[tools/hardware/esp32-s3]]  badge:[x3]          │ │
-│ │    Specs: Xtensa Dual-Core, 3.3V Logic                   │ │
+│ │    Specs: Xtensa Dual-Core, 3.3V Logic • 🟢 Resolved     │ │
 │ ├──────────────────────────────────────────────────────────┤ │
 │ │ 🟡 [::] [[rules/anti-static-esd]]    badge:[x1]          │ │
-│ │    Rule: Warning (Gunakan Gelang ESD)                    │ │
+│ │    Rule: Warning (Gunakan Gelang ESD) • 🟢 Resolved      │ │
 │ └──────────────────────────────────────────────────────────┘ │
 │                               ▲                              │
 │                    (Drag & Drop antar Zona)                  │
 │                               ▼                              │
 │ ⚪ SOFT MENTIONS (2) [Narrative Only - Drop Target]          │
 │ ┌──────────────────────────────────────────────────────────┐ │
-│ │ ⚪ [::] [[sejarah-mikrokontroler]]   badge:[x1]          │ │
+│ │ ⚪ [::] [[sejarah-mikrokontroler]]   badge:[x1] 🟢       │ │
 │ ├──────────────────────────────────────────────────────────┤ │
-│ │ ⚪ [::] [[forum-esp32-reddit]]       badge:[x2]          │ │
+│ │ ⚪ [::] [[forum-esp32-reddit]]       badge:[x2] 🟢       │ │
+│ └──────────────────────────────────────────────────────────┘ │
+│                               ▲                              │
+│                    (Drag & Drop antar Zona)                  │
+│                               ▼                              │
+│ 🟠 UNRESOLVED PHANTOM LINKS (2) [Action Zone - Drop Target]  │
+│ ┌──────────────────────────────────────────────────────────┐ │
+│ │ 🟠 [::] [[driver-ch341-custom]]      badge:[x1] 🟠       │ │
+│ │    (File belum ada) • [📄 Create Note] [🔗 Set URL]      │ │
+│ ├──────────────────────────────────────────────────────────┤ │
+│ │ 🟠 [::] [[sensor-suhu-dht22]]        badge:[x1] 🟠       │ │
+│ │    (File belum ada) • [📄 Create Note] [🔗 Set URL]      │ │
 │ └──────────────────────────────────────────────────────────┘ │
 ```
 
 #### 3. Tampilan Mode `Ungrouped` (Cascading Stream with Post-It Style)
 
-**Ketika Toggle Collapse: ON (Default)**
 ```text
 │ 📜 UNGROUPED STREAM [Filter: All | Collapse: ON | Sort: Pertama]
 │ ├── 🔴 [[esptool.py]]               badge:[x1] Line 3  # PythonCLI
@@ -115,82 +161,58 @@ Panel ini terdaftar sebagai Obsidian Native `ItemView` (`viewType: 'pakcli-depen
 │ ├── 🟡 [[tools/hardware/esp32-s3]]  badge:[x3] Line 12 # DevBoard 
 │ ├── 🟡 [[rules/anti-static-esd]]    badge:[x1] Line 28 # SafetySOP
 │ ├── ⚪ [[sejarah-mikro]]            badge:[x1] Line 35 # History  
-│ └── ⚪ [[forum-esp32-reddit]]       badge:[x2] Line 42 # Forum    
-```
-
----
-
-## 4. Mekanisme Drag & Drop dan Right-Click Synchronization
-
-### A. Drag & Drop via SortableJS
-1. **Container Linking**: Ketiga kotak zona di mode `Grouped` (`.zone-hard`, `.zone-contextual`, `.zone-soft`) dikonfigurasi dalam satu Sortable Group:
-   ```typescript
-   group: 'dependency-triage',
-   animation: 150,
-   handle: '.drag-handle' // Icon [::]
-   ```
-2. **Event `onAdd` Handling**:
-   - Jika item di-drop ke **Zona 🔴 Hard**:
-     Sistem memanggil `app.fileManager.processFrontMatter()` untuk menyisipkan nama file ke array `dependencies: [...]`.
-   - Jika item di-drag keluar dari **Zona 🔴 Hard** (ke Zona 🟡 atau ⚪):
-     Sistem secara otomatis menghapus item dari array frontmatter YAML.
-   - Perubahan tersimpan secara lokal dan otomatis tercermin di file markdown tanpa reload!
-
-### B. Right-Click Context Menu (Obsidian Menu API)
-Setiap kartu link dilengkapi event listener `contextmenu`:
-```typescript
-const menu = new Menu();
-menu.addItem((item) =>
-    item.setTitle('🔴 Move to Hard Dependencies (Write to YAML)')
-        .setIcon('pin')
-        .onClick(() => promoteToHard(linkName))
-);
-menu.addItem((item) =>
-    item.setTitle('🟡 Move to Contextual Tools/Rules')
-        .setIcon('wrench')
-        .onClick(() => moveToContextual(linkName))
-);
-menu.addItem((item) =>
-    item.setTitle('⚪ Move to Soft Mentions')
-        .setIcon('file-text')
-        .onClick(() => demoteToSoft(linkName))
-);
-menu.showAtMouseEvent(evt);
+│ ├── 🟠 [[driver-ch341-custom]]      badge:[x1] Line 42 [Create|URL]
+│ └── 🟠 [[sensor-suhu-dht22]]        badge:[x1] Line 50 [Create|URL]
 ```
 
 ---
 
 ## 5. Fitur Interaksi Kunci
 
-1. **Universal 3-Color Scope Radio Buttons**:
-   - `⚪ Soft` (White): Menyaring hanya link narasi.
+1. **Universal 4-Color Scope Radio Buttons**:
+   - `🔴 Hard` (Red): Menyaring hanya prasyarat mutlak.
    - `🟡 Contextual` (Yellow): Menyaring hanya alat dan aturan.
-   - `🔴 Dependencies` (Red): Menyaring hanya prasyarat mutlak.
-   - `🔘 All`: Menampilkan ketiga grup/warna sekaligus.
-2. **Drag & Drop Triage**:
-   - Pindahkan status dependensi secara visual dengan menyeret kartu antar kotak.
-3. **Right-Click Context Menu**:
-   - Alternatif cepat tanpa drag & drop untuk mengubah tier link.
-4. **🔁 Collapse Repetitive Multiplier Badge**:
+   - `⚪ Soft` (White): Menyaring hanya link narasi.
+   - `🟠 Unresolved` (Orange): Menyaring hanya link gantung yang belum ada filenya.
+   - `🔘 All`: Menampilkan keempat zona sekaligus.
+2. **Hover & Click Quick-Resolve**:
+   - Klik `[📄 Create Note]` langsung membuat file di vault tanpa keluar dari catatan aktif.
+   - Klik `[🔗 Set URL]` langsung mengubah wikilink menjadi tautan web/video.
+3. **Drag & Drop Triage 4 Zona (SortableJS)**:
+   - Pindahkan status dependensi secara visual dengan menyeret kartu antar 4 kotak zona.
+4. **Right-Click Context Menu**:
+   - Alternatif cepat: pindah ke Hard, Contextual, Soft, atau Create Note.
+5. **↩️ Undo / ↪️ Redo Navigation**:
+   - Snapshot history tersimpan hingga 30 aksi terakhir per sesi dengan tombol Undo di header dan toast notification.
+6. **🔁 Collapse Repetitive Multiplier Badge**:
    - Mention ganda digabung menjadi satu kartu dengan badge redup `badge:[x3]`.
-   - Tooltip menampilkan seluruh nomor baris kemunculan di file aktif.
-5. **Direct Integration with Compare Hub**:
-   - Tombol `[⚖️ Send Clean Data to Compare Hub]` di bagian bawah sidepanel mengirimkan data dependensi yang sudah rapi dan ter-triage ke modal perbandingan.
+7. **Direct Integration with Compare Hub**:
+   - Tombol `[⚖️ Send Clean Data to Compare Hub]` di bagian bawah sidepanel mengirimkan data dependensi bersih ke modal perbandingan.
 
 ---
 
 ## 6. Implementation & Verification Gates
 
-- [x] Brief Status 0 diperbarui dengan Universal 3-Color Radio Buttons, Drag & Drop Triage (SortableJS), dan Right-Click Context Menu.
+- [x] Brief Status 0 disempurnakan ke level **4-Tier Grouped View**:
+  - Zona 🟠 **Unresolved** khusus untuk link gantung.
+  - Universal 4-Color Radio Buttons (`All`, `Red`, `Yellow`, `White`, `Orange`).
+  - Hover & Click Action: `[📄 Create Note]` dan `[🔗 Set URL]`.
+  - Atomic Frontmatter Mutation (`processFrontMatter`).
+  - History Manager Undo/Redo Stack (`TriageHistoryEntry`).
 - [ ] Implementasi Triage Engine di `panel/src/features/tierlist/utils/dependency-triage.ts`:
   - `triageDependencies(app, activeFile)`
-  - Deduplikasi `count`, array baris `lines[]`.
-  - Sinkronisasi frontmatter: `pinToFrontmatter()` dan `unpinFromFrontmatter()`.
+  - Pengecekan eksistensi via `metadataCache.getFirstLinkpathDest`.
+  - Pemisahan 4 tier: `hard`, `contextual`, `soft`, `unresolved`.
+- [ ] Implementasi Quick-Resolve Handler di `panel/src/features/tierlist/utils/resolve-handler.ts`:
+  - `createNoteFromLink(app, linkName)`
+  - `convertLinkToUrl(app, activeFile, linkName, url)`
+- [ ] Implementasi History Manager di `panel/src/features/tierlist/utils/triage-history.ts`.
 - [ ] Implementasi View Component `DependencyInspectorView.ts`:
   - Registrasi leaf sidepanel kanan (`viewType: 'pakcli-dependency-inspector'`).
-  - Integrasi SortableJS pada 3 zona triage.
+  - Integrasi SortableJS pada 4 zona triage.
   - Context menu trigger pada item link.
-  - Universal 3-Color radio selector.
-- [ ] Integrasi SCSS: Styling warna ⚪ White, 🟡 Yellow, 🔴 Red, dan badge multiplier redup di `panel/src/styles/dependency-inspector.scss`.
+  - Universal 4-Color radio selector.
+  - Tombol Undo/Redo di header.
+- [ ] Integrasi SCSS di `panel/src/styles/dependency-inspector.scss`.
 - [ ] Verifikasi Build: Jalankan `npm run build` di `panel/` dengan 0 error kompilasi dan ukuran bundle $< 5.0\text{ MB}$.
 - [ ] Update Brief Status ke `1` (Implemented).

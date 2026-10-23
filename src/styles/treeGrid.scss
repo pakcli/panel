@@ -162,10 +162,8 @@
 
     /* Selected line OR hovered line: fully visible */
     .cm-line.is-selected-line &,
-    .cm-line.cm-activeLine &,
-    .cm-line.cm-active &,
-    .cm-line:hover &,
     .pakcli-tree-badges.is-selected &,
+    .cm-line:hover &,
     .pakcli-tree-badges:hover &,
     .pakcli-tree-sticky-line.is-current &,
     .pakcli-tree-sticky-line:hover & {

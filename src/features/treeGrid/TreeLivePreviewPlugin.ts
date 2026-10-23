@@ -668,7 +668,7 @@ function buildDecorations(view: EditorView, plugin: any): DecorationSet {
                 const node = pl.node;
 
                 // 1. Visible line decoration: tag active/selected line for badge visibility
-                const lineCls = isLineSelected ? 'pakcli-tree-line is-selected-line cm-active' : 'pakcli-tree-line';
+                const lineCls = isLineSelected ? 'pakcli-tree-line is-selected-line' : 'pakcli-tree-line';
                 builder.add(
                     bl.from,
                     bl.from,
