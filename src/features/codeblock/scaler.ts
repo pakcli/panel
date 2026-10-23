@@ -2,6 +2,7 @@ import { MarkdownView, Notice } from 'obsidian';
 import { EditorView, ViewPlugin, ViewUpdate } from '@codemirror/view';
 import type PakCLIPlugin from '../../main';
 import { SanitizerEngine } from '../sanitizer';
+import { buildCodeblockPrompt } from './codeblockPromptTemplates';
 
 export interface CodeblockLanguageRule {
 	id: string;
@@ -1471,6 +1472,7 @@ export class CodeblockScaler {
 		const target = (evt.target instanceof Element ? evt.target : (evt.target as Node)?.parentElement) as HTMLElement | null;
 		if (!target || typeof target.closest !== 'function') return;
 		if (target.closest('.suggestion-container, .suggestion, .menu, .modal-container, .prompt')) return;
+		if (target.closest('.pakcli-cb-prompt-btn')) return;
 
 		// Match ANY copy button, flair element, or icon in Live Preview / Reading View
 		const copyBtn = target.closest(
@@ -1584,7 +1586,7 @@ export class CodeblockScaler {
 					break;
 				}
 				const clone = nextLine.cloneNode(true) as HTMLElement;
-				clone.querySelectorAll('.copy-code-button, .pakcli-cb-copy-btn, .code-block-flair, .pakcli-codeblock-flowclip-bar, button').forEach(el => el.remove());
+				clone.querySelectorAll('.copy-code-button, .pakcli-cb-copy-btn, .pakcli-cb-prompt-btn, .code-block-flair, .pakcli-codeblock-flowclip-bar, button').forEach(el => el.remove());
 				codeLines.push(clone.textContent ?? '');
 				nextLine = nextLine.nextElementSibling as HTMLElement | null;
 			}
@@ -1597,7 +1599,7 @@ export class CodeblockScaler {
 				const pre = (container.tagName === 'PRE' ? container : container.querySelector('pre')) as HTMLElement | null;
 				const codeEl = (pre?.querySelector('code') ?? pre ?? container.querySelector('code') ?? container) as HTMLElement;
 				const clone = (codeEl || pre || container).cloneNode(true) as HTMLElement;
-				clone.querySelectorAll('.copy-code-button, .pakcli-cb-copy-btn, .code-block-flair, .code-block-header, .pakcli-codeblock-flowclip-bar, button').forEach((el) => el.remove());
+				clone.querySelectorAll('.copy-code-button, .pakcli-cb-copy-btn, .pakcli-cb-prompt-btn, .code-block-flair, .code-block-header, .pakcli-codeblock-flowclip-bar, button').forEach((el) => el.remove());
 				rawCode = clone.textContent ?? '';
 			}
 		}
@@ -1807,7 +1809,7 @@ export class CodeblockScaler {
 		}
 	}
 
-	/** Injects (or refreshes) a clipboard button on a rendered pre element. */
+	/** Injects (or refreshes) a clipboard button and companion AI prompt button on a rendered pre element. */
 	private injectClipboardButton(pre: HTMLElement, codeEl: HTMLElement): void {
 		const lang = this.getLanguageFromElement(pre, codeEl);
 
@@ -1817,6 +1819,7 @@ export class CodeblockScaler {
 
 		const COPY_ICON = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>`;
 		const SCRIPT_ICON = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>`;
+		const PROMPT_ICON = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z"/><path d="M19 3v4"/><path d="M21 5h-4"/></svg>`;
 
 		// Hide native Obsidian copy button if present so they don't clip or overlap
 		const nativeBtn = pre.querySelector('.copy-code-button') as HTMLElement | null;
@@ -1824,75 +1827,125 @@ export class CodeblockScaler {
 			nativeBtn.style.display = 'none';
 		}
 
-		// If already injected, just refresh icon/title to match current settings
+		if (getComputedStyle(pre).position === 'static') {
+			pre.style.position = 'relative';
+		}
+
+		// 1. Regular Copy Button (.pakcli-cb-copy-btn)
 		const existing = pre.querySelector('.pakcli-cb-copy-btn') as HTMLButtonElement | null;
 		if (existing) {
 			const hasScript = !!script;
 			existing.innerHTML = hasScript ? SCRIPT_ICON : COPY_ICON;
 			existing.title = hasScript ? `Custom ${lang} clipboard action` : 'Copy code';
 			existing.setAttribute('aria-label', hasScript ? `Copy with ${lang} clipboard template` : 'Copy to clipboard');
-			return;
-		}
+		} else {
+			const btn = document.createElement('button');
+			btn.className = 'pakcli-cb-copy-btn';
 
-		const btn = document.createElement('button');
-		btn.className = 'pakcli-cb-copy-btn';
+			const hasScript = !!script;
+			btn.innerHTML = hasScript ? SCRIPT_ICON : COPY_ICON;
+			btn.title = hasScript ? `Custom ${lang} clipboard action` : 'Copy code';
+			btn.setAttribute('aria-label', hasScript ? `Copy with ${lang} clipboard template` : 'Copy to clipboard');
 
-		const hasScript = !!script;
-		btn.innerHTML = hasScript ? SCRIPT_ICON : COPY_ICON;
-		btn.title = hasScript ? `Custom ${lang} clipboard action` : 'Copy code';
-		btn.setAttribute('aria-label', hasScript ? `Copy with ${lang} clipboard template` : 'Copy to clipboard');
+			btn.onclick = async (e) => {
+				e.stopPropagation();
+				const curRules = this.plugin?.settings?.codeblockLanguageRules || [];
+				const curRule = this.findMatchingRule(lang, curRules);
+				const curScript = curRule?.onClipboard?.trim() || '';
 
-		btn.onclick = async (e) => {
-			e.stopPropagation();
-			const curRules = this.plugin?.settings?.codeblockLanguageRules || [];
-			const curRule = this.findMatchingRule(lang, curRules);
-			const curScript = curRule?.onClipboard?.trim() || '';
+				const clone = (codeEl || pre).cloneNode(true) as HTMLElement;
+				clone.querySelectorAll('.copy-code-button, .pakcli-cb-copy-btn, .pakcli-cb-prompt-btn, .code-block-flair, .code-block-header, button').forEach((el) => el.remove());
+				const content = clone.textContent ?? '';
 
-			const clone = (codeEl || pre).cloneNode(true) as HTMLElement;
-			clone.querySelectorAll('.copy-code-button, .pakcli-cb-copy-btn, .code-block-flair, .code-block-header, button').forEach((el) => el.remove());
-			const content = clone.textContent ?? '';
+				let transformed = curScript ? this.transformClipboardContent(content, curScript, lang, curRule?.replaceExisting !== false) : content;
+				const sanitized = this.applyClipboardSanitizer(transformed);
+				if (sanitized.replacementsCount > 0) {
+					transformed = sanitized.text;
+					new Notice(`🛡️ Sanitized ${sanitized.replacementsCount} string(s) in clipboard!`, 2500);
+				}
 
-			let transformed = curScript ? this.transformClipboardContent(content, curScript, lang, curRule?.replaceExisting !== false) : content;
-			const sanitized = this.applyClipboardSanitizer(transformed);
-			if (sanitized.replacementsCount > 0) {
-				transformed = sanitized.text;
-				new Notice(`🛡️ Sanitized ${sanitized.replacementsCount} string(s) in clipboard!`, 2500);
-			}
+				const flash = () => {
+					btn.classList.add('pakcli-cb-copy-btn--done');
+					setTimeout(() => btn.classList.remove('pakcli-cb-copy-btn--done'), 1200);
+				};
 
-			const flash = () => {
-				btn.classList.add('pakcli-cb-copy-btn--done');
-				setTimeout(() => btn.classList.remove('pakcli-cb-copy-btn--done'), 1200);
+				try {
+					this.pendingClipboardTransform = null;
+					if (this.originalClipboardWriteText) {
+						await this.originalClipboardWriteText(transformed);
+					} else {
+						await navigator.clipboard.writeText(transformed);
+					}
+					flash();
+					if (curScript) {
+						new Notice(`[PakCLI] Copied with ${lang} (${this.formatTemplateNoticeLabel(curScript)}) template!`, 2000);
+					}
+				} catch {
+					const ta = document.createElement('textarea');
+					ta.value = transformed;
+					ta.style.position = 'fixed';
+					ta.style.opacity = '0';
+					document.body.appendChild(ta);
+					ta.focus();
+					ta.select();
+					document.execCommand('copy');
+					ta.remove();
+					flash();
+				}
 			};
 
-			try {
-				this.pendingClipboardTransform = null;
-				if (this.originalClipboardWriteText) {
-					await this.originalClipboardWriteText(transformed);
-				} else {
-					await navigator.clipboard.writeText(transformed);
-				}
-				flash();
-				if (curScript) {
-					new Notice(`[PakCLI] Copied with ${lang} (${this.formatTemplateNoticeLabel(curScript)}) template!`, 2000);
-				}
-			} catch {
-				const ta = document.createElement('textarea');
-				ta.value = transformed;
-				ta.style.position = 'fixed';
-				ta.style.opacity = '0';
-				document.body.appendChild(ta);
-				ta.focus();
-				ta.select();
-				document.execCommand('copy');
-				ta.remove();
-				flash();
-			}
-		};
-
-		if (getComputedStyle(pre).position === 'static') {
-			pre.style.position = 'relative';
+			pre.appendChild(btn);
 		}
-		pre.appendChild(btn);
+
+		// 2. Companion AI Prompt Button (.pakcli-cb-prompt-btn)
+		const existingPrompt = pre.querySelector('.pakcli-cb-prompt-btn') as HTMLButtonElement | null;
+		if (existingPrompt) {
+			existingPrompt.title = `Copy AI Prompt (${lang || 'code'})`;
+			existingPrompt.setAttribute('aria-label', `Copy AI Prompt (${lang || 'code'})`);
+		} else {
+			const promptBtn = document.createElement('button');
+			promptBtn.className = 'pakcli-cb-prompt-btn';
+			promptBtn.innerHTML = PROMPT_ICON;
+			promptBtn.title = `Copy AI Prompt (${lang || 'code'})`;
+			promptBtn.setAttribute('aria-label', `Copy AI Prompt (${lang || 'code'})`);
+
+			promptBtn.onclick = async (e) => {
+				e.stopPropagation();
+				const clone = (codeEl || pre).cloneNode(true) as HTMLElement;
+				clone.querySelectorAll('.copy-code-button, .pakcli-cb-copy-btn, .pakcli-cb-prompt-btn, .code-block-flair, .code-block-header, button').forEach((el) => el.remove());
+				const content = clone.textContent ?? '';
+				const promptText = buildCodeblockPrompt(content, lang);
+
+				const flash = () => {
+					promptBtn.classList.add('pakcli-cb-prompt-btn--done');
+					setTimeout(() => promptBtn.classList.remove('pakcli-cb-prompt-btn--done'), 1200);
+				};
+
+				try {
+					if (this.originalClipboardWriteText) {
+						await this.originalClipboardWriteText(promptText);
+					} else {
+						await navigator.clipboard.writeText(promptText);
+					}
+					flash();
+					new Notice(`✨ Copied ${lang || 'code'} AI Prompt to clipboard!`, 2000);
+				} catch {
+					const ta = document.createElement('textarea');
+					ta.value = promptText;
+					ta.style.position = 'fixed';
+					ta.style.opacity = '0';
+					document.body.appendChild(ta);
+					ta.focus();
+					ta.select();
+					document.execCommand('copy');
+					ta.remove();
+					flash();
+					new Notice(`✨ Copied ${lang || 'code'} AI Prompt to clipboard!`, 2000);
+				}
+			};
+
+			pre.appendChild(promptBtn);
+		}
 	}
 
 	private getDocCodeblocks(doc: any): Array<{

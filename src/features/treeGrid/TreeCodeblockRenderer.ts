@@ -21,6 +21,7 @@ import { MarkdownRenderChild, MarkdownPostProcessorContext, MarkdownView, Notice
 import { ParsedTreeGrid, TreeGridColumn, TreeGridNode } from './types';
 import { CopyButton, PillGroup } from '../../uiComponents';
 import { parseTreeGrid, serializeTreeToSource, getMaxCol0Length, getAsciiBranchPrefix, isFileName, getExtension, alignTreeBlockNotes, resolveNoteSpacing } from './treeParser';
+import { buildCodeblockPrompt } from '../codeblock/codeblockPromptTemplates';
 
 export class TreeCodeblockRenderer extends MarkdownRenderChild {
     private source: string;
@@ -186,6 +187,16 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
             cls: 'pakcli-tree-copy-btn',
             tooltip: 'Copy clean formatted tree',
             textGetter: () => this.getPlainTextForCopy(),
+        });
+
+        // ✨ Copy AI Prompt Button inside Top HUD
+        new CopyButton({
+            containerEl: this.topHudEl,
+            cls: 'pakcli-tree-prompt-btn',
+            label: '✨ Prompt',
+            tooltip: 'Copy AI Prompt to scaffold this tree architecture',
+            textGetter: () => buildCodeblockPrompt(this.getPlainTextForCopy(), 'panel-tree'),
+            successMessage: '✨ Copied Tree AI Prompt to clipboard!',
         });
 
         // ⚡ Align # Notes Button inside Top HUD

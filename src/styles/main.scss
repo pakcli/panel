@@ -3543,6 +3543,163 @@ pre:hover .pakcli-cb-copy-btn,
   opacity: 1 !important;
 }
 
+/* Codeblock Companion AI Prompt Button */
+.pakcli-cb-prompt-btn {
+  position: absolute !important;
+  top: 4px !important;
+  right: 38px !important;
+  z-index: 999999 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  width: 26px !important;
+  height: 26px !important;
+  padding: 0 !important;
+  border: 1px solid var(--background-modifier-border) !important;
+  border-radius: 5px !important;
+  background: var(--background-primary) !important;
+  color: var(--text-accent, #6366f1) !important;
+  cursor: pointer !important;
+  opacity: 0;
+  transition: opacity 0.15s ease, color 0.15s ease, background 0.15s ease, border-color 0.15s ease;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.15);
+  overflow: visible !important;
+  pointer-events: auto !important;
+}
+
+pre:hover .pakcli-cb-prompt-btn,
+.cm-line:hover .pakcli-cb-prompt-btn,
+.HyperMD-codeblock:hover .pakcli-cb-prompt-btn {
+  opacity: 1;
+}
+
+.pakcli-cb-prompt-btn:hover {
+  background: var(--background-modifier-hover) !important;
+  color: var(--interactive-accent) !important;
+  border-color: var(--interactive-accent) !important;
+}
+
+.pakcli-cb-prompt-btn svg {
+  width: 14px;
+  height: 14px;
+  display: block !important;
+  pointer-events: none;
+  overflow: visible !important;
+}
+
+.pakcli-cb-prompt-btn--done,
+.pakcli-cb-prompt-btn.is-copied {
+  color: var(--color-green, #4caf50) !important;
+  background: var(--background-modifier-success, rgba(76,175,80,0.1)) !important;
+  border-color: var(--color-green, #4caf50) !important;
+  opacity: 1 !important;
+}
+
+/* Tree Top HUD Prompt Button */
+.pakcli-tree-prompt-btn {
+  margin-left: 4px !important;
+  background: var(--background-secondary) !important;
+  border: 1px solid var(--background-modifier-border) !important;
+  color: var(--text-accent, #6366f1) !important;
+  border-radius: 4px !important;
+  padding: 2px 7px !important;
+  font-size: 11px !important;
+  cursor: pointer !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 3px !important;
+  transition: all 0.15s ease !important;
+
+  &:hover {
+    background: var(--background-modifier-hover) !important;
+    color: var(--text-normal) !important;
+    border-color: var(--interactive-accent) !important;
+  }
+
+  &.is-copied {
+    color: var(--color-green, #4caf50) !important;
+    background: var(--background-modifier-success, rgba(76,175,80,0.1)) !important;
+    border-color: var(--color-green, #4caf50) !important;
+  }
+}
+
+/* Tree Grid Autocomplete Suggestions Popup (.pakcli-tree-suggest-item) */
+.suggestion-item.pakcli-tree-suggest-item {
+  display: flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+  padding: 5px 8px !important;
+  font-family: var(--font-monospace) !important;
+  font-size: 12px !important;
+
+  .tree-suggest-badge {
+    font-size: 10px !important;
+    font-weight: 600 !important;
+    padding: 1px 5px !important;
+    border-radius: 3px !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.5px !important;
+    background: var(--background-modifier-border) !important;
+    color: var(--text-muted) !important;
+    flex-shrink: 0 !important;
+
+    &.badge-directive {
+      background: rgba(99, 102, 241, 0.15) !important;
+      color: #818cf8 !important;
+      border: 1px solid rgba(99, 102, 241, 0.3) !important;
+    }
+
+    &.badge-preset-value {
+      background: rgba(16, 185, 129, 0.15) !important;
+      color: #34d399 !important;
+      border: 1px solid rgba(16, 185, 129, 0.3) !important;
+    }
+
+    &.badge-wikilink {
+      background: rgba(245, 158, 11, 0.15) !important;
+      color: #fbbf24 !important;
+      border: 1px solid rgba(245, 158, 11, 0.3) !important;
+    }
+
+    &.badge-setting {
+      background: rgba(139, 92, 246, 0.15) !important;
+      color: #a78bfa !important;
+      border: 1px solid rgba(139, 92, 246, 0.3) !important;
+    }
+
+    &.badge-starter {
+      background: rgba(59, 130, 246, 0.15) !important;
+      color: #60a5fa !important;
+      border: 1px solid rgba(59, 130, 246, 0.3) !important;
+    }
+  }
+
+  .tree-suggest-content {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 1px !important;
+    overflow: hidden !important;
+    flex: 1 1 auto !important;
+
+    .tree-suggest-label {
+      font-weight: 500 !important;
+      color: var(--text-normal) !important;
+      white-space: nowrap !important;
+      text-overflow: ellipsis !important;
+      overflow: hidden !important;
+    }
+
+    .tree-suggest-detail {
+      font-size: 11px !important;
+      color: var(--text-muted) !important;
+      white-space: nowrap !important;
+      text-overflow: ellipsis !important;
+      overflow: hidden !important;
+      font-family: var(--font-interface) !important;
+    }
+  }
+}
+
 /* ─── Settings: On Clipboard textarea column ─── */
 .pakcli-cb-clip-td {
   padding: 4px 6px;

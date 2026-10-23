@@ -100,7 +100,7 @@ import { VaultHistoryView, VAULT_HISTORY_VIEW_TYPE } from './features/history/Va
 // Tier List Engine (Score & Batch Compare) Imports
 import { TierListManager } from './features/tierlist/TierListManager';
 // Tree Grid Codeblock Renderer
-import { TreeCodeblockRenderer, createTreeLivePreviewPlugin, TreeCascadingManager, isTreeBlockAlias, alignTreeBlockNotes } from './features/treeGrid';
+import { TreeCodeblockRenderer, createTreeLivePreviewPlugin, TreeCascadingManager, isTreeBlockAlias, alignTreeBlockNotes, PanelTreeEditorSuggest } from './features/treeGrid';
 import { CascadingStickyHeaderManager } from './features/stickyHeader';
 
 export default class PakCLITablePlugin extends Plugin {
@@ -771,6 +771,7 @@ export default class PakCLITablePlugin extends Plugin {
 		});
 
 		this.registerEditorSuggest(new TimelineNarrativeEditorSuggest(this.app));
+		this.registerEditorSuggest(new PanelTreeEditorSuggest(this.app, this));
 
 		registerTreeCommands(this);
 
