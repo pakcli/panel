@@ -95,7 +95,7 @@ export class FilesFileSyncTable extends AFileSyncTable {
 
     async onFileCreate(file: TFile): Promise<void> {
         const data = await fileData(this.app, file, extractFrontmatterFromFile(file, this.plugin))
-        const unexistingColumns = Object.keys(data).filter(x => !this.columns.includes(x))
+        const lowerExisting = new Set(this.columns.map(c => c.toLowerCase())); const unexistingColumns = Object.keys(data).filter(x => !lowerExisting.has(x.toLowerCase()))
         if (unexistingColumns.length) {
             await this.db.addColumns(this.tableName, unexistingColumns)
             this.columns = (await this.db.getColumns(this.tableName)) ?? []
