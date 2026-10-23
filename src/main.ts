@@ -1425,7 +1425,8 @@ export default class PakCLITablePlugin extends Plugin {
 					blockLines.push(editor.getLine(l));
 				}
 
-				const aligned = alignTreeBlockNotes(blockLines);
+				const gap = this.settings.treeNoteSpacing || '1';
+				const aligned = alignTreeBlockNotes(blockLines, gap);
 				editor.replaceRange(
 					aligned.join('\n'),
 					{ line: startLine + 1, ch: 0 },
@@ -7172,6 +7173,18 @@ export default class PakCLITablePlugin extends Plugin {
 								if (this.treeCascadingManager) {
 									this.treeCascadingManager.refreshAllViews();
 								}
+							});
+					});
+
+				new Setting(containerEl)
+					.setName('Tree Note Spacing / Ruler Gap')
+					.setDesc('Spacing between longest word and #note (default: 1 space). Accepts a number (e.g. 1, 4) or sentence input (it will calculate word count).')
+					.addText((text) => {
+						text.setPlaceholder('1')
+							.setValue(this.settings.treeNoteSpacing ?? '1')
+							.onChange(async (val) => {
+								this.settings.treeNoteSpacing = val.trim() || '1';
+								await this.saveSettings();
 							});
 					});
 			}

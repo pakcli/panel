@@ -384,10 +384,40 @@ export function serializeTreeToSource(
 }
 
 /**
+ * Resolves note spacing/gap from a number or sentence string.
+ * - Pure number or numeric string (e.g. 1, 4, "4 spaces"): returns the numeric value (min 1).
+ * - Sentence input (e.g. "satu dua tiga"): calculates the word count (min 1).
+ * Default is 1 space (longest word length + 1 space).
+ */
+export function resolveNoteSpacing(input: unknown, defaultGap = 1): number {
+    if (input === undefined || input === null) return defaultGap;
+    if (typeof input === 'number') {
+        return Math.max(1, Math.round(input));
+    }
+    const str = String(input).trim();
+    if (!str) return defaultGap;
+
+    const numMatch = str.match(/^(\d+)/);
+    if (numMatch) {
+        return Math.max(1, parseInt(numMatch[1], 10));
+    }
+
+    const words = str.split(/\s+/).filter((w) => w.length > 0);
+    if (words.length > 0) {
+        return Math.max(1, words.length);
+    }
+
+    return defaultGap;
+}
+
+/**
  * Aligns all "#" comment notes across tree block lines into a uniform vertical column.
+ * - Default spacing: Longest word length + 1 space.
+ * - Supports customGap as a number (e.g. 2, 4) or sentence input (checks word count).
+ * - Also checks in-block metadata (e.g. "-spacing: 4" or "-spacing: word word").
  * Preserves indentation, empty lines, and metadata.
  */
-export function alignTreeBlockNotes(lines: string[]): string[] {
+export function alignTreeBlockNotes(lines: string[], customGap?: unknown): string[] {
     interface LineInfo {
         raw: string;
         isTreeLine: boolean;
@@ -396,6 +426,19 @@ export function alignTreeBlockNotes(lines: string[]): string[] {
         comment: string | null;
         preVisualWidth: number;
     }
+
+    // 1. Detect in-block parameter if customGap is not passed
+    let detectedGap = customGap;
+    if (detectedGap === undefined) {
+        for (const line of lines) {
+            const m = line.trim().match(/^(?:[-#]\s*(?:spacing|gap|note-gap|note-spacing)\s*:\s*)(.+)$/i);
+            if (m) {
+                detectedGap = m[1].trim();
+                break;
+            }
+        }
+    }
+    const gap = resolveNoteSpacing(detectedGap, 1);
 
     const parsedLines: LineInfo[] = [];
     let maxPreWidth = 0;
@@ -462,16 +505,15 @@ export function alignTreeBlockNotes(lines: string[]): string[] {
         return lines;
     }
 
-    // Target column for "#"
-    // At least 4 spaces after longest name in the block, min column 20
-    const targetCol = Math.max(maxPreWidth + 4, 20);
+    // Default spacing: longest word visual width + 1 space (or custom gap)
+    const targetCol = maxPreWidth + gap;
 
     return parsedLines.map((pl) => {
         if (!pl.isTreeLine || pl.comment === null) {
             return pl.raw;
         }
 
-        const spacesCount = Math.max(2, targetCol - pl.preVisualWidth);
+        const spacesCount = Math.max(1, targetCol - pl.preVisualWidth);
         const pad = ' '.repeat(spacesCount);
         return `${pl.indent}${pl.name}${pad}# ${pl.comment}`;
     });

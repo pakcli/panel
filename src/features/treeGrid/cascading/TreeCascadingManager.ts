@@ -103,6 +103,7 @@ export class TreeCascadingManager {
             treeCascadingShowBadges: s.treeCascadingShowBadges !== false,
             treeCascadingShowNoteBadge: s.treeCascadingShowNoteBadge !== false,
             treeCascadingPostItTheme: s.treeCascadingPostItTheme || DEFAULT_TREE_CASCADING_SETTINGS.treeCascadingPostItTheme,
+            treeNoteSpacing: s.treeNoteSpacing || DEFAULT_TREE_CASCADING_SETTINGS.treeNoteSpacing,
         };
     }
 
@@ -973,7 +974,7 @@ export class TreeCascadingManager {
         for (let l = block.startLine + 1; l < block.endLine; l++) {
             blockLines.push(editor.getLine(l));
         }
-        const aligned = alignTreeBlockNotes(blockLines);
+        const aligned = alignTreeBlockNotes(blockLines, this.settings.treeNoteSpacing);
 
         editor.replaceRange(
             aligned.join('\n'),

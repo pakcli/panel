@@ -169,7 +169,8 @@ class TreeBadgesWidget extends WidgetType {
         readonly view: EditorView,
         readonly insertPosProvider: () => number,
         readonly lineInfo: LinePositionInfo,
-        readonly blockInfo: BlockPositionInfo
+        readonly blockInfo: BlockPositionInfo,
+        readonly noteSpacing?: string
     ) {
         super();
     }
@@ -349,7 +350,7 @@ class TreeBadgesWidget extends WidgetType {
                         blockLines.push(l === lineNo ? updatedLine : curText);
                     }
 
-                    const aligned = alignTreeBlockNotes(blockLines);
+                    const aligned = alignTreeBlockNotes(blockLines, this.noteSpacing);
 
                     const blockStartPos = doc.line(this.blockInfo.startLine + 1).from;
                     const blockEndPos = doc.line(this.blockInfo.endLine - 1).to;
@@ -701,6 +702,8 @@ function buildDecorations(view: EditorView, plugin: any): DecorationSet {
                         return info ? info.to : bl.to;
                     };
 
+                    const noteSpacing = plugin?.settings?.treeNoteSpacing || '1';
+
                     builder.add(
                         badgePos,
                         badgePos,
@@ -710,7 +713,8 @@ function buildDecorations(view: EditorView, plugin: any): DecorationSet {
                                 view,
                                 insertPosProvider,
                                 { lineNo: pl.blockLine.lineNo, from: pl.blockLine.from, to: pl.blockLine.to },
-                                { startLine: block.startLine, endLine: block.endLine }
+                                { startLine: block.startLine, endLine: block.endLine },
+                                noteSpacing
                             ),
                             side: 1,
                         })

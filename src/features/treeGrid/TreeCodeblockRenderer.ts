@@ -20,7 +20,7 @@
 import { MarkdownRenderChild, MarkdownPostProcessorContext, MarkdownView, Notice, TFile } from 'obsidian';
 import { ParsedTreeGrid, TreeGridColumn, TreeGridNode } from './types';
 import { CopyButton, PillGroup } from '../../uiComponents';
-import { parseTreeGrid, serializeTreeToSource, getMaxCol0Length, getAsciiBranchPrefix, isFileName, getExtension, alignTreeBlockNotes } from './treeParser';
+import { parseTreeGrid, serializeTreeToSource, getMaxCol0Length, getAsciiBranchPrefix, isFileName, getExtension, alignTreeBlockNotes, resolveNoteSpacing } from './treeParser';
 
 export class TreeCodeblockRenderer extends MarkdownRenderChild {
     private source: string;
@@ -189,15 +189,31 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
         });
 
         // ⚡ Align # Notes Button inside Top HUD
+        const currentGap = resolveNoteSpacing(this.plugin?.settings?.treeNoteSpacing, 1);
         const alignBtn = this.topHudEl.createSpan({
             cls: 'pakcli-tree-hud-btn pakcli-align-btn',
-            text: '⚡ Align # Notes',
-            attr: { title: 'Auto-align all # comments across this tree into a uniform vertical column' },
+            text: `⚡ Align # Notes (${currentGap}sp)`,
+            attr: { title: `Auto-align all # comments across this tree (longest word + ${currentGap} space). Click to format.` },
         });
         alignBtn.addEventListener('click', (e) => {
             e.preventDefault();
             e.stopPropagation();
             this.alignNotesAction();
+        });
+
+        // 📏 Gap / Spacing button (number or sentence word count)
+        const gapBtn = this.topHudEl.createSpan({
+            cls: 'pakcli-tree-hud-btn pakcli-gap-btn',
+            text: `Gap: ${currentGap}`,
+            attr: { title: 'Adjust note spacing: enter number (e.g. 1, 4) or sentence (checks word count)' },
+        });
+        gapBtn.addEventListener('click', async (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const val = prompt('Set note spacing:\nEnter number (e.g. 1, 4) or sentence (word count is used):', String(currentGap));
+            if (val !== null) {
+                await this.alignNotesAction(val);
+            }
         });
 
         // Main Tree Body (relative wrapper for background wires and code lines)
@@ -591,9 +607,10 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
         this.syncChangesToNote();
     }
 
-    public async alignNotesAction(): Promise<void> {
+    public async alignNotesAction(customGap?: unknown): Promise<void> {
+        const gap = customGap ?? this.plugin?.settings?.treeNoteSpacing ?? 1;
         const lines = this.source.split(/\r?\n/);
-        const aligned = alignTreeBlockNotes(lines);
+        const aligned = alignTreeBlockNotes(lines, gap);
         const newSource = aligned.join('\n');
         if (newSource === this.source) {
             new Notice('✓ # Notes are already vertically aligned');
@@ -605,7 +622,8 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
         this.initColumns();
         this.render();
         await this.syncChangesToNote();
-        new Notice('✓ Auto-aligned all # notes');
+        const effectiveGap = resolveNoteSpacing(gap, 1);
+        new Notice(`✓ Auto-aligned all # notes (gap: ${effectiveGap} space)`);
     }
 
     private async syncChangesToNote(): Promise<void> {
