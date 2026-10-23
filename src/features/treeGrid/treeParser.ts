@@ -475,9 +475,12 @@ export function getTreeBlockTargetCol(lines: string[], customGap?: unknown): num
             .trim();
 
         if (cleanName) {
+            const isDir = !isFileName(cleanName);
+            // Reserve at least 12 monospace spaces for folder badges (+File +Folder) so they never overlap the note
+            const spacingNeeded = isDir ? Math.max(gap, 12) : gap;
             const preVisualWidth = indentVisualWidth + cleanName.length;
-            if (preVisualWidth > maxPreWidth) {
-                maxPreWidth = preVisualWidth;
+            if (preVisualWidth + spacingNeeded - gap > maxPreWidth) {
+                maxPreWidth = preVisualWidth + spacingNeeded - gap;
             }
         }
 

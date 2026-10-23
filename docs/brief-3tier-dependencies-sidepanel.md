@@ -12,21 +12,30 @@
 
 Sering kali pengguna merasa terbebani untuk membedakan dependensi teknis mana yang harus dimasukkan ke frontmatter YAML (`dependencies: [...]`) dan mana yang cukup disebut di dalam teks biasa. Jika semua wikilink disedot mentah-mentah, daftar perbandingan (*Compare Hub* & *Venn Diagram*) menjadi penuh sampah (*bloated*).
 
-Fitur ini menghadirkan **3-Tier Dependency Triage Engine** dan **Interactive Right Sidepanel Inspector** dengan **Dual View Modes (`Grouped` vs `Ungrouped`)**, **3 Quick Scope Radio Buttons**, dan **Smart Dropdown Sorter**:
-1. **Menghilangkan Friksi Pengetikan**: Deteksi otomatis link berbasis folder (`/tools/`, `/rules/`, `/workflows/`) dan keberadaan properti `specs`.
-2. **Dual View Presentation**:
-   - 🗂️ **Mode `Grouped`**: Tampilan triage terstruktur dalam 3 tier (Hard, Contextual, Soft).
-   - 📜 **Mode `Ungrouped`**: Tampilan flat cascading stream (mirip layout `panel-tree-postit-cascading`) dengan kontrol radio filter instan.
-3. **3 Radio Buttons Filter (Saat Mode `Ungrouped`)**:
-   - `🔘 All`: Tampilkan semua jenis link (Hard + Contextual + Soft).
-   - `🔘 Essential`: Hanya tampilkan link penting (Hard 🔴 + Contextual 🟡).
-   - `🔘 Hard Only`: Isolasi murni link prasyarat mutlak (Hard 🔴).
-4. **Smart Dropdown Sorter**:
-   - ⏳ *Pertama Mention* (First Mentioned $\rightarrow$ Last Mentioned): Sesuai kronologi urutan baris di teks.
-   - ⌛ *Terakhir Mention* (Reverse Order).
-   - 🔥 *Popular / Frequency*: Link yang paling sering di-mention di dalam dokumen naik ke atas.
-   - 🔤 *A - Z* dan *Z - A*: Urutan abjad.
-5. **1-Klik Promotion (`📌 Pin to Hard`)**: Mengubah link body menjadi dependensi frontmatter YAML seketika tanpa scroll manual.
+Fitur ini menghadirkan **3-Tier Dependency Triage Engine** dan **Interactive Right Sidepanel Inspector** dengan **Universal 3-Color Scope Radio Buttons**, **Drag & Drop Triage**, **Right-Click Context Menu**, **Dual View Modes (`Grouped` vs `Ungrouped`)**, dan **Collapse Repetitive Multiplier**:
+
+1. **Universal 3-Color Column Radio Buttons**:
+   - Selalu tampil dan aktif baik di mode **`Grouped`** maupun **`Ungrouped`**.
+   - ⚪ **Soft Mention (White / Slate)**: Link sebutan narasi biasa.
+   - 🟡 **Contextual (Yellow / Amber)**: Alat/aturan fungsional ber-specs.
+   - 🔴 **Dependencies (Red / Rose)**: Hard prasyarat mutlak di YAML frontmatter.
+   - `🔘 All`: Pilihan default untuk melihat keseluruhan.
+2. **Drag & Drop Triage (Khusus Mode `Grouped`)**:
+   - Menggunakan library bawaan `SortableJS` (yang sudah terpasang di modul Tierlist).
+   - Pengguna bisa **menyeret kartu link (Drag & Drop)** dari zona ⚪ Soft $\rightarrow$ 🟡 Contextual $\rightarrow$ 🔴 Hard (Dependencies).
+   - Menyeret kartu ke zona 🔴 **Hard otomatis menuliskan link ke frontmatter YAML** di file markdown secara instan!
+   - Menyeret keluar dari 🔴 **Hard otomatis menghapusnya dari YAML**.
+3. **Right-Click Context Menu**:
+   - Klik kanan pada kartu/item mana saja memunculkan menu instan:
+     - 🔴 *Move to Hard Dependencies (Pin to YAML)*
+     - 🟡 *Move to Contextual Tools/Rules*
+     - ⚪ *Demote to Soft Mention*
+     - 📄 *Open Note in New Tab / Split*
+4. **🔁 Collapse Repetitive Toggle**:
+   - Mode `Collapsed (ON)`: Menyatukan link yang disebut berulang kali menjadi 1 baris dengan badge multiplier redup (`badge:[x3]`).
+   - Mode `Uncollapsed (OFF)`: Menampilkan setiap baris kemunculan sesuai urutan teks.
+5. **Smart Dropdown Sorter**:
+   - ⏳ *Pertama Mention* (First $\rightarrow$ Last), ⌛ *Terakhir Mention*, 🔥 *Popular / Frequency*, 🔤 *A-Z / Z-A*.
 
 ---
 
@@ -34,133 +43,154 @@ Fitur ini menghadirkan **3-Tier Dependency Triage Engine** dan **Interactive Rig
 
 Semua data tersimpan secara alami di dalam satu file Markdown lokal tanpa database eksternal:
 
-| Kategori | Lokasi Penyimpanan Fisik di `.md` | Logika Identifikasi Otomatis oleh Panel | Peran di Compare Hub |
+| Kategori & Warna | Lokasi Penyimpanan Fisik di `.md` | Logika Identifikasi Otomatis | Peran di Compare Hub |
 | :--- | :--- | :--- | :--- |
-| **🔴 Hard Dependency** | **Frontmatter YAML** (`dependencies: [...]`) | Tertulis eksplisit di blok metadata atas, ATAU dinaikkan melalui tombol `[Pin to Hard]`. | **Mutlak/Prasyarat Utama**: Masuk ke baris tabel perbandingan & simpul utama Venn. |
-| **🟡 Contextual Dependency** | **Body Teks Markdown** (`[[wikilink]]` biasa) | Link menunjuk ke folder `/tools/`, `/rules/`, `/workflows/`, **ATAU** note target memiliki properti `specs` terstruktur. | **Fungsional / Alat**: Masuk sebagai pelengkap komparasi alat & aturan SOP. |
-| **⚪ Soft Mention** | **Body Teks Markdown** (`[[wikilink]]` biasa) | Link menunjuk ke catatan umum tanpa spesifikasi teknis (hanya artikel narasi/sejarah/referensi sampingan). | **Diabaikan dari Compare**: Hanya tampil di daftar referensi sampingan (collapsed). |
+| 🔴 **Dependencies** *(Red / Rose)* | **Frontmatter YAML** (`dependencies: [...]`) | Tertulis di blok metadata atas, ATAU diseret (dragged) / di-pin ke zona Red. | **Mutlak / Prasyarat Utama**: Masuk ke baris perbandingan & simpul utama Venn. |
+| 🟡 **Contextual** *(Yellow / Amber)* | **Body Teks Markdown** (`[[wikilink]]` biasa) | Link menunjuk ke `/tools/`, `/rules/`, `/workflows/`, atau note target punya `specs`. | **Alat & SOP Fungsional**: Melengkapi perbandingan alat di Compare Hub. |
+| ⚪ **Soft Mention** *(White / Gray)* | **Body Teks Markdown** (`[[wikilink]]` biasa) | Link catatan umum tanpa spesifikasi teknis (hanya sebutan narasi). | **Diabaikan dari Compare**: Hanya tampil sebagai referensi sampingan. |
 
 ---
 
-## 3. Alur Kerja Logika & Decision Tree
-
-```mermaid
-flowchart TD
-    Start["Ekstrak Seluruh Link Catatan Aktif"] --> Q1{"Apakah link tercatat di frontmatter 'dependencies:'?"}
-    
-    Q1 -->|YA| Hard["🔴 HARD DEPENDENCY<br/>- Status: Blocking / Prasyarat<br/>- Tersimpan di: Frontmatter"]
-    Q1 -->|TIDAK| Q2{"Periksa Target Link:<br/>1. Berada di /tools/, /rules/, /workflows/?<br/>ATAU<br/>2. Note target memiliki atribut 'specs'?"}
-    
-    Q2 -->|YA| Contextual["🟡 CONTEXTUAL DEPENDENCY<br/>- Status: Functional Tool / Rule<br/>- Tersimpan di: Body Wikilink"]
-    Q2 -->|TIDAK| Soft["⚪ SOFT MENTION<br/>- Status: Context Only / Non-blocking<br/>- Tersimpan di: Body Wikilink"]
-    
-    Contextual --> Action1["Tombol Action: [📌 Pin as Hard]<br/>(Menulis otomatis ke YAML)"]
-    Action1 --> Hard
-```
-
----
-
-## 4. Desain UI/UX: Interactive Right Sidepanel
+## 3. Desain UI/UX: Interactive Right Sidepanel
 
 Panel ini terdaftar sebagai Obsidian Native `ItemView` (`viewType: 'pakcli-dependency-inspector'`) dan selalu sinkron dengan catatan aktif (`active-leaf-change`).
 
 ### A. Desktop Right Sidepanel Wireframe
 
-#### 1. Header Toolbar (Mode Switcher + Sorter)
+#### 1. Header Toolbar & Universal 3-Color Radio Buttons
 ```text
-┌─────────────────────────────────────────────────────────┐
-│ 🧭 DEPENDENCY INSPECTOR                                 │
-│ File: esp32-firmware-flash.md                           │
-├─────────────────────────────────────────────────────────┤
-│ [ 🗂️ Grouped | 📜 Ungrouped ]   ▼ [ ⏳ Pertama Mention ]│
-│                                                         │
-│ (Jika Ungrouped Aktif, Muncul 3 Radio Buttons):        │
-│ (•) All (7)      ( ) Essential (4)      ( ) Hard (2)    │
-│                                                         │
-│ 🔍 [ Cari link...                                     ] │
-├─────────────────────────────────────────────────────────┤
+┌──────────────────────────────────────────────────────────────┐
+│ 🧭 DEPENDENCY INSPECTOR                                      │
+│ File: esp32-firmware-flash.md                                │
+├──────────────────────────────────────────────────────────────┤
+│ [ 🗂️ Grouped | 📜 Ungrouped ]   [ 🔁 Collapse Repetitive: ON ]│
+│ Dropdown Sorter: [ ⏳ Pertama Mention ▼                     ]│
+│                                                              │
+│ Scope Filter Radio Buttons (Aktif di Grouped & Ungrouped):   │
+│ (•) All   ( ) ⚪ Soft (2)   ( ) 🟡 Contextual (3)   ( ) 🔴 Hard (2) │
+│                                                              │
+│ 🔍 [ Cari link...                                          ] │
+├──────────────────────────────────────────────────────────────┤
 ```
 
-#### 2. Tampilan Mode `Grouped` (Triage View)
+#### 2. Tampilan Mode `Grouped` (Drag & Drop + Right Click)
 ```text
-│ 🔴 HARD DEPENDENCIES (2) [Frontmatter]                  │
-│ ┌─────────────────────────────────────────────────────┐ │
-│ │ 🔴 [[esptool.py]]                                  │ │
-│ │    Runtime • Python Package                         │ │
-│ │    [Unpin ✖]                                       │ │
-│ ├─────────────────────────────────────────────────────┤ │
-│ │ 🔴 [[kabel-data-3.3v]]                              │ │
-│ │    Hardware • USB-C Data Cable                      │ │
-│ │    [Unpin ✖]                                       │ │
-│ └─────────────────────────────────────────────────────┘ │
-│                                                         │
-│ 🟡 CONTEXTUAL TOOLS & RULES (2) [Has Specs]             │
-│ ┌─────────────────────────────────────────────────────┐ │
-│ │ 🛠️ [[tools/hardware/esp32-s3]]                      │ │
-│ │    Specs: Xtensa Dual-Core, 3.3V Logic              │ │
-│ │    Line 12 • [📌 Pin as Hard]                      │ │
-│ ├─────────────────────────────────────────────────────┤ │
-│ │ 📜 [[rules/anti-static-esd]]                        │ │
-│ │    Rule: Warning (Gunakan Gelang ESD)               │ │
-│ │    Line 28 • [📌 Pin as Hard]                      │ │
-│ └─────────────────────────────────────────────────────┘ │
-│                                                         │
-│ ▷ ⚪ SOFT MENTIONS (2) [Narrative Only - Collapsed]     │
-│   • [[sejarah-mikrokontroler]] (Line 35)                │
-│   • [[forum-esp32-reddit]] (Line 42)                    │
+│ 🔴 HARD DEPENDENCIES (2) [Frontmatter Zone - Drop Target]    │
+│ ┌──────────────────────────────────────────────────────────┐ │
+│ │ 🔴 [::] [[esptool.py]]          badge:[x1]  [Right-click]│ │
+│ │    Runtime • Python Package                              │ │
+│ ├──────────────────────────────────────────────────────────┤ │
+│ │ 🔴 [::] [[kabel-data-3.3v]]     badge:[x1]  [Right-click]│ │
+│ │    Hardware • USB-C Data Cable                           │ │
+│ └──────────────────────────────────────────────────────────┘ │
+│                               ▲                              │
+│                    (Drag & Drop antar Zona)                  │
+│                               ▼                              │
+│ 🟡 CONTEXTUAL TOOLS & RULES (2) [Has Specs - Drop Target]    │
+│ ┌──────────────────────────────────────────────────────────┐ │
+│ │ 🟡 [::] [[tools/hardware/esp32-s3]]  badge:[x3]          │ │
+│ │    Specs: Xtensa Dual-Core, 3.3V Logic                   │ │
+│ ├──────────────────────────────────────────────────────────┤ │
+│ │ 🟡 [::] [[rules/anti-static-esd]]    badge:[x1]          │ │
+│ │    Rule: Warning (Gunakan Gelang ESD)                    │ │
+│ └──────────────────────────────────────────────────────────┘ │
+│                               ▲                              │
+│                    (Drag & Drop antar Zona)                  │
+│                               ▼                              │
+│ ⚪ SOFT MENTIONS (2) [Narrative Only - Drop Target]          │
+│ ┌──────────────────────────────────────────────────────────┐ │
+│ │ ⚪ [::] [[sejarah-mikrokontroler]]   badge:[x1]          │ │
+│ ├──────────────────────────────────────────────────────────┤ │
+│ │ ⚪ [::] [[forum-esp32-reddit]]       badge:[x2]          │ │
+│ └──────────────────────────────────────────────────────────┘ │
 ```
 
 #### 3. Tampilan Mode `Ungrouped` (Cascading Stream with Post-It Style)
+
+**Ketika Toggle Collapse: ON (Default)**
 ```text
-│ 📜 UNGROUPED STREAM [Filter: Essential | Sort: Pertama] │
-│ ├── 🔴 [[esptool.py]]             Line 3   # Python CLI │
-│ ├── 🔴 [[kabel-data-3.3v]]        Line 5   # Hardware   │
-│ ├── 🟡 [[tools/hardware/esp32-s3]] Line 12  # DevBoard   │
-│ └── 📜 [[rules/anti-static-esd]]  Line 28  # SafetySOP  │
-│                                                         │
-│ (Soft mentions disembunyikan karena radio: Essential)   │
-├─────────────────────────────────────────────────────────┤
-│ [ ⚖️ Send Clean Data to Compare Hub ]                   │
-└─────────────────────────────────────────────────────────┘
+│ 📜 UNGROUPED STREAM [Filter: All | Collapse: ON | Sort: Pertama]
+│ ├── 🔴 [[esptool.py]]               badge:[x1] Line 3  # PythonCLI
+│ ├── 🔴 [[kabel-data-3.3v]]          badge:[x1] Line 5  # Hardware 
+│ ├── 🟡 [[tools/hardware/esp32-s3]]  badge:[x3] Line 12 # DevBoard 
+│ ├── 🟡 [[rules/anti-static-esd]]    badge:[x1] Line 28 # SafetySOP
+│ ├── ⚪ [[sejarah-mikro]]            badge:[x1] Line 35 # History  
+│ └── ⚪ [[forum-esp32-reddit]]       badge:[x2] Line 42 # Forum    
+```
+
+---
+
+## 4. Mekanisme Drag & Drop dan Right-Click Synchronization
+
+### A. Drag & Drop via SortableJS
+1. **Container Linking**: Ketiga kotak zona di mode `Grouped` (`.zone-hard`, `.zone-contextual`, `.zone-soft`) dikonfigurasi dalam satu Sortable Group:
+   ```typescript
+   group: 'dependency-triage',
+   animation: 150,
+   handle: '.drag-handle' // Icon [::]
+   ```
+2. **Event `onAdd` Handling**:
+   - Jika item di-drop ke **Zona 🔴 Hard**:
+     Sistem memanggil `app.fileManager.processFrontMatter()` untuk menyisipkan nama file ke array `dependencies: [...]`.
+   - Jika item di-drag keluar dari **Zona 🔴 Hard** (ke Zona 🟡 atau ⚪):
+     Sistem secara otomatis menghapus item dari array frontmatter YAML.
+   - Perubahan tersimpan secara lokal dan otomatis tercermin di file markdown tanpa reload!
+
+### B. Right-Click Context Menu (Obsidian Menu API)
+Setiap kartu link dilengkapi event listener `contextmenu`:
+```typescript
+const menu = new Menu();
+menu.addItem((item) =>
+    item.setTitle('🔴 Move to Hard Dependencies (Write to YAML)')
+        .setIcon('pin')
+        .onClick(() => promoteToHard(linkName))
+);
+menu.addItem((item) =>
+    item.setTitle('🟡 Move to Contextual Tools/Rules')
+        .setIcon('wrench')
+        .onClick(() => moveToContextual(linkName))
+);
+menu.addItem((item) =>
+    item.setTitle('⚪ Move to Soft Mentions')
+        .setIcon('file-text')
+        .onClick(() => demoteToSoft(linkName))
+);
+menu.showAtMouseEvent(evt);
 ```
 
 ---
 
 ## 5. Fitur Interaksi Kunci
 
-1. **Dual View Switcher (`Grouped` vs `Ungrouped`)**:
-   - `Grouped`: Mengelompokkan item ke dalam kotak accordion per tier.
-   - `Ungrouped`: Mengalirkan seluruh item dalam satu stream pohon hirarki linear.
-2. **3 Radio Buttons Scope (Khusus Mode Ungrouped)**:
-   - **`🔘 All`**: Menampilkan seluruh wikilink tanpa terkecuali.
-   - **`🔘 Essential`**: Memotong soft mentions, hanya menampilkan alat dan aturan operasional (🔴 + 🟡).
-   - **`🔘 Hard Only`**: Hanya menampilkan dependensi mutlak yang ada di YAML (🔴).
-3. **Dropdown Sorter 4 Pilihan**:
-   - `⏳ Pertama Mention`: Berdasarkan baris terkecil (`link.position.start.line`).
-   - `⌛ Terakhir Mention`: Berdasarkan baris terbesar (kebalikan).
-   - `🔥 Popular (Frequency)`: Berdasarkan jumlah kali link disebut di dalam teks (`count`).
-   - `🔤 A-Z / Z-A`: Alfabetis berdasarkan nama file link.
-4. **1-Klik Pinning / Unpinning**:
-   - Tombol `[📌 Pin as Hard]` otomatis menyisipkan item ke blok frontmatter `dependencies: [...]`.
-   - Tombol `[✖ Unpin]` menghapus item dari frontmatter dan mengembalikannya ke status kontekstual.
-5. **Mobile Responsiveness**:
-   - Mendukung gesture pull drawer dari tepi kanan atau bottom sheet di Obsidian Mobile.
-   - Radio buttons berbentuk touch-friendly segmented chips.
+1. **Universal 3-Color Scope Radio Buttons**:
+   - `⚪ Soft` (White): Menyaring hanya link narasi.
+   - `🟡 Contextual` (Yellow): Menyaring hanya alat dan aturan.
+   - `🔴 Dependencies` (Red): Menyaring hanya prasyarat mutlak.
+   - `🔘 All`: Menampilkan ketiga grup/warna sekaligus.
+2. **Drag & Drop Triage**:
+   - Pindahkan status dependensi secara visual dengan menyeret kartu antar kotak.
+3. **Right-Click Context Menu**:
+   - Alternatif cepat tanpa drag & drop untuk mengubah tier link.
+4. **🔁 Collapse Repetitive Multiplier Badge**:
+   - Mention ganda digabung menjadi satu kartu dengan badge redup `badge:[x3]`.
+   - Tooltip menampilkan seluruh nomor baris kemunculan di file aktif.
+5. **Direct Integration with Compare Hub**:
+   - Tombol `[⚖️ Send Clean Data to Compare Hub]` di bagian bawah sidepanel mengirimkan data dependensi yang sudah rapi dan ter-triage ke modal perbandingan.
 
 ---
 
 ## 6. Implementation & Verification Gates
 
-- [x] Brief Status 0 diperbarui dengan Dual View Mode, 3 Radio Buttons, dan Dropdown Sorter.
+- [x] Brief Status 0 diperbarui dengan Universal 3-Color Radio Buttons, Drag & Drop Triage (SortableJS), dan Right-Click Context Menu.
 - [ ] Implementasi Triage Engine di `panel/src/features/tierlist/utils/dependency-triage.ts`:
   - `triageDependencies(app, activeFile)`
-  - Sorting logic: `byFirstMention`, `byLastMention`, `byFrequency`, `byAlpha`.
-  - Radio filtering: `all`, `essential`, `hardOnly`.
+  - Deduplikasi `count`, array baris `lines[]`.
+  - Sinkronisasi frontmatter: `pinToFrontmatter()` dan `unpinFromFrontmatter()`.
 - [ ] Implementasi View Component `DependencyInspectorView.ts`:
   - Registrasi leaf sidepanel kanan (`viewType: 'pakcli-dependency-inspector'`).
-  - Switcher tab `Grouped` vs `Ungrouped`.
-  - Radio button group component.
-  - Handler tombol interaktif `pinToFrontmatter()` dan `unpinFromFrontmatter()`.
-- [ ] Integrasi visual tree cascading (mengadopsi styling `panel-tree-postit-cascading`).
+  - Integrasi SortableJS pada 3 zona triage.
+  - Context menu trigger pada item link.
+  - Universal 3-Color radio selector.
+- [ ] Integrasi SCSS: Styling warna ⚪ White, 🟡 Yellow, 🔴 Red, dan badge multiplier redup di `panel/src/styles/dependency-inspector.scss`.
 - [ ] Verifikasi Build: Jalankan `npm run build` di `panel/` dengan 0 error kompilasi dan ukuran bundle $< 5.0\text{ MB}$.
 - [ ] Update Brief Status ke `1` (Implemented).
