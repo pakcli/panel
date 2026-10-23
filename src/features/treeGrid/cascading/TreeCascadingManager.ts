@@ -30,7 +30,13 @@ interface TreeCascadingSession {
     barEl: HTMLElement;
     boundScrollEl: HTMLElement | null;
     scrollListener: (() => void) | null;
+    captureListener: (() => void) | null;
     lastChainKey: string;
+    cachedDoc?: any;
+    cachedMtime?: number;
+    cachedTreeBlocks?: ParsedBlockTree[];
+    cachedTopPx?: number;
+    lastTopCheck?: number;
 }
 
 interface ParsedBlockTree {
@@ -120,6 +126,9 @@ export class TreeCascadingManager {
             if (!view.containerEl.isConnected) {
                 this.destroySession(session);
                 this.sessions.delete(view);
+            } else {
+                session.cachedTopPx = undefined;
+                session.lastTopCheck = 0;
             }
         }
 
@@ -152,18 +161,19 @@ export class TreeCascadingManager {
             barEl.style.display = 'none';
             view.contentEl.prepend(barEl);
 
+            // Capture-phase scroll listener on view.contentEl guarantees ALL inner scroll events trigger update
+            const captureListener = () => this.scheduleUpdate(view);
+            view.contentEl.addEventListener('scroll', captureListener, { capture: true, passive: true });
+
             session = {
                 view,
                 barEl,
                 boundScrollEl: null,
                 scrollListener: null,
+                captureListener,
                 lastChainKey: '',
             };
             this.sessions.set(view, session);
-
-            // Capture-phase scroll listener on view.contentEl guarantees ALL inner scroll events trigger update
-            const captureListener = () => this.scheduleUpdate(view);
-            view.contentEl.addEventListener('scroll', captureListener, { capture: true, passive: true });
         }
 
         this.bindScrollListener(view, session);
@@ -229,15 +239,23 @@ export class TreeCascadingManager {
             return;
         }
 
-        const fileContent = editor.getValue();
-        const treeBlocks = this.parseAllTreeBlocks(fileContent);
-        if (treeBlocks.length === 0) {
-            this.hideBar(session);
-            return;
-        }
-
         const mode = view.getMode();
+        let treeBlocks: ParsedBlockTree[];
+
         if (mode === 'preview') {
+            const mtime = view.file.stat?.mtime ?? 0;
+            if (session.cachedMtime === mtime && session.cachedTreeBlocks) {
+                treeBlocks = session.cachedTreeBlocks;
+            } else {
+                const fileContent = editor.getValue();
+                session.cachedTreeBlocks = this.parseAllTreeBlocks(fileContent);
+                session.cachedMtime = mtime;
+                treeBlocks = session.cachedTreeBlocks;
+            }
+            if (treeBlocks.length === 0) {
+                this.hideBar(session);
+                return;
+            }
             this.updateReadingView(view, session, treeBlocks);
             return;
         }
@@ -245,6 +263,20 @@ export class TreeCascadingManager {
         const scroller = view.contentEl.querySelector('.cm-scroller') as HTMLElement | null;
         const cm = this.getEditorView(view);
         if (!scroller || !cm || !cm.state?.doc || typeof cm.lineBlockAt !== 'function') {
+            this.hideBar(session);
+            return;
+        }
+
+        // Cache parsed tree blocks against cm.state.doc rope instance (zero string allocations or regex re-scans on scroll)
+        if (session.cachedDoc === cm.state.doc && session.cachedTreeBlocks) {
+            treeBlocks = session.cachedTreeBlocks;
+        } else {
+            session.cachedDoc = cm.state.doc;
+            session.cachedTreeBlocks = this.parseAllTreeBlocks(cm.state.doc.toString());
+            treeBlocks = session.cachedTreeBlocks;
+        }
+
+        if (treeBlocks.length === 0) {
             this.hideBar(session);
             return;
         }
@@ -304,14 +336,40 @@ export class TreeCascadingManager {
             return;
         }
 
-        // 2. Find the current deepest active node scrolling past anchorY
+        // 2. Find the current deepest active node scrolling past anchorY in O(1) or O(log N)
         let firstLineAtOrBelowAnchor = activeBlock.endLine;
-        for (let l = rootLine; l <= activeBlock.endLine; l++) {
-            const docLine = Math.max(1, Math.min(totalDocLines, l + 1));
-            const lb = cm.lineBlockAt(cm.state.doc.line(docLine).from);
-            if (docTop + lb.bottom > anchorY) {
-                firstLineAtOrBelowAnchor = l;
-                break;
+        let resolvedViaHeight = false;
+
+        if (typeof cm.lineBlockAtHeight === 'function') {
+            try {
+                const targetHeight = Math.max(0, anchorY - docTop);
+                const lb = cm.lineBlockAtHeight(targetHeight);
+                if (lb) {
+                    const docLine = cm.state.doc.lineAt(lb.from).number; // 1-indexed
+                    const lineIdx = docLine - 1; // 0-indexed
+                    if (lineIdx >= rootLine && lineIdx <= activeBlock.endLine) {
+                        firstLineAtOrBelowAnchor = lineIdx;
+                        resolvedViaHeight = true;
+                    }
+                }
+            } catch {
+                resolvedViaHeight = false;
+            }
+        }
+
+        if (!resolvedViaHeight) {
+            let low = rootLine;
+            let high = activeBlock.endLine;
+            while (low <= high) {
+                const mid = (low + high) >> 1;
+                const docLine = Math.max(1, Math.min(totalDocLines, mid + 1));
+                const lb = cm.lineBlockAt(cm.state.doc.line(docLine).from);
+                if (docTop + lb.bottom > anchorY) {
+                    firstLineAtOrBelowAnchor = mid;
+                    high = mid - 1;
+                } else {
+                    low = mid + 1;
+                }
             }
         }
 
@@ -870,6 +928,12 @@ export class TreeCascadingManager {
     }
 
     private updateBarVerticalPosition(session: TreeCascadingSession, view: MarkdownView): void {
+        const now = Date.now();
+        if (session.cachedTopPx !== undefined && session.lastTopCheck && (now - session.lastTopCheck < 150)) {
+            return;
+        }
+        session.lastTopCheck = now;
+
         const contentRect = view.contentEl.getBoundingClientRect();
         const headingBar = view.contentEl.querySelector('.pakcli-cascading-sticky-bar') as HTMLElement | null;
 
@@ -889,7 +953,10 @@ export class TreeCascadingManager {
             }
         }
 
-        session.barEl.style.top = `${topPx}px`;
+        if (session.cachedTopPx !== topPx) {
+            session.cachedTopPx = topPx;
+            session.barEl.style.top = `${topPx}px`;
+        }
     }
 
     private insertChildNode(
@@ -1109,10 +1176,18 @@ export class TreeCascadingManager {
     private destroySession(session: TreeCascadingSession): void {
         if (session.boundScrollEl && session.scrollListener) {
             session.boundScrollEl.removeEventListener('scroll', session.scrollListener);
+            session.boundScrollEl = null;
+            session.scrollListener = null;
+        }
+        if (session.captureListener) {
+            session.view.contentEl.removeEventListener('scroll', session.captureListener, { capture: true });
+            session.captureListener = null;
         }
         if (session.barEl && session.barEl.parentNode) {
             session.barEl.remove();
         }
+        session.cachedDoc = null;
+        session.cachedTreeBlocks = undefined;
     }
 }
 

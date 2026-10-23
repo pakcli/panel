@@ -1033,10 +1033,7 @@ export function createTreeLivePreviewPlugin(plugin: Plugin): Extension[] {
                 try {
                     if (
                         update.docChanged ||
-                        update.viewportChanged ||
                         update.selectionSet ||
-                        update.geometryChanged ||
-                        update.heightChanged ||
                         this.lastCollapsedVersion !== collapsedVersion
                     ) {
                         this.lastCollapsedVersion = collapsedVersion;

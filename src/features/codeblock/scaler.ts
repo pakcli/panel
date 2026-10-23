@@ -30,19 +30,27 @@ export interface CodeblockLanguageRule {
 export function createCodeblockLivePreviewPlugin(scaler: CodeblockScaler) {
 	return ViewPlugin.fromClass(
 		class {
+			private rafPending = false;
 			constructor(view: EditorView) {
 				scaler.processContainer(view.dom, view);
 			}
 			update(update: ViewUpdate) {
-				if (
-					update.docChanged ||
+				if (update.docChanged) {
+					scaler.processContainer(update.view.dom, update.view);
+				} else if (
 					update.viewportChanged ||
 					update.geometryChanged ||
 					update.heightChanged ||
 					update.focusChanged ||
 					update.selectionSet
 				) {
-					scaler.processContainer(update.view.dom, update.view);
+					if (!this.rafPending) {
+						this.rafPending = true;
+						requestAnimationFrame(() => {
+							this.rafPending = false;
+							scaler.processContainer(update.view.dom, update.view);
+						});
+					}
 				}
 			}
 		}
