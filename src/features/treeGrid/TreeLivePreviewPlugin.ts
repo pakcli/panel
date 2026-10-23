@@ -162,7 +162,7 @@ class TreeBadgesWidget extends WidgetType {
     }
 
     eq(other: TreeBadgesWidget): boolean {
-        return false;
+        return this.folder.id === other.folder.id;
     }
 
     toDOM(): HTMLElement {
@@ -180,13 +180,17 @@ class TreeBadgesWidget extends WidgetType {
         folderBadge.textContent = '+Folder';
         folderBadge.title = `Add folder inside ${this.folder.name}`;
 
+        let isClosing = false;
         const restoreBadges = () => {
+            if (isClosing) return;
+            isClosing = true;
             container.empty();
             container.appendChild(fileBadge);
             container.appendChild(folderBadge);
         };
 
         const activateInput = (isFolderType: boolean) => {
+            isClosing = false;
             container.empty();
 
             const input = document.createElement('input');
@@ -196,13 +200,8 @@ class TreeBadgesWidget extends WidgetType {
             container.appendChild(input);
             input.focus();
 
-            let committed = false;
-            const commit = () => {
-                if (committed) return;
-                committed = true;
+            const handleCommit = (shouldKeepOpen: boolean) => {
                 const val = input.value.trim();
-                restoreBadges();
-
                 if (val) {
                     try {
                         const folderPath = getFolderPath(this.folder);
@@ -216,16 +215,34 @@ class TreeBadgesWidget extends WidgetType {
                         const textToInsert = '\n' + childIndent + val;
 
                         const insertPos = this.insertPosProvider();
+                        const scroller = this.view.scrollDOM;
+                        const savedScrollTop = scroller ? scroller.scrollTop : null;
 
                         this.view.dispatch({
                             changes: { from: insertPos, insert: textToInsert },
-                            selection: { anchor: insertPos + textToInsert.length },
                         });
-                        this.view.focus();
+
+                        if (scroller && savedScrollTop !== null) {
+                            scroller.scrollTop = savedScrollTop;
+                        }
+
                         new Notice(`✓ Added ${isFolderType ? 'folder' : 'file'} ${val}`);
+
+                        if (shouldKeepOpen) {
+                            input.value = '';
+                            input.focus();
+                            input.select();
+                        } else {
+                            restoreBadges();
+                            this.view.focus();
+                        }
                     } catch (err) {
                         console.warn('[PakCLI Tree] Failed to insert item:', err);
+                        restoreBadges();
                     }
+                } else {
+                    restoreBadges();
+                    this.view.focus();
                 }
             };
 
@@ -233,11 +250,10 @@ class TreeBadgesWidget extends WidgetType {
                 if (e.key === 'Enter') {
                     e.preventDefault();
                     e.stopPropagation();
-                    commit();
+                    handleCommit(true);
                 } else if (e.key === 'Escape') {
                     e.preventDefault();
                     e.stopPropagation();
-                    committed = true;
                     restoreBadges();
                     this.view.focus();
                 }
@@ -245,9 +261,8 @@ class TreeBadgesWidget extends WidgetType {
 
             input.addEventListener('blur', () => {
                 setTimeout(() => {
-                    if (!committed) {
-                        restoreBadges();
-                    }
+                    if (isClosing) return;
+                    handleCommit(false);
                 }, 100);
             });
         };
@@ -289,7 +304,7 @@ function buildDecorations(view: EditorView, plugin: any): DecorationSet {
         }
 
         const rawAliases = plugin?.settings?.panelTreeAliases || 'panel-tree, panel-tree-cascading, tree-cascading, panel-tree-structure, tree-structure';
-        const aliases = new Set(
+        const aliases = new Set<string>(
             rawAliases
                 .split(',')
                 .map((a: string) => a.trim().toLowerCase())
@@ -508,7 +523,7 @@ function buildDecorations(view: EditorView, plugin: any): DecorationSet {
                             widget: new TreeBranchWidget(rails, node, view),
                         })
                     );
-                } else if (rails) {
+                } else if (rails || (node && node.isDirectory)) {
                     builder.add(
                         bl.from,
                         bl.from,
@@ -519,13 +534,11 @@ function buildDecorations(view: EditorView, plugin: any): DecorationSet {
                     );
                 }
 
-                // 3. If folder, add Badges immediately beside the folder text
+                // 3. If folder, add Badges at the END of the sentence/line (word word [badge])
                 if (node.isDirectory) {
                     const text = bl.text;
-                    const nameIdx = text.indexOf(node.rawName, leadLen);
-                    const nameEndOffset = nameIdx !== -1 ? nameIdx + node.rawName.length : text.length;
-                    const rawPos = bl.from + nameEndOffset;
-                    const safePos = Math.max(bl.from + leadLen, Math.min(bl.to, rawPos));
+                    const trimmedEndOffset = text.replace(/[\t ]+$/, '').length;
+                    const safePos = Math.max(bl.from + leadLen, Math.min(bl.to, bl.from + trimmedEndOffset));
 
                     const insertPosProvider = () => {
                         const last = getLastSubtreeNode(node);

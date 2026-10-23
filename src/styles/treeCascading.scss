@@ -1,6 +1,7 @@
 /* ==========================================================================
    panel-tree-cascading: Cascading Sticky Tree Headers
    Line = Line Codeblock Architecture (Authentic Sticky Codeblock Lines)
+   Renders character-for-character identical to native Obsidian codeblocks
    ========================================================================== */
 
 .pakcli-tree-cascading-bar {
@@ -10,52 +11,60 @@
   right: 0;
   height: auto !important;
   min-height: 0 !important;
-  max-height: max-content !important;
+  max-height: 80vh !important;
   margin: 0 !important;
   padding: 0 !important;
   z-index: 45;
-  background-color: var(--code-background, var(--background-primary-alt));
+  
+  /* 100% Solid opaque background - Zero blur, Zero transparency */
+  background-color: var(--background-primary) !important;
+  background-image: linear-gradient(var(--code-background, var(--background-primary-alt)), var(--code-background, var(--background-primary-alt))) !important;
+  opacity: 1 !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+
   border-bottom: 1px solid var(--background-modifier-border);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
   user-select: none;
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
   box-sizing: border-box;
   overflow: hidden;
-  transition: top 0.08s ease;
+  color: var(--text-normal) !important;
 
   .pakcli-tree-cascading-inner {
     max-width: var(--file-line-width, var(--line-width, 700px));
-    margin: 0 auto !important;
-    padding-top: 2px !important;
-    padding-bottom: 2px !important;
-    padding-left: var(--file-margins, 32px) !important;
-    padding-right: var(--file-margins, 32px) !important;
-    box-sizing: border-box !important;
+    margin: 0 auto;
+    padding-top: 4px;
+    padding-bottom: 4px;
+    padding-left: calc(var(--file-margins, 32px) - 8px);
+    padding-right: calc(var(--file-margins, 32px) + 8px);
+    box-sizing: border-box;
     width: 100%;
     display: flex;
     flex-direction: column;
-    gap: 1px;
-    height: auto !important;
-    min-height: 0 !important;
+    gap: 0;
+    height: auto;
+    min-height: 0;
+    color: var(--text-normal);
   }
 
   .pakcli-tree-sticky-line {
-    display: flex;
-    align-items: center;
-    min-height: 22px;
-    height: 22px;
-    line-height: 22px;
+    display: block !important;
+    height: auto !important;
+    min-height: 0 !important;
+    line-height: var(--line-height-normal, 1.5) !important;
     margin: 0 !important;
-    font-family: var(--font-monospace, monospace);
-    font-size: var(--code-size, 0.85rem);
-    color: var(--text-normal);
+    padding: 0 !important;
+    font-family: var(--font-monospace, monospace) !important;
+    font-size: var(--code-size, 0.85rem) !important;
+    color: var(--text-normal) !important;
+    background: transparent !important;
+    border-radius: 0 !important;
     cursor: pointer;
-    border-radius: var(--radius-s, 3px);
-    padding: 0 4px;
-    white-space: pre;
-    transition: background 0.12s ease;
-    box-sizing: border-box;
+    white-space: pre !important;
+    box-sizing: border-box !important;
+    transition: background-color 0.1s ease;
+    overflow: visible !important;
+    text-overflow: clip !important;
 
     &:last-child {
       margin-bottom: 0 !important;
@@ -63,43 +72,73 @@
     }
 
     &:hover {
-      background-color: var(--background-modifier-hover);
+      background-color: var(--background-modifier-hover, rgba(0, 0, 0, 0.04)) !important;
 
       .pakcli-tree-badges {
         opacity: 1;
       }
     }
 
-    .pakcli-tree-node-name {
-      font-weight: 600;
-      color: var(--text-normal);
-      letter-spacing: -0.01em;
-      line-height: 1;
-      margin: 0;
-      padding: 0;
+    .pakcli-tree-prefix {
+      color: var(--text-normal) !important;
+    }
+
+    .pakcli-tree-rails {
+      color: var(--text-normal) !important;
+      opacity: 1 !important;
+    }
+
+    .pakcli-tree-chevron {
+      color: var(--text-normal) !important;
+      opacity: 1 !important;
+
+      &:hover {
+        color: var(--text-normal) !important;
+        opacity: 1 !important;
+      }
+    }
+
+    .pakcli-tree-node-name,
+    .pakcli-tree-node-trailing {
+      display: inline;
+      font-family: inherit;
+      font-size: inherit;
+      font-weight: normal !important;
+      color: var(--text-normal) !important;
+      letter-spacing: inherit;
+      line-height: inherit;
+      white-space: pre;
     }
 
     &.is-current {
+      color: var(--text-normal) !important;
+
       .pakcli-tree-node-name {
-        color: var(--text-normal);
-        font-weight: 700;
+        color: var(--text-normal) !important;
+        font-weight: normal !important;
+      }
+    }
+
+    .pakcli-tree-badge {
+      color: var(--text-normal) !important;
+      border-color: var(--text-muted, var(--background-modifier-border)) !important;
+
+      &:hover {
+        color: var(--text-normal) !important;
       }
     }
   }
 
   &.is-mobile-style {
     .pakcli-tree-cascading-inner {
-      padding-top: 2px !important;
-      padding-bottom: 2px !important;
-      padding-left: 12px !important;
-      padding-right: 12px !important;
+      padding-top: 2px;
+      padding-bottom: 2px;
+      padding-left: 4px;
+      padding-right: 20px;
     }
 
     .pakcli-tree-sticky-line {
-      min-height: 20px;
-      height: 20px;
-      line-height: 20px;
-      font-size: 11px;
+      font-size: 11px !important;
     }
   }
 }

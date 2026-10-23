@@ -403,7 +403,7 @@ export const DEFAULT_TABLE_SETTINGS: PakCLITableSettings = {
     stickyHeaderShowBadges: true,
     enableTreeCascading: true,
     treeCascadingStyle: 'auto',
-    treeCascadingMaxDepth: 3,
+    treeCascadingMaxDepth: 12,
     treeCascadingShowBadges: true,
 };
 

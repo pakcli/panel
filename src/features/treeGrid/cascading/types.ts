@@ -10,7 +10,7 @@ export interface TreeCascadingSettings {
 export const DEFAULT_TREE_CASCADING_SETTINGS: TreeCascadingSettings = {
     enableTreeCascading: true,
     treeCascadingStyle: 'auto',
-    treeCascadingMaxDepth: 3,
+    treeCascadingMaxDepth: 12,
     treeCascadingShowBadges: true,
 };
 

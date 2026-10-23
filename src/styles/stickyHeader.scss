@@ -19,8 +19,8 @@
   max-height: 240px;
   overflow-y: auto;
   user-select: none;
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 
   .pakcli-sticky-inner {
     max-width: var(--file-line-width, var(--line-width, 700px));

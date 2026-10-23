@@ -7092,11 +7092,11 @@ export default class PakCLITablePlugin extends Plugin {
 
 				new Setting(containerEl)
 					.setName('Maximum Sticky Tree Depth')
-					.setDesc('Maximum folder ancestor levels displayed simultaneously in the sticky bar.')
+					.setDesc('Maximum folder ancestor levels displayed simultaneously in the sticky bar (up to 16 levels).')
 					.addSlider((slider) => {
 						slider
-							.setLimits(1, 6, 1)
-							.setValue(this.settings.treeCascadingMaxDepth ?? 3)
+							.setLimits(1, 16, 1)
+							.setValue(Math.max(12, this.settings.treeCascadingMaxDepth ?? 12))
 							.setDynamicTooltip()
 							.onChange(async (val) => {
 								this.settings.treeCascadingMaxDepth = val;

@@ -12,7 +12,14 @@
 import { App, MarkdownView, Platform, Notice, TFile } from 'obsidian';
 import type PakCLITablePlugin from '../../../main';
 import { TreeGridNode } from '../types';
-import { extractNameAndColumns, getRawLeadingWhitespace, isFileName, getExtension, isTreeBlockAlias } from '../treeParser';
+import {
+    extractNameAndColumns,
+    getRawLeadingWhitespace,
+    isFileName,
+    getExtension,
+    isTreeBlockAlias,
+    getAsciiBranchPrefix
+} from '../treeParser';
 import { TreeCascadingSettings, DEFAULT_TREE_CASCADING_SETTINGS, TreeCrumbItem } from './types';
 
 interface TreeCascadingSession {
@@ -87,10 +94,11 @@ export class TreeCascadingManager {
 
     private get settings(): TreeCascadingSettings {
         const s = (this.plugin.settings as any) || {};
+        const savedDepth = typeof s.treeCascadingMaxDepth === 'number' ? s.treeCascadingMaxDepth : DEFAULT_TREE_CASCADING_SETTINGS.treeCascadingMaxDepth;
         return {
             enableTreeCascading: s.enableTreeCascading !== false,
             treeCascadingStyle: s.treeCascadingStyle || DEFAULT_TREE_CASCADING_SETTINGS.treeCascadingStyle,
-            treeCascadingMaxDepth: typeof s.treeCascadingMaxDepth === 'number' ? s.treeCascadingMaxDepth : DEFAULT_TREE_CASCADING_SETTINGS.treeCascadingMaxDepth,
+            treeCascadingMaxDepth: Math.max(12, savedDepth),
             treeCascadingShowBadges: s.treeCascadingShowBadges !== false,
         };
     }
@@ -219,15 +227,15 @@ export class TreeCascadingManager {
             return;
         }
 
-        const scroller = view.contentEl.querySelector('.cm-scroller') as HTMLElement | null;
-        if (!scroller) {
-            // Reading View fallback
+        const mode = view.getMode();
+        if (mode === 'preview') {
             this.updateReadingView(view, session, treeBlocks);
             return;
         }
 
+        const scroller = view.contentEl.querySelector('.cm-scroller') as HTMLElement | null;
         const cm = this.getEditorView(view);
-        if (!cm || !cm.state?.doc || typeof cm.lineBlockAt !== 'function') {
+        if (!scroller || !cm || !cm.state?.doc || typeof cm.lineBlockAt !== 'function') {
             this.hideBar(session);
             return;
         }
@@ -239,19 +247,19 @@ export class TreeCascadingManager {
             topOffset = headingBar.offsetHeight;
         }
 
-        const baseBoundaryY = scrollerRect.top + topOffset;
-        let boundaryY = baseBoundaryY;
-        if (session.barEl.style.display !== 'none' && session.barEl.offsetHeight > 0) {
-            const barRect = session.barEl.getBoundingClientRect();
-            if (barRect.height > 0) {
-                boundaryY = Math.max(baseBoundaryY, barRect.bottom);
-            }
-        }
-
+        // The top anchor where sticky cascading pins (Fixed viewport anchor, never oscillates)
+        const anchorY = scrollerRect.top + topOffset;
         const docTop = cm.documentTop;
         const totalDocLines = cm.state.doc.lines;
 
-        // Find which tree block is currently in the active sticky viewport zone
+        // Measure line height dynamically from CodeMirror
+        let sampleLb: any = null;
+        try {
+            sampleLb = cm.lineBlockAt(cm.state.doc.line(1).from);
+        } catch { /* fallback */ }
+        const lineHeight = Math.max(18, Math.round(sampleLb ? (sampleLb.bottom - sampleLb.top) : 24));
+
+        // Find which tree block is active at anchorY
         let activeBlock: ParsedBlockTree | null = null;
         for (const block of treeBlocks) {
             const startDocLine = Math.max(1, Math.min(totalDocLines, block.startLine + 1));
@@ -263,88 +271,89 @@ export class TreeCascadingManager {
             const startBottom = docTop + startLb.bottom;
             const endBottom = docTop + endLb.bottom;
 
-            // Block is active if its opening line has reached/passed baseBoundaryY
-            // and its closing line hasn't scrolled past boundaryY
-            if (startBottom <= baseBoundaryY && endBottom > boundaryY) {
+            if (startBottom <= anchorY && endBottom > anchorY + lineHeight) {
                 activeBlock = block;
                 break;
             }
         }
 
-        if (!activeBlock) {
+        if (!activeBlock || activeBlock.rootNodes.length === 0) {
             this.hideBar(session);
             return;
         }
 
-        // Find the FIRST visible line of the codeblock on the content page below boundaryY
-        let firstVisibleLine = -1;
-        for (let l = activeBlock.startLine; l <= activeBlock.endLine; l++) {
-            const docLine = Math.max(1, Math.min(totalDocLines, l + 1));
-            const lineInfo = cm.state.doc.line(docLine);
-            const lb = cm.lineBlockAt(lineInfo.from);
-            const lineBottom = docTop + lb.bottom;
+        // 1. Strict Zero Duplication: Check if root folder has scrolled past anchorY
+        // If root folder is still visible on the content page, NO sticky bar!
+        const rootNode = activeBlock.rootNodes[0];
+        const rootLine = activeBlock.nodeLineMap.get(rootNode) ?? (activeBlock.startLine + 1);
+        const rootDocLine = Math.max(1, Math.min(totalDocLines, rootLine + 1));
+        const rootLb = cm.lineBlockAt(cm.state.doc.line(rootDocLine).from);
+        const rootBottom = docTop + rootLb.bottom;
 
-            if (lineBottom > boundaryY + 1) {
-                firstVisibleLine = l;
+        if (rootBottom > anchorY) {
+            this.hideBar(session);
+            return;
+        }
+
+        // 2. Find the current deepest active node scrolling past anchorY
+        let firstLineAtOrBelowAnchor = activeBlock.endLine;
+        for (let l = rootLine; l <= activeBlock.endLine; l++) {
+            const docLine = Math.max(1, Math.min(totalDocLines, l + 1));
+            const lb = cm.lineBlockAt(cm.state.doc.line(docLine).from);
+            if (docTop + lb.bottom > anchorY) {
+                firstLineAtOrBelowAnchor = l;
                 break;
             }
         }
 
-        if (firstVisibleLine === -1) {
-            this.hideBar(session);
-            return;
-        }
-
-        // If firstVisibleLine is still at or before the root folder line,
-        // the root folder is visible on the content page -> no sticky bar yet
-        const rootLine = activeBlock.rootNodes.length > 0
-            ? (activeBlock.nodeLineMap.get(activeBlock.rootNodes[0]) ?? activeBlock.startLine + 1)
-            : activeBlock.startLine + 1;
-
-        if (firstVisibleLine <= rootLine) {
-            this.hideBar(session);
-            return;
-        }
-
-        // Find active node at or before firstVisibleLine
         let activeNode: TreeGridNode | null = null;
-        for (let l = firstVisibleLine; l > activeBlock.startLine; l--) {
+        for (let l = firstLineAtOrBelowAnchor; l >= rootLine; l--) {
             if (activeBlock.nodesByLine.has(l)) {
                 activeNode = activeBlock.nodesByLine.get(l)!;
                 break;
             }
         }
-
         if (!activeNode) {
-            this.hideBar(session);
-            return;
+            activeNode = rootNode;
         }
 
-        // Build folder chain leading to active node
-        const targetFolder = activeNode.isDirectory ? activeNode : activeNode.parent;
-        if (!targetFolder) {
-            this.hideBar(session);
-            return;
-        }
+        const targetFolder = activeNode.isDirectory ? activeNode : (activeNode.parent || activeNode);
 
-        const chain: TreeCrumbItem[] = [];
+        // Build ancestor path from root down to targetFolder
+        const ancestors: TreeGridNode[] = [];
         let curr: TreeGridNode | undefined = targetFolder;
         while (curr) {
-            const lineNo = activeBlock.nodeLineMap.get(curr) ?? activeBlock.startLine + 1;
-            // STRICT ZERO DUPLICATION RULE:
-            // Only include folder if its declaration line has completely scrolled out of view!
-            // If lineNo >= firstVisibleLine, it is currently visible on the content page,
-            // so it MUST NOT appear in the sticky bar!
-            if (lineNo < firstVisibleLine) {
-                chain.unshift({
-                    name: curr.name,
-                    node: curr,
-                    lineNo,
-                    depth: curr.depth,
+            ancestors.unshift(curr);
+            curr = curr.parent;
+        }
+
+        // 3. Monotonic Level Thresholds (Zero-Jitter Architecture):
+        // Level k pins only when that folder has scrolled above (anchorY + k * lineHeight).
+        // Each level k occupies a fixed vertical slot of lineHeight.
+        // Once a folder is above its threshold, it has scrolled under the header and pins.
+        // If a folder's bottom is below its threshold, it is visible on the page, so it does NOT pin.
+        const chain: TreeCrumbItem[] = [];
+        for (let k = 0; k < ancestors.length; k++) {
+            const node = ancestors[k];
+            const thresholdK = anchorY + (k * lineHeight);
+            const nodeLine = activeBlock.nodeLineMap.get(node) ?? (activeBlock.startLine + 1);
+            const nodeDocLine = Math.max(1, Math.min(totalDocLines, nodeLine + 1));
+            const nodeLb = cm.lineBlockAt(cm.state.doc.line(nodeDocLine).from);
+            const nodeBottom = docTop + nodeLb.bottom;
+
+            if (nodeBottom <= thresholdK) {
+                chain.push({
+                    name: node.name,
+                    node: node,
+                    lineNo: nodeLine,
+                    depth: node.depth,
                     isFolder: true,
                 });
+            } else {
+                // Folder is still visible on the content page below Level (k-1)'s sticky line.
+                // Stop cascading here to guarantee zero duplication without layout feedback.
+                break;
             }
-            curr = curr.parent;
         }
 
         if (chain.length === 0) {
@@ -381,10 +390,7 @@ export class TreeCascadingManager {
         if (headingBar && headingBar.style.display !== 'none' && headingBar.offsetHeight > 0) {
             topOffset = headingBar.offsetHeight;
         }
-        let boundaryY = containerRect.top + topOffset;
-        if (session.barEl.style.display !== 'none' && session.barEl.offsetHeight > 0) {
-            boundaryY = session.barEl.getBoundingClientRect().bottom;
-        }
+        const anchorY = containerRect.top + topOffset;
 
         const treePres = Array.from(previewEl.querySelectorAll('pre[class*="language-"]'));
         let activeBlock: ParsedBlockTree | null = null;
@@ -395,7 +401,7 @@ export class TreeCascadingManager {
             const cls = pre.className.toLowerCase();
             if (cls.includes('panel-tree') || cls.includes('tree')) {
                 const preRect = pre.getBoundingClientRect();
-                if (preRect.top <= boundaryY && preRect.bottom > boundaryY) {
+                if (preRect.top <= anchorY && preRect.bottom > anchorY) {
                     activeBlock = treeBlocks[i];
                     activePre = pre;
                     break;
@@ -403,27 +409,30 @@ export class TreeCascadingManager {
             }
         }
 
-        if (!activeBlock || !activePre) {
+        if (!activeBlock || !activePre || activeBlock.rootNodes.length === 0) {
             this.hideBar(session);
             return;
         }
 
         const preRect = activePre.getBoundingClientRect();
-        const scrolledPx = Math.max(0, boundaryY - preRect.top);
-        const ratio = Math.min(1, Math.max(0, scrolledPx / preRect.height));
-        const estimatedFirstVisible = activeBlock.startLine + Math.floor(ratio * (activeBlock.endLine - activeBlock.startLine));
+        const totalBlockLines = Math.max(1, activeBlock.endLine - activeBlock.startLine);
+        const lineHeight = Math.max(18, preRect.height / totalBlockLines);
 
-        const rootLine = activeBlock.rootNodes.length > 0
-            ? (activeBlock.nodeLineMap.get(activeBlock.rootNodes[0]) ?? activeBlock.startLine + 1)
-            : activeBlock.startLine + 1;
+        const rootNode = activeBlock.rootNodes[0];
+        const rootLine = activeBlock.nodeLineMap.get(rootNode) ?? (activeBlock.startLine + 1);
+        const rootBottom = preRect.top + ((rootLine - activeBlock.startLine + 1) * lineHeight);
 
-        if (estimatedFirstVisible <= rootLine) {
+        if (rootBottom > anchorY) {
             this.hideBar(session);
             return;
         }
 
+        const scrolledPx = Math.max(0, anchorY - preRect.top);
+        const ratio = Math.min(1, Math.max(0, scrolledPx / preRect.height));
+        const estimatedFirstVisible = activeBlock.startLine + Math.floor(ratio * totalBlockLines);
+
         let activeNode: TreeGridNode | null = null;
-        for (let l = estimatedFirstVisible; l > activeBlock.startLine; l--) {
+        for (let l = estimatedFirstVisible; l >= rootLine; l--) {
             if (activeBlock.nodesByLine.has(l)) {
                 activeNode = activeBlock.nodesByLine.get(l)!;
                 break;
@@ -431,30 +440,35 @@ export class TreeCascadingManager {
         }
 
         if (!activeNode) {
-            this.hideBar(session);
-            return;
+            activeNode = rootNode;
         }
 
-        const targetFolder = activeNode.isDirectory ? activeNode : activeNode.parent;
-        if (!targetFolder) {
-            this.hideBar(session);
-            return;
+        const targetFolder = activeNode.isDirectory ? activeNode : (activeNode.parent || activeNode);
+        const ancestors: TreeGridNode[] = [];
+        let curr: TreeGridNode | undefined = targetFolder;
+        while (curr) {
+            ancestors.unshift(curr);
+            curr = curr.parent;
         }
 
         const chain: TreeCrumbItem[] = [];
-        let curr: TreeGridNode | undefined = targetFolder;
-        while (curr) {
-            const lineNo = activeBlock.nodeLineMap.get(curr) ?? activeBlock.startLine + 1;
-            if (lineNo < estimatedFirstVisible) {
-                chain.unshift({
-                    name: curr.name,
-                    node: curr,
-                    lineNo,
-                    depth: curr.depth,
+        for (let k = 0; k < ancestors.length; k++) {
+            const node = ancestors[k];
+            const thresholdK = anchorY + (k * lineHeight);
+            const nodeLine = activeBlock.nodeLineMap.get(node) ?? (activeBlock.startLine + 1);
+            const nodeBottom = preRect.top + ((nodeLine - activeBlock.startLine + 1) * lineHeight);
+
+            if (nodeBottom <= thresholdK) {
+                chain.push({
+                    name: node.name,
+                    node: node,
+                    lineNo: nodeLine,
+                    depth: node.depth,
                     isFolder: true,
                 });
+            } else {
+                break;
             }
-            curr = curr.parent;
         }
 
         if (chain.length === 0) {
@@ -583,6 +597,13 @@ export class TreeCascadingManager {
         view: MarkdownView,
         block: ParsedBlockTree
     ): void {
+        // If an input is currently active in the sticky bar, do not destroy the DOM
+        const activeInput = session.barEl.querySelector('input');
+        if (activeInput && document.activeElement === activeInput) {
+            this.updateBarVerticalPosition(session, view);
+            return;
+        }
+
         const chainKey = chain.map((c) => `${c.lineNo}:${c.name}`).join('>');
         if (chainKey === session.lastChainKey && session.barEl.style.display !== 'none') {
             this.updateBarVerticalPosition(session, view);
@@ -601,13 +622,14 @@ export class TreeCascadingManager {
             const isCurrent = i === chain.length - 1;
 
             const rowEl = innerEl.createDiv({
-                cls: `pakcli-tree-sticky-line${isCurrent ? ' is-current' : ''}`,
+                cls: `cm-line HyperMD-codeblock HyperMD-codeblock-bg pakcli-tree-line pakcli-tree-sticky-line${isCurrent ? ' is-current' : ''}`,
                 attr: { title: `Jump to ${item.name} (Line ${item.lineNo + 1})` },
             });
 
-            // Tree branch rails & chevron prefix (Line = Line with codeblock)
+            // Tree branch rails & chevron prefix (Exact authentic codeblock tree rails)
             const prefixEl = rowEl.createSpan({ cls: 'pakcli-tree-prefix' });
-            const { rails, chevron } = this.buildRowPrefix(item.depth, i === 0);
+            const rails = getAsciiBranchPrefix(item.node, block.rootNodes);
+            const chevron = 'v ';
 
             if (rails) {
                 prefixEl.createSpan({ cls: 'pakcli-tree-rails', text: rails });
@@ -617,7 +639,14 @@ export class TreeCascadingManager {
             // Folder Name
             rowEl.createSpan({ cls: 'pakcli-tree-node-name', text: item.name });
 
-            // Badges (+File and +Folder) directly beside folder name
+            // Trailing sentence content / columns if any (word word [badge])
+            if (item.node.trailingContent) {
+                rowEl.createSpan({ cls: 'pakcli-tree-node-trailing', text: item.node.trailingContent });
+            } else if (item.node.columns && item.node.columns.length > 0) {
+                rowEl.createSpan({ cls: 'pakcli-tree-node-trailing', text: ' ' + item.node.columns.join(' ') });
+            }
+
+            // Badges (+File and +Folder) directly at the end of the sentence/line
             if (this.settings.treeCascadingShowBadges) {
                 const badgesWrap = rowEl.createSpan({ cls: 'pakcli-tree-badges' });
 
@@ -642,40 +671,47 @@ export class TreeCascadingManager {
                     });
                     input.focus();
 
-                    let committed = false;
-                    const commit = () => {
-                        if (committed) return;
-                        committed = true;
-                        const val = input.value.trim();
-                        restoreBadges();
-
-                        if (val) {
-                            this.insertChildNode(view, item, val, isFolderType, block);
-                        }
-                    };
-
+                    let isClosing = false;
                     const restoreBadges = () => {
+                        if (isClosing) return;
+                        isClosing = true;
                         badgesWrap.empty();
                         badgesWrap.appendChild(fileBadge);
                         badgesWrap.appendChild(folderBadge);
+                    };
+
+                    const handleCommit = (shouldKeepOpen: boolean) => {
+                        const val = input.value.trim();
+                        if (val) {
+                            this.insertChildNode(view, item, val, isFolderType, block);
+                            if (shouldKeepOpen) {
+                                input.value = '';
+                                input.focus();
+                                input.select();
+                            } else {
+                                restoreBadges();
+                            }
+                        } else {
+                            restoreBadges();
+                        }
                     };
 
                     input.addEventListener('keydown', (e) => {
                         if (e.key === 'Enter') {
                             e.preventDefault();
                             e.stopPropagation();
-                            commit();
+                            handleCommit(true);
                         } else if (e.key === 'Escape') {
                             e.preventDefault();
                             e.stopPropagation();
-                            committed = true;
                             restoreBadges();
                         }
                     });
 
                     input.addEventListener('blur', () => {
                         setTimeout(() => {
-                            if (!committed) restoreBadges();
+                            if (isClosing) return;
+                            handleCommit(false);
                         }, 120);
                     });
                 };
@@ -704,15 +740,6 @@ export class TreeCascadingManager {
 
         this.updateBarVerticalPosition(session, view);
         session.barEl.style.display = 'block';
-    }
-
-    private buildRowPrefix(depth: number, isRoot: boolean): { rails: string; chevron: string } {
-        if (isRoot || depth <= 0) {
-            return { rails: '', chevron: 'v ' };
-        }
-        const leading = '│   '.repeat(Math.max(0, depth - 1));
-        const branch = '└── ';
-        return { rails: leading + branch, chevron: 'v ' };
     }
 
     private updateBarVerticalPosition(session: TreeCascadingSession, view: MarkdownView): void {
@@ -748,17 +775,47 @@ export class TreeCascadingManager {
         const editor = view.editor;
         if (!editor) return;
 
-        // Find last child line of parentCrumb.node
-        let insertLine = parentCrumb.lineNo;
+        const totalLines = editor.lineCount();
         const parentDepth = parentCrumb.depth;
 
-        // Scan downwards while items belong to this subtree
-        const totalLines = editor.lineCount();
-        for (let l = parentCrumb.lineNo + 1; l < block.endLine && l < totalLines; l++) {
-            const node = block.nodesByLine.get(l);
-            if (node && node.depth > parentDepth) {
+        // 1. Locate the parent folder line in the editor around parentCrumb.lineNo
+        let folderLine = -1;
+        const searchRange = 50;
+        const minL = Math.max(0, parentCrumb.lineNo - searchRange);
+        const maxL = Math.min(totalLines - 1, parentCrumb.lineNo + searchRange);
+
+        for (let l = minL; l <= maxL; l++) {
+            const text = editor.getLine(l);
+            const trimmed = text.trim().replace(/^(?:[Vv>▼▶]\s*)+/, '');
+            const parsed = extractNameAndColumns(trimmed);
+            const cleanName = parsed.name.replace(/^[├└│|L\s─\-+▼▶vV><]+/g, '').trim();
+            if (cleanName === parentCrumb.name) {
+                folderLine = l;
+                break;
+            }
+        }
+        if (folderLine === -1) {
+            folderLine = Math.min(parentCrumb.lineNo, totalLines - 1);
+        }
+
+        // Measure folder's actual leading whitespace/indent
+        const folderLineText = editor.getLine(folderLine);
+        const folderIndent = getRawLeadingWhitespace(folderLineText);
+
+        // 2. Scan downwards from folderLine: find the end of this folder's subtree
+        let insertLine = folderLine;
+        for (let l = folderLine + 1; l < totalLines; l++) {
+            const lineText = editor.getLine(l);
+            if (lineText.trim().startsWith('```')) {
+                break;
+            }
+            if (!lineText.trim()) {
+                continue;
+            }
+            const lineIndent = getRawLeadingWhitespace(lineText);
+            if (lineIndent > folderIndent) {
                 insertLine = l;
-            } else if (node && node.depth <= parentDepth) {
+            } else {
                 break;
             }
         }
@@ -766,13 +823,22 @@ export class TreeCascadingManager {
         const childIndent = '\t'.repeat(parentDepth + 1);
         const textToInsert = childIndent + val;
 
+        const mode = view.getMode();
+        const scroller = view.contentEl.querySelector(mode === 'preview' ? '.markdown-preview-view' : '.cm-scroller') as HTMLElement | null;
+        const savedScrollTop = scroller ? scroller.scrollTop : null;
+
         const lineLen = editor.getLine(insertLine)?.length ?? 0;
         editor.replaceRange('\n' + textToInsert, { line: insertLine, ch: lineLen });
 
-        const targetNewLine = insertLine + 1;
-        editor.setCursor({ line: targetNewLine, ch: textToInsert.length });
-        editor.scrollIntoView({ from: { line: targetNewLine, ch: 0 }, to: { line: targetNewLine, ch: 0 } }, true);
-        view.contentEl.focus();
+        // Maintain exact scroll position to prevent viewport from jumping or scrolling upwards
+        if (scroller && savedScrollTop !== null) {
+            scroller.scrollTop = savedScrollTop;
+            requestAnimationFrame(() => {
+                if (scroller && Math.abs(scroller.scrollTop - savedScrollTop) > 1) {
+                    scroller.scrollTop = savedScrollTop;
+                }
+            });
+        }
 
         new Notice(`✓ Added ${isFolderType ? 'folder' : 'file'} ${val}`);
     }
