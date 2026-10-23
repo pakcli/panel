@@ -10,43 +10,55 @@
 ## 1. Objective & Problem Statement
 
 ### Problem
-Users frequently sketch out comprehensive project taxonomies, information architectures, and book/course outlines inside `panel-tree` blocks (e.g. `data/asset/player/index.md`, `matches.md`). However:
-1. **Disconnected Skeleton vs. Vault**: The tree remains purely text inside a codeblock; creating actual Obsidian folders and `.md` notes requires tedious manual clicking or running external shell scripts.
-2. **Inconsistent Frontmatter Metadata**: Manually creating files often leads to missing or mismatched frontmatter tags, titles, and summaries.
-3. **Loss of Note Annotations**: Inline `#` notes defined in the tree (e.g. `# untuk3d`) are not automatically carried over into note properties as overviews or summaries.
+Users frequently design project taxonomies, directory layouts, and documentation blueprints inside `panel-tree` blocks. However:
+1. **Manual Scaffolding Friction**: Turning a text tree into real folders and `.md` notes requires tedious manual creation or fragile external terminal scripts.
+2. **Missing Bi-Directional Synergy**: Once a tree is created, changes made directly to vault files or folders (e.g. renaming files, adding assets) do not reflect back in the note's codeblock, causing documentation drift.
+3. **No Read-Only Directory Mirrors**: Users who want to embed an interactive, live outliner of an existing vault folder cannot do so safely without risking accidental text edits.
+4. **Frontmatter Fragmentation**: Manually created files often lack standardized metadata, and inline `# notes` (e.g. `# untuk3d`) are lost instead of populating note properties.
 
 ### Solution
-Implement **`panel-tree-vault-sync`** — a seamless, interactive sync engine that turns any `panel-tree` into actual vault directories and markdown notes with intelligent frontmatter generation:
-1. **1-Click "Sync to Vault" HUD Action**: A dedicated action button (`[⚡ Sync to Vault]`) directly in the `panel-tree` top HUD and command palette.
-2. **Smart Index & Title Detection**:
-   - Standard files: `title` defaults to the filename without extension (e.g. `player.md` → `title: "player"`).
-   - `index.md` files: `title` automatically inherits the parent folder's name (e.g. `root/index.md` → `title: "root"`).
-3. **Automatic `#` Note → `overview` Frontmatter Mapping**:
-   - Any `# comment` written beside a tree node is automatically mapped into the note's frontmatter `overview` field.
-4. **Configurable Frontmatter YAML Template in Settings**:
-   - Provides a sensible, zero-config default frontmatter structure.
-   - Users can customize the frontmatter template in Plugin Settings using dynamic interpolation tokens (`{{title}}`, `{{overview}}`, `{{folder}}`, `{{date}}`, `{{path}}`).
+Implement **`panel-tree-vault-sync`** with **3 Distinct Operational Sync Modes**:
+1. **Mode 1: Two-Way Bidirectional Sync (`sync-both` / `sync-to-both`)**:
+   - Continuous two-way synchronization between codeblock text and actual vault files/folders.
+   - Adding/editing in codeblock updates vault; modifying/adding files in vault updates the codeblock.
+2. **Mode 2: One-Way Tree to Vault (`sync-to-vault`)**:
+   - Codeblock is the master scaffold blueprint.
+   - Pushes folders, notes, and frontmatter to the vault. Vault modifications never overwrite the codeblock.
+3. **Mode 3: One-Way Vault to Note (`sync-to-note`) — Read-Only & Selectable**:
+   - Live mirror of a target vault directory projected into the note.
+   - **Read-Only**: Prevents accidental typing or desyncing.
+   - **Selectable & Interactive**: Nodes are keyboard-navigable, selectable, clickable (opens file in new leaf/split), with right-click contextual actions.
+   - Automatically re-renders when vault files change.
 
 ---
 
-## 2. Technical Architecture & Data Flow
+## 2. The 3 Sync Modes: Architecture & Comparison
 
-### 2.1 Frontmatter Resolution Rules
+| Mode | Aliases | Source of Truth | Direction | Tree Mutability | Ideal Use Case |
+| :--- | :--- | :--- | :---: | :---: | :--- |
+| **Two-Way Sync** | `panel-tree-sync-both`<br>`panel-tree-sync-to-both` | Co-equal | Codeblock ⇄ Vault | Editable (Interactive) | Active project planning where files are added both via text outliner and file explorer. |
+| **One-Way to Vault** | `panel-tree-sync-to-vault`<br>`panel-tree-sync-vault` | Codeblock Tree | Codeblock → Vault | Master Blueprint (Editable) | Architectural scaffolding, course outlines, and project kickoffs from markdown templates. |
+| **One-Way to Note** | `panel-tree-sync-to-note`<br>`panel-tree-sync-note` | Vault Directory | Vault → Codeblock | **Read-Only (Selectable)** | Embedded folder dashboard, project asset explorer, live documentation hub. |
+
+---
+
+## 3. Frontmatter & Metadata Resolution Engine
+
+### 3.1 Smart Title & Overview Mapping
 
 ```mermaid
 flowchart TD
-    Node["Tree Node (e.g. root/index.md # overview note)"] --> CheckIndex{"Is file named index.md?"}
-    CheckIndex -- Yes --> UseFolderName["title = Parent Folder Name (root)"]
-    CheckIndex -- No --> UseFileName["title = File Name (without ext)"]
-    UseFolderName --> ParseNote["Extract # comment text"]
+    Node["Tree Node (e.g. root/index.md # main hub)"] --> CheckIndex{"Is file named index.md?"}
+    CheckIndex -- Yes --> UseFolderName["title = Parent Folder Name ('root')"]
+    CheckIndex -- No --> UseFileName["title = File Name without ext ('blender')"]
+    UseFolderName --> ParseNote["Extract inline # comment text"]
     UseFileName --> ParseNote
-    ParseNote --> MapOverview["overview = extracted note text"]
-    MapOverview --> RenderTemplate["Compile Frontmatter via Settings Template"]
+    ParseNote --> MapOverview["overview = extracted comment ('main hub')"]
+    MapOverview --> RenderTemplate["Compile Frontmatter via YAML Template"]
     RenderTemplate --> VaultWrite["Write / Update Note in Obsidian Vault"]
 ```
 
-### 2.2 Default Frontmatter Template
-
+### 3.2 Default Frontmatter Format
 ```yaml
 ---
 title: "{{title}}"
@@ -56,70 +68,95 @@ source_tree: "{{tree_name}}"
 ---
 ```
 
-### 2.3 Example Transformation
-**Input Tree Codeblock**:
+### 3.3 Target Directory Syntax in Codeblock
+The root directory can be specified explicitly on the first line or inferred:
 ```text
-```panel-tree
-root
+```panel-tree-sync-both: Projects/Voli-Website
+data
    index.md                 # main documentation hub
-   blender.md               # untuk3d modeling and rendering
-   photoshop.md             # untuknote2d texture editing
+   asset
+      player
+         yolla.webp
+         tisya.webp
+   matches.md               # jadwal pertandingan dan skor
 ```
 ```
 
-**Resulting Vault Structure**:
-- `root/index.md`:
-  ```yaml
-  ---
-  title: "root"
-  overview: "main documentation hub"
-  created: "2026-10-23"
-  ---
-  ```
-- `root/blender.md`:
-  ```yaml
-  ---
-  title: "blender"
-  overview: "untuk3d modeling and rendering"
-  created: "2026-10-23"
-  ---
-  ```
-- `root/photoshop.md`:
-  ```yaml
-  ---
-  title: "photoshop"
-  overview: "untuknote2d texture editing"
-  created: "2026-10-23"
-  ---
-  ```
-
-### 2.4 Safety & Overwrite Protection
-- **Non-Destructive Safe Sync**: Existing `.md` files in the vault will NOT have their body content erased. If a file already exists, only missing frontmatter keys (`overview`, `title`) are merged, or the sync prompts for confirmation.
-- **Dry-Run Preview Modal**: Displays a clean preview diff of files and folders to be created before writing to the vault.
+- If `Projects/Voli-Website` is specified, sync operations map to `Vault/Projects/Voli-Website/`.
+- If omitted, defaults to the folder containing the current markdown active file.
 
 ---
 
-## 3. Implementation Plan & Target Files
+## 4. Mode-Specific Behavior Specifications
+
+### 4.1 Mode 1: Two-Way Bidirectional Sync (`sync-both` / `sync-to-both`)
+- **Codeblock → Vault**:
+  - Adding a file/folder via inline badges (`[+File]`, `[+Folder]`) or direct typing creates the corresponding file/folder in the vault.
+  - Adding `# note` writes or updates the `overview:` frontmatter property.
+- **Vault → Codeblock**:
+  - Vault listener (`vault.on('create')`, `vault.on('delete')`, `vault.on('rename')`) updates the codeblock text in real time.
+  - Debounced (300ms) with loopback suppression to prevent infinite feedback loops.
+
+### 4.2 Mode 2: One-Way Tree to Vault (`sync-to-vault`)
+- **Master Blueprint Push**:
+  - Pushes tree nodes to the vault.
+  - Non-destructive: Existing files keep their markdown body intact; only missing frontmatter keys (`title`, `overview`) are merged.
+  - Top HUD contains a manual trigger: `[⚡ Sync to Vault]`.
+  - Optional dry-run preview modal displaying folders and notes to be created.
+
+### 4.3 Mode 3: One-Way Vault to Note (`sync-to-note`) — Read-Only & Selectable
+- **Read-Only Guard**:
+  - Text editing inside the codeblock is disabled (`contenteditable="false"` or CodeMirror read-only line decoration).
+  - Clearly styled with a subtle `🔒 Live Vault Mirror (Read-Only)` status badge in the HUD.
+- **Selectable & Interactive**:
+  - Keyboard arrow navigation (Up/Down to navigate, Enter to open note, Space to preview).
+  - Click on any file node opens the corresponding markdown note in Obsidian.
+  - Hover highlights node; right-click context menu offers:
+    - *Open in New Tab*
+    - *Open in Split View*
+    - *Copy Vault Path*
+    - *Reveal in File Explorer*
+- **Dynamic Vault Sync**:
+  - Live listener re-renders the tree projection whenever files inside the target folder are added, moved, or deleted.
+
+---
+
+## 5. Plugin Settings & User Customization
+
+Under **Settings → PakCLI Panel → Tree to Vault Synchronizer**:
+1. **Default Frontmatter Template**: Full multi-line YAML template editor with token interpolation (`{{title}}`, `{{overview}}`, `{{folder}}`, `{{date}}`, `{{path}}`).
+2. **Overview Key Mapping**: Configurable frontmatter key for `# comments` (Default: `overview`, can be changed to `description`, `summary`, or `note`).
+3. **Overwrite Safety Protocol**:
+   - `Safe Merge` (Default): Never overwrite note body; merge frontmatter properties.
+   - `Prompt Before Overwrite`: Display diff modal before updating existing files.
+4. **Index Note Special Rule**: Toggle whether `index.md` / `README.md` adopts the parent folder name as its `title` (Default: `true`).
+
+---
+
+## 6. Implementation Plan & Target Files
 
 | File | Status | Description |
 | :--- | :---: | :--- |
-| `src/features/treeGrid/sync/types.ts` | ⏳ | Sync options, frontmatter templates, and diff models |
-| `src/features/treeGrid/sync/TreeVaultSynchronizer.ts` | ⏳ | Tree traversal, folder creation, template compiler, and vault file writer |
-| `src/features/treeGrid/sync/TreeSyncModal.ts` | ⏳ | Interactive dry-run diff preview & confirmation modal |
-| `src/features/treeGrid/TreeCodeblockRenderer.ts` | ⏳ | Adds `[⚡ Sync to Vault]` action button to the tree header HUD |
-| `src/settings.ts` | ⏳ | Settings tab: default frontmatter template, overview key mapping, overwrite safety mode |
-| `src/main.ts` | ⏳ | Registers command `PakCLI: Sync active tree codeblock to vault` |
+| `src/features/treeGrid/sync/types.ts` | ⏳ | Sync modes (`both`, `to-vault`, `to-note`), templates, and options |
+| `src/features/treeGrid/sync/TreeVaultSynchronizer.ts` | ⏳ | Two-way and one-way sync engines with loopback prevention |
+| `src/features/treeGrid/sync/TreeVaultWatcher.ts` | ⏳ | Vault event listeners for live folder mirroring in `sync-to-note` & `sync-both` |
+| `src/features/treeGrid/sync/ReadOnlyTreeRenderer.ts` | ⏳ | Read-only selectable UI with keyboard navigation and click-to-open actions |
+| `src/features/treeGrid/sync/TreeSyncModal.ts` | ⏳ | Diff preview & dry-run confirmation modal |
+| `src/features/treeGrid/TreeCodeblockRenderer.ts` | ⏳ | Mode HUD banners (`[⚡ Sync]`, `[🔒 Read-Only Mirror]`) and alias dispatching |
+| `src/settings.ts` | ⏳ | Frontmatter YAML template editor & sync configuration settings |
+| `src/main.ts` | ⏳ | Registers codeblock processors and vault sync commands |
 
 ---
 
-## 4. Acceptance Criteria Checklist
+## 7. Acceptance Criteria Checklist
 
-- [ ] Status 0 brief created and committed in `panel/docs/`.
-- [ ] 1-Click "Sync to Vault" button added to `panel-tree` header and command palette.
-- [ ] Correctly resolves `title = file name`, and `title = parent folder name` for `index.md`.
-- [ ] Maps `# notes` automatically to the frontmatter `overview` property.
-- [ ] Custom frontmatter YAML template editor available in plugin settings.
-- [ ] Non-destructive: preserves existing note content when updating frontmatter.
+- [ ] Status 0 brief updated and committed in `panel/docs/`.
+- [ ] 3 codeblock modes registered: `sync-both`, `sync-to-vault`, `sync-to-note`.
+- [ ] `sync-to-note` renders strictly as read-only and selectable with click-to-open and keyboard navigation.
+- [ ] Resolves `title` = filename, and `title` = parent folder name for `index.md`.
+- [ ] Auto-maps `# notes` to frontmatter `overview` property.
+- [ ] Frontmatter YAML template fully customizable via plugin settings.
+- [ ] Non-destructive safe mode preserves existing note contents.
 - [ ] Cross-platform support (Obsidian Desktop & Mobile vault APIs).
 - [ ] Bundle size remains strictly $< 5.00\text{ MB}$.
 - [ ] Status 1 completion commit and deployment verification.
