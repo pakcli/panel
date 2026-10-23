@@ -106,6 +106,12 @@
         opacity: 1;
         color: var(--interactive-accent, var(--text-accent));
     }
+
+    &.pakcli-tree-spacer {
+        cursor: default;
+        user-select: none;
+        pointer-events: none;
+    }
 }
 
 .pakcli-tree-has-ext-conflict {

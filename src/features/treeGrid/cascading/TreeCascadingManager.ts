@@ -658,14 +658,12 @@ export class TreeCascadingManager {
             // Tree branch rails & chevron prefix (Exact authentic codeblock tree rails)
             const prefixEl = rowEl.createSpan({ cls: 'pakcli-tree-prefix' });
             const rails = getAsciiBranchPrefix(item.node, block.rootNodes);
-            const chevron = item.node.isDirectory ? 'v ' : '';
+            const chevron = item.node.isDirectory ? 'v ' : '  ';
 
             if (rails) {
                 prefixEl.createSpan({ cls: 'pakcli-tree-rails', text: rails });
             }
-            if (chevron) {
-                prefixEl.createSpan({ cls: 'pakcli-tree-chevron', text: chevron });
-            }
+            prefixEl.createSpan({ cls: `pakcli-tree-chevron${item.node.isDirectory ? '' : ' pakcli-tree-spacer'}`, text: chevron });
 
             // Node Name
             const nameEl = rowEl.createSpan({ cls: 'pakcli-tree-node-name', text: item.name });

@@ -113,7 +113,7 @@ class TreeBranchWidget extends WidgetType {
             span.appendChild(railSpan);
         }
 
-        // Folder Chevron (Single, clickable chevron)
+        // Folder Chevron (Single, clickable chevron) or 2-space spacer for files
         if (this.folder && this.folder.isDirectory) {
             const isCollapsed = collapsedFolderPaths.has(getFolderPath(this.folder));
             const chevronSpan = document.createElement('span');
@@ -139,6 +139,12 @@ class TreeBranchWidget extends WidgetType {
                 collapsedVersion++;
                 this.view?.dispatch({});
             });
+        } else {
+            // Non-directory item: 2 spaces spacer to maintain identical monospace column alignment with folder chevrons
+            const spacerSpan = document.createElement('span');
+            spacerSpan.className = 'pakcli-tree-chevron pakcli-tree-spacer';
+            spacerSpan.textContent = '  ';
+            span.appendChild(spacerSpan);
         }
 
         return span;
@@ -677,7 +683,7 @@ function buildDecorations(view: EditorView, plugin: any): DecorationSet {
                             widget: new TreeBranchWidget(rails, node, view),
                         })
                     );
-                } else if (rails || (node && node.isDirectory)) {
+                } else if (rails || node) {
                     builder.add(
                         bl.from,
                         bl.from,
