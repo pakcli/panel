@@ -136,11 +136,12 @@
     height: 14px;
     user-select: none;
     z-index: 2;
-    pointer-events: auto;
+    pointer-events: none;
 
-    /* Unselected lines: strictly 10% visible */
-    opacity: 0.1 !important;
-    transition: opacity 0.15s ease;
+    /* Unselected lines: fully hidden */
+    opacity: 0 !important;
+    visibility: hidden !important;
+    transition: opacity 0.15s ease, visibility 0.15s ease;
 
     /* Selected line (where typing) OR hovered: 100% visible */
     .cm-line.is-selected-line &,
@@ -150,6 +151,8 @@
     .pakcli-tree-sticky-line.is-current &,
     .pakcli-tree-sticky-line:hover & {
         opacity: 1 !important;
+        visibility: visible !important;
+        pointer-events: auto !important;
     }
 }
 

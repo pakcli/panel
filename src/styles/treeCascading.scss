@@ -89,13 +89,17 @@
         line-height: 1;
         height: 14px;
         user-select: none;
-        opacity: 0.1 !important;
+        opacity: 0 !important;
+        visibility: hidden !important;
         z-index: 2;
-        pointer-events: auto;
-        transition: opacity 0.15s ease;
+        pointer-events: none;
+        transition: opacity 0.15s ease, visibility 0.15s ease;
 
+        &.is-selected,
         &:hover {
           opacity: 1 !important;
+          visibility: visible !important;
+          pointer-events: auto !important;
         }
       }
     }
@@ -179,6 +183,8 @@
     &.is-current .pakcli-tree-badges,
     &:hover .pakcli-tree-badges {
       opacity: 1 !important;
+      visibility: visible !important;
+      pointer-events: auto !important;
     }
 
     &.is-current .pakcli-tree-badge,
