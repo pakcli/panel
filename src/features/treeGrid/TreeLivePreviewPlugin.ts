@@ -188,10 +188,11 @@ class TreeBadgesWidget extends WidgetType {
         container.setAttribute('contenteditable', 'false');
 
         const isDir = this.node.isDirectory;
-        const hasNote = this.node.columns && this.node.columns.length > 0;
+        const hasNote = Boolean(this.node.columns && this.node.columns.length > 0);
 
         let fileBadge: HTMLElement | null = null;
         let folderBadge: HTMLElement | null = null;
+        let noteBadge: HTMLElement | null = null;
 
         if (isDir) {
             fileBadge = document.createElement('span');
@@ -205,10 +206,13 @@ class TreeBadgesWidget extends WidgetType {
             folderBadge.title = `Add folder inside ${this.node.name}`;
         }
 
-        const noteBadge = document.createElement('span');
-        noteBadge.className = 'pakcli-tree-badge pakcli-badge-note';
-        noteBadge.textContent = hasNote ? '✎Note' : '+Note';
-        noteBadge.title = hasNote ? `Edit note for ${this.node.name}` : `Add note to ${this.node.name}`;
+        // Only show +Note badge if note is NOT yet present
+        if (!hasNote) {
+            noteBadge = document.createElement('span');
+            noteBadge.className = 'pakcli-tree-badge pakcli-badge-note';
+            noteBadge.textContent = '+Note';
+            noteBadge.title = `Add note to ${this.node.name}`;
+        }
 
         let isClosing = false;
         const restoreBadges = () => {
@@ -217,7 +221,7 @@ class TreeBadgesWidget extends WidgetType {
             container.empty();
             if (fileBadge) container.appendChild(fileBadge);
             if (folderBadge) container.appendChild(folderBadge);
-            container.appendChild(noteBadge);
+            if (noteBadge && !hasNote) container.appendChild(noteBadge);
         };
 
         const activateChildInput = (isFolderType: boolean) => {
@@ -421,16 +425,18 @@ class TreeBadgesWidget extends WidgetType {
             container.appendChild(folderBadge);
         }
 
-        noteBadge.addEventListener('mousedown', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-        });
-        noteBadge.addEventListener('click', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            activateNoteInput();
-        });
-        container.appendChild(noteBadge);
+        if (noteBadge) {
+            noteBadge.addEventListener('mousedown', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+            });
+            noteBadge.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                activateNoteInput();
+            });
+            container.appendChild(noteBadge);
+        }
 
         return container;
     }
@@ -677,19 +683,49 @@ function buildDecorations(view: EditorView, plugin: any): DecorationSet {
                     );
                 }
 
-                // 3. Post-it Note Tag (Decoration.mark on "# note") when cursor is not on this line
                 const text = bl.text;
                 const trimmedEndOffset = text.replace(/[\t ]+$/, '').length;
-                const safePos = Math.max(bl.from + leadLen, Math.min(bl.to, bl.from + trimmedEndOffset));
 
-                if (!isCursorOnLine && node.columns && node.columns.length > 0) {
+                // Position right at the end of the node name (word [badge] #note)
+                const nameEndOffset = leadLen + node.rawName.length;
+                const badgePos = Math.min(bl.to, bl.from + nameEndOffset);
+
+                const hasNote = Boolean(node.columns && node.columns.length > 0);
+                const shouldRenderBadges = node.isDirectory || !hasNote;
+
+                // 3. Badges widget right beside the word: word [badge] #note
+                if (shouldRenderBadges) {
+                    const insertPosProvider = () => {
+                        const last = getLastSubtreeNode(node);
+                        const info = lineByNode.get(last);
+                        return info ? info.to : bl.to;
+                    };
+
+                    builder.add(
+                        badgePos,
+                        badgePos,
+                        Decoration.widget({
+                            widget: new TreeBadgesWidget(
+                                node,
+                                view,
+                                insertPosProvider,
+                                { lineNo: pl.blockLine.lineNo, from: pl.blockLine.from, to: pl.blockLine.to },
+                                { startLine: block.startLine, endLine: block.endLine }
+                            ),
+                            side: 1,
+                        })
+                    );
+                }
+
+                // 4. Post-it Note Tag (Decoration.mark on "# note") when cursor is not on this line
+                if (!isCursorOnLine && hasNote) {
                     const hashMatch = /(?:[ \t]+\|[ \t]*|[ \t]+)#|\s+##+\s*|(?<=\S)#/.exec(text);
                     if (hashMatch) {
                         const hashIdxInMatch = hashMatch[0].indexOf('#');
                         const hashOffset = hashMatch.index + (hashIdxInMatch >= 0 ? hashIdxInMatch : 0);
                         const markFrom = Math.min(bl.to, bl.from + hashOffset);
-                        const markTo = safePos;
-                        if (markFrom < markTo) {
+                        const markTo = Math.min(bl.to, bl.from + trimmedEndOffset);
+                        if (markFrom < markTo && markFrom >= badgePos) {
                             builder.add(
                                 markFrom,
                                 markTo,
@@ -701,28 +737,6 @@ function buildDecorations(view: EditorView, plugin: any): DecorationSet {
                         }
                     }
                 }
-
-                // 4. Badges (+File, +Folder, +Note) at the END of the sentence/line (word word [badge])
-                const insertPosProvider = () => {
-                    const last = getLastSubtreeNode(node);
-                    const info = lineByNode.get(last);
-                    return info ? info.to : bl.to;
-                };
-
-                builder.add(
-                    safePos,
-                    safePos,
-                    Decoration.widget({
-                        widget: new TreeBadgesWidget(
-                            node,
-                            view,
-                            insertPosProvider,
-                            { lineNo: pl.blockLine.lineNo, from: pl.blockLine.from, to: pl.blockLine.to },
-                            { startLine: block.startLine, endLine: block.endLine }
-                        ),
-                        side: 1,
-                    })
-                );
             }
         }
 

@@ -642,9 +642,42 @@ export class TreeCascadingManager {
             // Folder Name
             rowEl.createSpan({ cls: 'pakcli-tree-node-name', text: item.name });
 
-            // Post-it note pill or trailing content (word word [badge])
+            const hasNote = Boolean(item.node.columns && item.node.columns.length > 0);
+
+            // Badges (+File, +Folder, +Note) right beside folder name (word [badge] #note)
+            let badgesWrap: HTMLElement | null = null;
+            let fileBadge: HTMLElement | null = null;
+            let folderBadge: HTMLElement | null = null;
+            let noteBadge: HTMLElement | null = null;
             let postitEl: HTMLElement | null = null;
-            if (item.node.columns && item.node.columns.length > 0) {
+
+            if (this.settings.treeCascadingShowBadges) {
+                badgesWrap = rowEl.createSpan({ cls: 'pakcli-tree-badges' });
+
+                fileBadge = badgesWrap.createSpan({
+                    cls: 'pakcli-tree-badge pakcli-badge-file',
+                    text: '+File',
+                    attr: { title: `Add file inside ${item.name}` },
+                });
+
+                folderBadge = badgesWrap.createSpan({
+                    cls: 'pakcli-tree-badge pakcli-badge-folder',
+                    text: '+Folder',
+                    attr: { title: `Add folder inside ${item.name}` },
+                });
+
+                // Only show +Note badge if note is NOT yet present
+                if (!hasNote && this.settings.treeCascadingShowNoteBadge !== false) {
+                    noteBadge = badgesWrap.createSpan({
+                        cls: 'pakcli-tree-badge pakcli-badge-note',
+                        text: '+Note',
+                        attr: { title: `Add note to ${item.name}` },
+                    });
+                }
+            }
+
+            // Post-it note pill or trailing content AFTER badges (word [badge] #note)
+            if (hasNote) {
                 const noteText = item.node.columns.join(' # ');
                 postitEl = rowEl.createSpan({
                     cls: 'pakcli-tree-postit-pill',
@@ -655,43 +688,19 @@ export class TreeCascadingManager {
                 rowEl.createSpan({ cls: 'pakcli-tree-node-trailing', text: item.node.trailingContent });
             }
 
-            // Badges (+File, +Folder, +Note) directly at the end of the sentence/line
-            if (this.settings.treeCascadingShowBadges) {
-                const badgesWrap = rowEl.createSpan({ cls: 'pakcli-tree-badges' });
-
-                const fileBadge = badgesWrap.createSpan({
-                    cls: 'pakcli-tree-badge pakcli-badge-file',
-                    text: '+File',
-                    attr: { title: `Add file inside ${item.name}` },
-                });
-
-                const folderBadge = badgesWrap.createSpan({
-                    cls: 'pakcli-tree-badge pakcli-badge-folder',
-                    text: '+Folder',
-                    attr: { title: `Add folder inside ${item.name}` },
-                });
-
-                let noteBadge: HTMLElement | null = null;
-                if (this.settings.treeCascadingShowNoteBadge !== false) {
-                    const hasNote = item.node.columns && item.node.columns.length > 0;
-                    noteBadge = badgesWrap.createSpan({
-                        cls: 'pakcli-tree-badge pakcli-badge-note',
-                        text: hasNote ? '✎Note' : '+Note',
-                        attr: { title: hasNote ? `Edit note for ${item.name}` : `Add note to ${item.name}` },
-                    });
-                }
-
+            if (this.settings.treeCascadingShowBadges && badgesWrap && fileBadge && folderBadge) {
                 let isClosing = false;
                 const restoreBadges = () => {
-                    if (isClosing) return;
+                    if (isClosing || !badgesWrap) return;
                     isClosing = true;
                     badgesWrap.empty();
-                    badgesWrap.appendChild(fileBadge);
-                    badgesWrap.appendChild(folderBadge);
-                    if (noteBadge) badgesWrap.appendChild(noteBadge);
+                    if (fileBadge) badgesWrap.appendChild(fileBadge);
+                    if (folderBadge) badgesWrap.appendChild(folderBadge);
+                    if (noteBadge && !hasNote) badgesWrap.appendChild(noteBadge);
                 };
 
                 const activateInput = (isFolderType: boolean) => {
+                    if (!badgesWrap) return;
                     isClosing = false;
                     badgesWrap.empty();
                     const input = badgesWrap.createEl('input', {
@@ -738,6 +747,7 @@ export class TreeCascadingManager {
                 };
 
                 const activateNoteInput = () => {
+                    if (!badgesWrap) return;
                     isClosing = false;
                     badgesWrap.empty();
                     const existingNote = (item.node.columns && item.node.columns.length > 0) ? item.node.columns.join(' ') : '';
