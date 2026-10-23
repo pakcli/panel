@@ -692,7 +692,29 @@ function buildDecorations(view: EditorView, plugin: any): DecorationSet {
                 const badgePos = Math.min(bl.to, bl.from + nameEndOffset);
 
                 const hasNote = Boolean(node.columns && node.columns.length > 0);
-                const shouldRenderBadges = node.isDirectory || !hasNote;
+
+                // Determine badges display mode: 'folder' (default), 'all', or 'none'
+                let blockBadgesMode: 'folder' | 'all' | 'none' | undefined;
+                for (const line of block.lines) {
+                    const m = line.text.trim().match(/^(?:[-#]\s*(?:badges|badge-mode|badge|badges-mode)\s*:\s*)(all|none|folder|only-folder|only folder)/i);
+                    if (m) {
+                        const val = m[1].toLowerCase().trim();
+                        if (val === 'all') blockBadgesMode = 'all';
+                        else if (val === 'none') blockBadgesMode = 'none';
+                        else blockBadgesMode = 'folder';
+                        break;
+                    }
+                }
+                const badgesMode = blockBadgesMode ?? (plugin?.settings?.treeBadgesDisplayMode || 'folder');
+
+                let shouldRenderBadges = false;
+                if (badgesMode === 'all') {
+                    shouldRenderBadges = node.isDirectory || !hasNote;
+                } else if (badgesMode === 'folder') {
+                    shouldRenderBadges = node.isDirectory;
+                } else {
+                    shouldRenderBadges = false;
+                }
 
                 // 3. Badges widget right beside the word: word [badge] #note
                 if (shouldRenderBadges) {

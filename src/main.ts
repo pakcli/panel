@@ -7132,12 +7132,18 @@ export default class PakCLITablePlugin extends Plugin {
 					});
 
 				new Setting(containerEl)
-					.setName('Sticky Quick Action Badges')
-					.setDesc('Show [+File] and [+Folder] quick action buttons inside the sticky tree header.')
-					.addToggle((toggle) => {
-						toggle.setValue(this.settings.treeCascadingShowBadges !== false)
-							.onChange(async (val) => {
-								this.settings.treeCascadingShowBadges = val;
+					.setName('Tree Action Badges Display')
+					.setDesc('Where quick action badges (+File, +Folder, +Note) appear: only on folders (default), all items, or none.')
+					.addDropdown((dropdown) => {
+						dropdown
+							.addOption('folder', 'Only Folder (Default)')
+							.addOption('all', 'All (Folders & Files)')
+							.addOption('none', 'None')
+							.setValue(this.settings.treeBadgesDisplayMode ?? 'folder')
+							.onChange(async (val: string) => {
+								const mode = (val as 'folder' | 'all' | 'none');
+								this.settings.treeBadgesDisplayMode = mode;
+								this.settings.treeCascadingShowBadges = mode !== 'none';
 								await this.saveSettings();
 								if (this.treeCascadingManager) {
 									this.treeCascadingManager.refreshAllViews();

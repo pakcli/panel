@@ -257,6 +257,7 @@ export interface PakCLITableSettings extends
     treeCascadingShowNoteBadge?: boolean;
     treeCascadingPostItTheme?: 'sticky-yellow' | 'subtle-badge' | 'monospace-tag';
     treeNoteSpacing?: string;
+    treeBadgesDisplayMode?: 'folder' | 'all' | 'none';
     [key: string]: unknown;
 }
 
@@ -411,5 +412,6 @@ export const DEFAULT_TABLE_SETTINGS: PakCLITableSettings = {
     treeCascadingShowNoteBadge: true,
     treeCascadingPostItTheme: 'sticky-yellow',
     treeNoteSpacing: '1',
+    treeBadgesDisplayMode: 'folder',
 };
 

@@ -104,6 +104,7 @@ export class TreeCascadingManager {
             treeCascadingShowNoteBadge: s.treeCascadingShowNoteBadge !== false,
             treeCascadingPostItTheme: s.treeCascadingPostItTheme || DEFAULT_TREE_CASCADING_SETTINGS.treeCascadingPostItTheme,
             treeNoteSpacing: s.treeNoteSpacing || DEFAULT_TREE_CASCADING_SETTINGS.treeNoteSpacing,
+            treeBadgesDisplayMode: s.treeBadgesDisplayMode || DEFAULT_TREE_CASCADING_SETTINGS.treeBadgesDisplayMode,
         };
     }
 
@@ -651,7 +652,8 @@ export class TreeCascadingManager {
             let folderBadge: HTMLElement | null = null;
             let noteBadge: HTMLElement | null = null;
 
-            if (this.settings.treeCascadingShowBadges) {
+            const badgesMode = this.settings.treeBadgesDisplayMode ?? (this.settings.treeCascadingShowBadges ? 'folder' : 'none');
+            if (badgesMode !== 'none') {
                 badgesWrap = rowEl.createSpan({ cls: 'pakcli-tree-badges' });
 
                 fileBadge = badgesWrap.createSpan({

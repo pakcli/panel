@@ -8,6 +8,7 @@ export interface TreeCascadingSettings {
     treeCascadingShowNoteBadge?: boolean;
     treeCascadingPostItTheme?: 'sticky-yellow' | 'subtle-badge' | 'monospace-tag';
     treeNoteSpacing?: string;
+    treeBadgesDisplayMode?: 'folder' | 'all' | 'none';
 }
 
 export const DEFAULT_TREE_CASCADING_SETTINGS: TreeCascadingSettings = {
@@ -18,6 +19,7 @@ export const DEFAULT_TREE_CASCADING_SETTINGS: TreeCascadingSettings = {
     treeCascadingShowNoteBadge: true,
     treeCascadingPostItTheme: 'sticky-yellow',
     treeNoteSpacing: '1',
+    treeBadgesDisplayMode: 'folder',
 };
 
 export interface TreeCrumbItem {
