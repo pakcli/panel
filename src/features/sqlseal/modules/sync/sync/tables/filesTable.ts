@@ -1,4 +1,4 @@
-import { App, Plugin, TFile } from "obsidian";
+﻿import { App, Plugin, TFile } from "obsidian";
 import { AFileSyncTable } from "./abstractFileSyncTable";
 import { sanitise } from "../../../../utils/sanitiseColumn";
 import { SqlocalDatabaseProxy } from "../../../database/sqlocal/sqlocalDatabaseProxy";
@@ -23,6 +23,7 @@ async function getFileRowCount(app: App, file: TFile): Promise<number | null> {
     try {
         if (ext === 'csv' || ext === 'tsv') {
             const content = await app.vault.read(file);
+            if (!content || !content.trim()) return 0;
             const delimiter = ext === 'tsv' ? '\t' : ',';
             const parsed = Papa.parse<string[]>(content, {
                 delimiter,
@@ -32,22 +33,30 @@ async function getFileRowCount(app: App, file: TFile): Promise<number | null> {
             return Math.max(0, parsed.data.length - 1);
         } else if (ext === 'json' || ext === 'json5') {
             const content = await app.vault.read(file);
+            if (!content || !content.trim()) return 0;
             let parsed;
             try {
                 parsed = JSON.parse(content);
             } catch {
-                parsed = parseJson5(content);
+                try {
+                    parsed = parseJson5(content);
+                } catch {
+                    // Fail silently/gracefully on corrupted or incomplete JSON (e.g. empty or mid-write state)
+                    return null;
+                }
             }
             if (Array.isArray(parsed)) return parsed.length;
             if (typeof parsed === 'object' && parsed !== null) return Object.keys(parsed).length;
             return 1;
         } else if (ext === 'jsonl') {
             const content = await app.vault.read(file);
+            if (!content || !content.trim()) return 0;
             const lines = content.split('\n').map(l => l.trim()).filter(Boolean);
             return lines.length;
         }
     } catch (e) {
-        console.error("Failed to get row count for file:", file.path, e);
+        // Log softly as debug/warn rather than uncaught error dump
+        console.debug("Silent row count fallback for file:", file.path);
     }
     return null;
 }
@@ -70,64 +79,50 @@ export class FilesFileSyncTable extends AFileSyncTable {
     get tableName() {
         return FILES_TABLE_NAME
     }
-    private columns: string[] = []
-    shouldPerformBulkInsert = true;
-    constructor(db: SqlocalDatabaseProxy, app: App, private readonly plugin: Plugin) {
-        super(db, app)
-    }
-    async onFileModify(file: TFile): Promise<void> {
-        const frontmatter = extractFrontmatterFromFile(file, this.plugin)
-        const frontmatterWithFileData = await fileData(this.app, file, frontmatter)
-        const columns = Object.keys(frontmatterWithFileData)
-        await this.updateColumnsIfNeeded(columns)
 
-        await this.db.updateData(FILES_TABLE_NAME, [frontmatterWithFileData])
-        // @ts-ignore
-        if (typeof sleep !== 'undefined') {
-            // @ts-ignore
-            await sleep(1000)
-        } else {
-            await new Promise(r => window.setTimeout(r, 1000));
-        }
-    }
-    async onFileDelete(path: string): Promise<void> {
-        await this.db.deleteData(FILES_TABLE_NAME, [{ id: path }])
+    private columns: Array<string> = []
+
+    async onFileModify(file: TFile) {
+        await this.onFileDelete(file.path)
+        await this.onFileCreate(file)
     }
 
-    async updateColumnsIfNeeded(newSetOfColumns: string[]) {
-        const colSet = new Set(this.columns);
-        const newColumns = newSetOfColumns.filter(c => !colSet.has(c));
-        if (newColumns.length) {
-            await this.db.addColumns(FILES_TABLE_NAME, newColumns)
-            this.columns = (await this.db.getColumns(FILES_TABLE_NAME)) ?? []
-        }
+    async onFileDelete(file: string) {
+        await this.db.deleteData(this.tableName, [{
+            path: file
+        }], 'path')
     }
 
     async onFileCreate(file: TFile): Promise<void> {
-        const frontmatter = extractFrontmatterFromFile(file, this.plugin)
-        const frontmatterWithFileData = await fileData(this.app, file, frontmatter)
-        const columns = Object.keys(frontmatterWithFileData)
-        await this.updateColumnsIfNeeded(columns)
-        
-        await this.db.insertData(FILES_TABLE_NAME, [frontmatterWithFileData])
+        const data = await fileData(this.app, file, extractFrontmatterFromFile(file, this.plugin))
+        const unexistingColumns = Object.keys(data).filter(x => !this.columns.includes(x))
+        if (unexistingColumns.length) {
+            await this.db.addColumns(this.tableName, unexistingColumns)
+            this.columns = (await this.db.getColumns(this.tableName)) ?? []
+        }
+        await this.db.insertData(this.tableName, [data])
     }
 
     async onFileCreateBulk(files: Array<TFile>) {
-        this.columns = (await this.db.getColumns(FILES_TABLE_NAME)) ?? []
+        this.columns = (await this.db.getColumns(this.tableName)) ?? []
 
         for (const file of files) {
             await this.onFileCreate(file)
         }
     }
 
-
     async onInit(): Promise<void> {
         await this.db.createTableNoTypes(FILES_TABLE_NAME, ['id', 'name', 'path', 'created_at', 'modified_at', 'file_size', 'row_count'])
-        this.columns = (await this.db.getColumns(FILES_TABLE_NAME)) ?? []
+        this.columns = (await this.db.getColumns(this.tableName)) ?? []
+        const indices = ['id', 'name', 'path']
+        await Promise.all(indices.map(x => this.db.createIndex(`files_${x}_idx`, FILES_TABLE_NAME, [x])))
+    }
 
-        const toIndex = ['id', 'name', 'path']
-        await Promise.all(toIndex.map(column =>
-            this.db.createIndex(`files_${column}_idx`, FILES_TABLE_NAME, [column])
-        ))
+    constructor(
+        private db: SqlocalDatabaseProxy,
+        private app: App,
+        private plugin: Plugin
+    ) {
+        super()
     }
 }
