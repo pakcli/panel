@@ -154,9 +154,9 @@
     font-weight: 500;
     opacity: 1 !important;
 
-    /* Unselected lines: grayout (20% visual weight) using solid muted colors, strictly NO transparency */
-    color: var(--text-faint, #666666);
-    border: 1px solid var(--background-modifier-border, #383838);
+    /* Unselected lines: strictly 12% visible for both text & border */
+    color: color-mix(in srgb, var(--text-normal, #888888) 12%, var(--code-background, var(--background-primary, #ffffff)));
+    border: 1px solid color-mix(in srgb, var(--text-normal, #888888) 12%, var(--code-background, var(--background-primary, #ffffff)));
     background: transparent;
     transition: color 0.15s ease, border-color 0.15s ease, background-color 0.15s ease;
 
@@ -169,8 +169,8 @@
     .pakcli-tree-badges:hover &,
     .pakcli-tree-sticky-line.is-current &,
     .pakcli-tree-sticky-line:hover & {
-        color: var(--text-normal, #dcddde);
-        border-color: var(--text-muted, var(--background-modifier-border-hover, #666666));
+        color: var(--text-normal, #dcddde) !important;
+        border-color: var(--text-muted, var(--background-modifier-border-hover, #666666)) !important;
         font-weight: 600;
     }
 
@@ -184,7 +184,10 @@
     &.pakcli-badge-file,
     &.pakcli-badge-folder,
     &.pakcli-badge-note {
-        /* Inherit grayout / active colors cleanly */
+        /* Strictly inherit unselected 12% visible vs selected/hover rules */
+        color: inherit;
+        border-color: inherit;
+
         &:hover {
             background: var(--background-modifier-hover);
             color: var(--text-normal, #ffffff) !important;
