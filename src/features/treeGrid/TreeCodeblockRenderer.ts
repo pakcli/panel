@@ -20,7 +20,7 @@
 import { MarkdownRenderChild, MarkdownPostProcessorContext, MarkdownView, Notice, TFile } from 'obsidian';
 import { ParsedTreeGrid, TreeGridColumn, TreeGridNode } from './types';
 import { CopyButton, PillGroup } from '../../uiComponents';
-import { parseTreeGrid, serializeTreeToSource, getMaxCol0Length, getAsciiBranchPrefix, isFileName, getExtension } from './treeParser';
+import { parseTreeGrid, serializeTreeToSource, getMaxCol0Length, getAsciiBranchPrefix, isFileName, getExtension, alignTreeBlockNotes } from './treeParser';
 
 export class TreeCodeblockRenderer extends MarkdownRenderChild {
     private source: string;
@@ -186,6 +186,18 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
             cls: 'pakcli-tree-copy-btn',
             tooltip: 'Copy clean formatted tree',
             textGetter: () => this.getPlainTextForCopy(),
+        });
+
+        // ⚡ Align # Notes Button inside Top HUD
+        const alignBtn = this.topHudEl.createSpan({
+            cls: 'pakcli-tree-hud-btn pakcli-align-btn',
+            text: '⚡ Align # Notes',
+            attr: { title: 'Auto-align all # comments across this tree into a uniform vertical column' },
+        });
+        alignBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            this.alignNotesAction();
         });
 
         // Main Tree Body (relative wrapper for background wires and code lines)
@@ -577,6 +589,23 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
 
         this.renderTopHUD();
         this.syncChangesToNote();
+    }
+
+    public async alignNotesAction(): Promise<void> {
+        const lines = this.source.split(/\r?\n/);
+        const aligned = alignTreeBlockNotes(lines);
+        const newSource = aligned.join('\n');
+        if (newSource === this.source) {
+            new Notice('✓ # Notes are already vertically aligned');
+            return;
+        }
+
+        this.source = newSource;
+        this.parsed = parseTreeGrid(newSource);
+        this.initColumns();
+        this.render();
+        await this.syncChangesToNote();
+        new Notice('✓ Auto-aligned all # notes');
     }
 
     private async syncChangesToNote(): Promise<void> {

@@ -5,6 +5,8 @@ export interface TreeCascadingSettings {
     treeCascadingStyle: 'auto' | 'breadcrumb' | 'cascading';
     treeCascadingMaxDepth: number;
     treeCascadingShowBadges: boolean;
+    treeCascadingShowNoteBadge?: boolean;
+    treeCascadingPostItTheme?: 'sticky-yellow' | 'subtle-badge' | 'monospace-tag';
 }
 
 export const DEFAULT_TREE_CASCADING_SETTINGS: TreeCascadingSettings = {
@@ -12,6 +14,8 @@ export const DEFAULT_TREE_CASCADING_SETTINGS: TreeCascadingSettings = {
     treeCascadingStyle: 'auto',
     treeCascadingMaxDepth: 12,
     treeCascadingShowBadges: true,
+    treeCascadingShowNoteBadge: true,
+    treeCascadingPostItTheme: 'sticky-yellow',
 };
 
 export interface TreeCrumbItem {

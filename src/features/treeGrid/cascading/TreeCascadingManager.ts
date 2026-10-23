@@ -18,7 +18,8 @@ import {
     isFileName,
     getExtension,
     isTreeBlockAlias,
-    getAsciiBranchPrefix
+    getAsciiBranchPrefix,
+    alignTreeBlockNotes
 } from '../treeParser';
 import { TreeCascadingSettings, DEFAULT_TREE_CASCADING_SETTINGS, TreeCrumbItem } from './types';
 
@@ -100,6 +101,8 @@ export class TreeCascadingManager {
             treeCascadingStyle: s.treeCascadingStyle || DEFAULT_TREE_CASCADING_SETTINGS.treeCascadingStyle,
             treeCascadingMaxDepth: Math.max(12, savedDepth),
             treeCascadingShowBadges: s.treeCascadingShowBadges !== false,
+            treeCascadingShowNoteBadge: s.treeCascadingShowNoteBadge !== false,
+            treeCascadingPostItTheme: s.treeCascadingPostItTheme || DEFAULT_TREE_CASCADING_SETTINGS.treeCascadingPostItTheme,
         };
     }
 
@@ -639,14 +642,20 @@ export class TreeCascadingManager {
             // Folder Name
             rowEl.createSpan({ cls: 'pakcli-tree-node-name', text: item.name });
 
-            // Trailing sentence content / columns if any (word word [badge])
-            if (item.node.trailingContent) {
+            // Post-it note pill or trailing content (word word [badge])
+            let postitEl: HTMLElement | null = null;
+            if (item.node.columns && item.node.columns.length > 0) {
+                const noteText = item.node.columns.join(' # ');
+                postitEl = rowEl.createSpan({
+                    cls: 'pakcli-tree-postit-pill',
+                    text: `📌 ${noteText}`,
+                    attr: { title: `Click to edit note for ${item.name}` },
+                });
+            } else if (item.node.trailingContent) {
                 rowEl.createSpan({ cls: 'pakcli-tree-node-trailing', text: item.node.trailingContent });
-            } else if (item.node.columns && item.node.columns.length > 0) {
-                rowEl.createSpan({ cls: 'pakcli-tree-node-trailing', text: ' ' + item.node.columns.join(' ') });
             }
 
-            // Badges (+File and +Folder) directly at the end of the sentence/line
+            // Badges (+File, +Folder, +Note) directly at the end of the sentence/line
             if (this.settings.treeCascadingShowBadges) {
                 const badgesWrap = rowEl.createSpan({ cls: 'pakcli-tree-badges' });
 
@@ -662,7 +671,28 @@ export class TreeCascadingManager {
                     attr: { title: `Add folder inside ${item.name}` },
                 });
 
+                let noteBadge: HTMLElement | null = null;
+                if (this.settings.treeCascadingShowNoteBadge !== false) {
+                    const hasNote = item.node.columns && item.node.columns.length > 0;
+                    noteBadge = badgesWrap.createSpan({
+                        cls: 'pakcli-tree-badge pakcli-badge-note',
+                        text: hasNote ? '✎Note' : '+Note',
+                        attr: { title: hasNote ? `Edit note for ${item.name}` : `Add note to ${item.name}` },
+                    });
+                }
+
+                let isClosing = false;
+                const restoreBadges = () => {
+                    if (isClosing) return;
+                    isClosing = true;
+                    badgesWrap.empty();
+                    badgesWrap.appendChild(fileBadge);
+                    badgesWrap.appendChild(folderBadge);
+                    if (noteBadge) badgesWrap.appendChild(noteBadge);
+                };
+
                 const activateInput = (isFolderType: boolean) => {
+                    isClosing = false;
                     badgesWrap.empty();
                     const input = badgesWrap.createEl('input', {
                         cls: 'pakcli-tree-inline-input',
@@ -670,15 +700,6 @@ export class TreeCascadingManager {
                         placeholder: isFolderType ? 'folder-name' : 'file.webp',
                     });
                     input.focus();
-
-                    let isClosing = false;
-                    const restoreBadges = () => {
-                        if (isClosing) return;
-                        isClosing = true;
-                        badgesWrap.empty();
-                        badgesWrap.appendChild(fileBadge);
-                        badgesWrap.appendChild(folderBadge);
-                    };
 
                     const handleCommit = (shouldKeepOpen: boolean) => {
                         const val = input.value.trim();
@@ -716,6 +737,45 @@ export class TreeCascadingManager {
                     });
                 };
 
+                const activateNoteInput = () => {
+                    isClosing = false;
+                    badgesWrap.empty();
+                    const existingNote = (item.node.columns && item.node.columns.length > 0) ? item.node.columns.join(' ') : '';
+                    const input = badgesWrap.createEl('input', {
+                        cls: 'pakcli-tree-inline-input pakcli-note-input',
+                        type: 'text',
+                        placeholder: '# note...',
+                        value: existingNote,
+                    });
+                    input.focus();
+                    input.select();
+
+                    const handleCommit = () => {
+                        const val = input.value.trim();
+                        this.updateNodeNote(view, item, val, block);
+                        restoreBadges();
+                    };
+
+                    input.addEventListener('keydown', (e) => {
+                        if (e.key === 'Enter') {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            handleCommit();
+                        } else if (e.key === 'Escape') {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            restoreBadges();
+                        }
+                    });
+
+                    input.addEventListener('blur', () => {
+                        setTimeout(() => {
+                            if (isClosing) return;
+                            handleCommit();
+                        }, 120);
+                    });
+                };
+
                 fileBadge.addEventListener('click', (e) => {
                     e.preventDefault();
                     e.stopPropagation();
@@ -727,6 +787,22 @@ export class TreeCascadingManager {
                     e.stopPropagation();
                     activateInput(true);
                 });
+
+                if (noteBadge) {
+                    noteBadge.addEventListener('click', (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        activateNoteInput();
+                    });
+                }
+
+                if (postitEl) {
+                    postitEl.addEventListener('click', (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        activateNoteInput();
+                    });
+                }
             }
 
             // Click on row (outside badges) to jump
@@ -841,6 +917,80 @@ export class TreeCascadingManager {
         }
 
         new Notice(`✓ Added ${isFolderType ? 'folder' : 'file'} ${val}`);
+    }
+
+    private updateNodeNote(view: MarkdownView, item: TreeCrumbItem, noteText: string, block: ParsedBlockTree): void {
+        const editor = view.editor;
+        if (!editor) return;
+
+        const totalLines = editor.lineCount();
+
+        // 1. Locate folder line in editor around item.lineNo
+        let folderLine = -1;
+        const searchRange = 50;
+        const minL = Math.max(0, item.lineNo - searchRange);
+        const maxL = Math.min(totalLines - 1, item.lineNo + searchRange);
+
+        for (let l = minL; l <= maxL; l++) {
+            const text = editor.getLine(l);
+            const trimmed = text.trim().replace(/^(?:[Vv>▼▶]\s*)+/, '');
+            const parsed = extractNameAndColumns(trimmed);
+            const cleanName = parsed.name.replace(/^[├└│|L\s─\-+▼▶vV><]+/g, '').trim();
+            if (cleanName === item.name) {
+                folderLine = l;
+                break;
+            }
+        }
+        if (folderLine === -1) {
+            folderLine = Math.min(item.lineNo, totalLines - 1);
+        }
+
+        const currentLine = editor.getLine(folderLine);
+        if (currentLine === undefined) return;
+
+        const leadMatch = currentLine.match(/^[\t ]*/);
+        const indent = leadMatch ? leadMatch[0] : '';
+        const content = currentLine.slice(indent.length);
+
+        const hashMatch = /(?:[ \t]+\|[ \t]*|[ \t]+)#|\s+##+\s*|(?<=\S)#/.exec(content);
+        const name = hashMatch ? content.slice(0, hashMatch.index).trim() : content.trim();
+
+        const cleanNote = noteText.replace(/^[#\s]+/, '').trim();
+        let updatedLine = indent + name;
+        if (cleanNote) {
+            updatedLine += `   # ${cleanNote}`;
+        }
+
+        const mode = view.getMode();
+        const scroller = view.contentEl.querySelector(mode === 'preview' ? '.markdown-preview-view' : '.cm-scroller') as HTMLElement | null;
+        const savedScrollTop = scroller ? scroller.scrollTop : null;
+
+        // Replace the target folder line
+        editor.replaceRange(
+            updatedLine,
+            { line: folderLine, ch: 0 },
+            { line: folderLine, ch: currentLine.length }
+        );
+
+        // Auto-align notes across block lines
+        const blockLines: string[] = [];
+        for (let l = block.startLine + 1; l < block.endLine; l++) {
+            blockLines.push(editor.getLine(l));
+        }
+        const aligned = alignTreeBlockNotes(blockLines);
+
+        editor.replaceRange(
+            aligned.join('\n'),
+            { line: block.startLine + 1, ch: 0 },
+            { line: block.endLine - 1, ch: editor.getLine(block.endLine - 1).length }
+        );
+
+        if (scroller && savedScrollTop !== null) {
+            scroller.scrollTop = savedScrollTop;
+        }
+
+        new Notice(cleanNote ? `✓ Note saved & aligned` : `✓ Note cleared`);
+        this.scheduleUpdate(view);
     }
 
     private jumpToLine(view: MarkdownView, lineNo: number, block?: ParsedBlockTree): void {

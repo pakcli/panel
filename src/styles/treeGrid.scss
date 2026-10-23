@@ -170,6 +170,95 @@
             border-color: var(--text-normal, currentColor);
         }
     }
+
+    &.pakcli-badge-note {
+        color: var(--text-normal, inherit);
+        border: 1px solid var(--text-muted, var(--background-modifier-border));
+
+        &:hover {
+            background: var(--background-modifier-hover, rgba(255, 255, 255, 0.1));
+            color: var(--text-normal, #fff);
+            border-color: var(--text-normal, currentColor);
+        }
+    }
+}
+
+/* Post-it / Sticky Note Pill decoration inside Live Preview lines */
+.pakcli-tree-postit-tag {
+    display: inline-flex;
+    align-items: center;
+    background: rgba(254, 240, 138, 0.22);
+    color: var(--text-normal);
+    border: 1px solid rgba(234, 179, 8, 0.45);
+    border-radius: 4px;
+    padding: 0 5px;
+    font-size: 0.88em;
+    font-weight: 500;
+    line-height: 1.35;
+    cursor: pointer;
+    margin-left: 2px;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+    transition: all 0.15s ease;
+
+    &::before {
+        content: "📌 ";
+        font-size: 0.85em;
+        margin-right: 2px;
+    }
+
+    &:hover {
+        background: rgba(254, 240, 138, 0.38);
+        border-color: rgba(234, 179, 8, 0.7);
+    }
+}
+
+/* Post-it pill token in Sticky Cascading Header */
+.pakcli-tree-postit-pill {
+    display: inline-flex;
+    align-items: center;
+    background: rgba(254, 240, 138, 0.22);
+    color: var(--text-normal);
+    border: 1px solid rgba(234, 179, 8, 0.45);
+    border-radius: 4px;
+    padding: 0 6px;
+    font-size: 11px;
+    font-weight: 500;
+    line-height: 14px;
+    height: 16px;
+    margin-left: 8px;
+    cursor: pointer;
+    vertical-align: middle;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+    transition: all 0.15s ease;
+
+    &:hover {
+        background: rgba(254, 240, 138, 0.38);
+        border-color: rgba(234, 179, 8, 0.7);
+    }
+}
+
+.pakcli-tree-hud-btn {
+    display: inline-flex;
+    align-items: center;
+    font-family: var(--font-monospace, monospace);
+    font-size: 10px;
+    line-height: 14px;
+    height: 18px;
+    padding: 0 6px;
+    border-radius: 3px;
+    border: 1px solid var(--background-modifier-border);
+    background: var(--background-secondary);
+    color: var(--text-muted);
+    cursor: pointer;
+    margin-left: 6px;
+    user-select: none;
+    transition: all 0.15s ease;
+
+    &:hover {
+        background: var(--background-modifier-hover);
+        color: var(--text-normal);
+        border-color: var(--interactive-accent);
+    }
 }
 
 .pakcli-tree-inline-input {

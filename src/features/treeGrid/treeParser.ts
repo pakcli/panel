@@ -115,15 +115,15 @@ export function extractNameAndColumns(rawTrimmed: string): {
     trimmed = trimmed.replace(/^[│\s]*[├└]──\s*/, '');
 
     // Check if line has columns marked by:
-    // 1. "space + #" or "| #" or "##"
-    const hashMatch = /(?:[ \t]+\|[ \t]*|[ \t]+)#|\s+##+\s*/.exec(trimmed);
+    // 1. "space + #" or "| #" or "##" or attached "#"
+    const hashMatch = /(?:[ \t]+\|[ \t]*|[ \t]+)#|\s+##+\s*|(?<=\S)#/.exec(trimmed);
     if (hashMatch) {
         const namePart = trimmed.slice(0, hashMatch.index).trim().replace(/\|\s*$/, '').trim();
         const trailing = trimmed.slice(namePart.length);
         const rest = trimmed.slice(hashMatch.index).trim();
 
-        // Split all columns by (space + #) or (| + #) or (##)
-        const rawCols = rest.split(/(?:[ \t]+\|[ \t]*|[ \t]+)#|\s+##+\s*/);
+        // Split all columns by (space + #) or (| + #) or (##) only if followed by content
+        const rawCols = rest.split(/(?:[ \t]+\|[ \t]*|[ \t]+)#(?=\s*\S)|\s+##+\s*/);
         const columns: string[] = [];
 
         for (const col of rawCols) {
@@ -381,4 +381,98 @@ export function serializeTreeToSource(
     }
 
     return lines;
+}
+
+/**
+ * Aligns all "#" comment notes across tree block lines into a uniform vertical column.
+ * Preserves indentation, empty lines, and metadata.
+ */
+export function alignTreeBlockNotes(lines: string[]): string[] {
+    interface LineInfo {
+        raw: string;
+        isTreeLine: boolean;
+        indent: string;
+        name: string;
+        comment: string | null;
+        preVisualWidth: number;
+    }
+
+    const parsedLines: LineInfo[] = [];
+    let maxPreWidth = 0;
+    let hasAnyComment = false;
+
+    for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed || trimmed.startsWith('<!--') || (trimmed.startsWith('-') && trimmed.includes(':'))) {
+            parsedLines.push({
+                raw: line,
+                isTreeLine: false,
+                indent: '',
+                name: '',
+                comment: null,
+                preVisualWidth: 0,
+            });
+            continue;
+        }
+
+        const leadMatch = line.match(/^[\t ]*/);
+        const indent = leadMatch ? leadMatch[0] : '';
+        const content = line.slice(indent.length);
+
+        // Check for comment separator
+        const hashMatch = /(?:[ \t]+\|[ \t]*|[ \t]+)#|\s+##+\s*|(?<=\S)#/.exec(content);
+        let name = content;
+        let comment: string | null = null;
+
+        if (hashMatch) {
+            name = content.slice(0, hashMatch.index).trim();
+            const rest = content.slice(hashMatch.index).trim();
+            // Clean comment: strip leading # and spaces
+            const cleanComment = rest.replace(/^[#\s]+/, '').trim();
+            if (cleanComment.length > 0) {
+                comment = cleanComment;
+                hasAnyComment = true;
+            }
+        } else {
+            name = content.trim();
+        }
+
+        // Compute visual width of indent + name (expanding \t to 4 spaces)
+        let indentVisualWidth = 0;
+        for (const ch of indent) {
+            indentVisualWidth += ch === '\t' ? 4 : 1;
+        }
+        const preVisualWidth = indentVisualWidth + name.length;
+
+        if (preVisualWidth > maxPreWidth) {
+            maxPreWidth = preVisualWidth;
+        }
+
+        parsedLines.push({
+            raw: line,
+            isTreeLine: true,
+            indent,
+            name,
+            comment,
+            preVisualWidth,
+        });
+    }
+
+    if (!hasAnyComment) {
+        return lines;
+    }
+
+    // Target column for "#"
+    // At least 4 spaces after longest name in the block, min column 20
+    const targetCol = Math.max(maxPreWidth + 4, 20);
+
+    return parsedLines.map((pl) => {
+        if (!pl.isTreeLine || pl.comment === null) {
+            return pl.raw;
+        }
+
+        const spacesCount = Math.max(2, targetCol - pl.preVisualWidth);
+        const pad = ' '.repeat(spacesCount);
+        return `${pl.indent}${pl.name}${pad}# ${pl.comment}`;
+    });
 }

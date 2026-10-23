@@ -99,7 +99,7 @@ import { VaultHistoryView, VAULT_HISTORY_VIEW_TYPE } from './features/history/Va
 // Tier List Engine (Score & Batch Compare) Imports
 import { TierListManager } from './features/tierlist/TierListManager';
 // Tree Grid Codeblock Renderer
-import { TreeCodeblockRenderer, createTreeLivePreviewPlugin, TreeCascadingManager } from './features/treeGrid';
+import { TreeCodeblockRenderer, createTreeLivePreviewPlugin, TreeCascadingManager, isTreeBlockAlias, alignTreeBlockNotes } from './features/treeGrid';
 import { CascadingStickyHeaderManager } from './features/stickyHeader';
 
 export default class PakCLITablePlugin extends Plugin {
@@ -1378,6 +1378,60 @@ export default class PakCLITablePlugin extends Plugin {
 			callback: () => {
 				const active = this.app.workspace.activeLeaf;
 				if (active) this.zoomManager.toggleWidthMode(active);
+			}
+		});
+
+		this.addCommand({
+			id: 'pakcli-tree-align-notes',
+			name: 'PakCLI: Align # notes in active tree codeblock',
+			editorCallback: (editor: Editor, view: MarkdownView) => {
+				const cursor = editor.getCursor();
+				const totalLines = editor.lineCount();
+				let startLine = -1;
+				let endLine = -1;
+
+				for (let l = cursor.line; l >= 0; l--) {
+					const lineText = editor.getLine(l);
+					const match = lineText.match(/^```+\s*([a-zA-Z0-9_-]+)/);
+					if (match && isTreeBlockAlias(match[1])) {
+						startLine = l;
+						break;
+					}
+					if (l < cursor.line && lineText.match(/^```+\s*$/)) {
+						break;
+					}
+				}
+
+				if (startLine === -1) {
+					new Notice('Cursor is not inside a panel-tree codeblock');
+					return;
+				}
+
+				for (let l = cursor.line; l < totalLines; l++) {
+					const lineText = editor.getLine(l);
+					if (l > startLine && lineText.match(/^```+\s*$/)) {
+						endLine = l;
+						break;
+					}
+				}
+
+				if (endLine === -1) {
+					new Notice('Could not find end of codeblock');
+					return;
+				}
+
+				const blockLines: string[] = [];
+				for (let l = startLine + 1; l < endLine; l++) {
+					blockLines.push(editor.getLine(l));
+				}
+
+				const aligned = alignTreeBlockNotes(blockLines);
+				editor.replaceRange(
+					aligned.join('\n'),
+					{ line: startLine + 1, ch: 0 },
+					{ line: endLine - 1, ch: editor.getLine(endLine - 1).length }
+				);
+				new Notice('✓ Auto-aligned all # notes');
 			}
 		});
 
@@ -7091,6 +7145,20 @@ export default class PakCLITablePlugin extends Plugin {
 					});
 
 				new Setting(containerEl)
+					.setName('Sticky [+Note] Adder Badge')
+					.setDesc('Show [+Note] and post-it annotations inside the sticky tree header and tree nodes.')
+					.addToggle((toggle) => {
+						toggle.setValue(this.settings.treeCascadingShowNoteBadge !== false)
+							.onChange(async (val) => {
+								this.settings.treeCascadingShowNoteBadge = val;
+								await this.saveSettings();
+								if (this.treeCascadingManager) {
+									this.treeCascadingManager.refreshAllViews();
+								}
+							});
+					});
+
+				new Setting(containerEl)
 					.setName('Maximum Sticky Tree Depth')
 					.setDesc('Maximum folder ancestor levels displayed simultaneously in the sticky bar (up to 16 levels).')
 					.addSlider((slider) => {
@@ -7113,7 +7181,7 @@ export default class PakCLITablePlugin extends Plugin {
 	}
 
 	private registerTreeGridProcessors(): void {
-		const rawAliases = this.settings.panelTreeAliases || 'panel-tree, panel-tree-cascading, tree-cascading, panel-tree-structure, tree-structure, tree-interactive';
+		const rawAliases = this.settings.panelTreeAliases || 'panel-tree, panel-tree-cascading, tree-cascading, panel-tree-structure, tree-structure, tree-interactive, panel-tree-cascading-note-sticky, panel-tree-cascading-sticky-note, panel-tree-cascading-postit, panel-tree-postit-cascading';
 		const aliases = rawAliases
 			.split(',')
 			.map((a) => a.trim().toLowerCase())

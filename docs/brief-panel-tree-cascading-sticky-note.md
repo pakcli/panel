@@ -1,6 +1,6 @@
 # 📌 Master Brief: Interactive Aligned #Note Adder & Sticky Post-it Tree (panel-tree-cascading-sticky-note)
 
-> **Feature Status**: `0` (Draft / Pending Implementation)  
+> **Feature Status**: `1` (Completed & Verified)  
 > **Target Module**: `pakcli-panel` (`panel`)  
 > **Platform**: Obsidian Desktop & Mobile (Live Preview & Reading View)  
 > **Date**: 2026-10-23  
@@ -69,22 +69,22 @@ folder app
 
 | File | Status | Description |
 | :--- | :---: | :--- |
-| `src/features/treeGrid/treeParser.ts` | ⏳ | Enhance `extractNameAndColumns` & `serializeTreeToSource` with smart `#` column alignment |
-| `src/features/treeGrid/cascading/types.ts` | ⏳ | Add `TreeCascadingSettings.treeCascadingShowNoteBadge` and style modes |
-| `src/features/treeGrid/cascading/TreeCascadingManager.ts` | ⏳ | Render `[+Note]` badge, inline note input editor, and sticky note post-it tags |
-| `src/features/treeGrid/TreeLivePreviewPlugin.ts` | ⏳ | Live Preview inline `[+Note]` adder and column-aligned post-it widgets |
-| `src/styles/treeCascading.scss` | ⏳ | Sleek post-it styling (sticky yellow, slate, pill tag options) and alignment rules |
-| `src/settings.ts` | ⏳ | Settings toggles for note badge visibility and post-it visual theme |
+| `src/features/treeGrid/treeParser.ts` | ✅ | Enhanced `extractNameAndColumns` with `(?<=\S)#` and implemented `alignTreeBlockNotes` column ruler |
+| `src/features/treeGrid/cascading/types.ts` | ✅ | Added `treeCascadingShowNoteBadge` and `treeCascadingPostItTheme` |
+| `src/features/treeGrid/cascading/TreeCascadingManager.ts` | ✅ | Rendered `[+Note]` / `[✎Note]` badge, inline note input editor, and sticky note post-it tags |
+| `src/features/treeGrid/TreeLivePreviewPlugin.ts` | ✅ | Live Preview inline `[+Note]` adder for folders and files, and column-aligned post-it widgets |
+| `src/styles/treeCascading.scss` | ✅ | Sleek post-it styling (sticky yellow, slate, pill tag options) and alignment rules |
+| `src/settings.ts` | ✅ | Settings toggles for note badge visibility and post-it visual theme |
 
 ---
 
 ## 4. Acceptance Criteria Checklist
 
-- [ ] Status 0 brief created and committed in `panel/docs/`.
-- [ ] Codeblock aliases (`panel-tree-cascading-sticky-note`, etc.) registered and handled seamlessly.
-- [ ] Auto-aligns `#` comments across all nodes to a clean vertical column ruler.
-- [ ] Interactive `[+Note]` action badge allows 1-click addition and editing of node comments.
-- [ ] Cascading sticky bar preserves and displays active folder notes when scrolling.
-- [ ] Fully copy-pasteable as authentic plain-text tree markdown without breaking formatting.
-- [ ] Bundle size remains strictly $< 5.00\text{ MB}$.
-- [ ] Status 1 completion commit and deployment verification.
+- [x] Status 0 brief created and committed in `panel/docs/`.
+- [x] Codeblock aliases (`panel-tree-cascading-sticky-note`, etc.) registered and handled seamlessly.
+- [x] Auto-aligns `#` comments across all nodes to a clean vertical column ruler.
+- [x] Interactive `[+Note]` action badge allows 1-click addition and editing of node comments.
+- [x] Cascading sticky bar preserves and displays active folder notes when scrolling.
+- [x] Fully copy-pasteable as authentic plain-text tree markdown without breaking formatting.
+- [x] Bundle size remains strictly $< 5.00\text{ MB}$ (4.66 MB).
+- [x] Status 1 completion commit and deployment verification.

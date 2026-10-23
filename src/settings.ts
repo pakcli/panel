@@ -254,6 +254,8 @@ export interface PakCLITableSettings extends
     treeCascadingStyle?: 'auto' | 'breadcrumb' | 'cascading';
     treeCascadingMaxDepth?: number;
     treeCascadingShowBadges?: boolean;
+    treeCascadingShowNoteBadge?: boolean;
+    treeCascadingPostItTheme?: 'sticky-yellow' | 'subtle-badge' | 'monospace-tag';
     [key: string]: unknown;
 }
 
@@ -397,7 +399,7 @@ export const DEFAULT_TABLE_SETTINGS: PakCLITableSettings = {
     enableVsCodeTabs: true,
     vscodeTabsMode: 'active',
     tabTitleMaxChars: 15,
-    panelTreeAliases: 'panel-tree, panel-tree-cascading, tree-cascading, panel-tree-structure, tree-structure, tree-interactive',
+    panelTreeAliases: 'panel-tree, panel-tree-cascading, tree-cascading, panel-tree-structure, tree-structure, tree-interactive, panel-tree-cascading-note-sticky, panel-tree-cascading-sticky-note, panel-tree-cascading-postit, panel-tree-postit-cascading',
     enableCascadingStickyHeaders: true,
     stickyHeaderMaxDepth: 3,
     stickyHeaderShowBadges: true,
@@ -405,5 +407,7 @@ export const DEFAULT_TABLE_SETTINGS: PakCLITableSettings = {
     treeCascadingStyle: 'auto',
     treeCascadingMaxDepth: 12,
     treeCascadingShowBadges: true,
+    treeCascadingShowNoteBadge: true,
+    treeCascadingPostItTheme: 'sticky-yellow',
 };
 

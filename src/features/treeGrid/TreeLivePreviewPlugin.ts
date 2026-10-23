@@ -17,7 +17,7 @@
 import { EditorView, ViewPlugin, ViewUpdate, Decoration, DecorationSet, WidgetType } from '@codemirror/view';
 import { RangeSetBuilder } from '@codemirror/state';
 import { Plugin, Notice } from 'obsidian';
-import { isFileName, getExtension, extractNameAndColumns, getRawLeadingWhitespace, isLastChild, isTreeBlockAlias } from './treeParser';
+import { isFileName, getExtension, extractNameAndColumns, getRawLeadingWhitespace, isLastChild, isTreeBlockAlias, alignTreeBlockNotes } from './treeParser';
 import { TreeGridNode } from './types';
 
 // Track collapsed folders by unique path (e.g. "data/asset/player")
@@ -152,17 +152,34 @@ class TreeBranchWidget extends WidgetType {
     }
 }
 
+interface LinePositionInfo {
+    lineNo: number;
+    from: number;
+    to: number;
+}
+
+interface BlockPositionInfo {
+    startLine: number;
+    endLine: number;
+}
+
 class TreeBadgesWidget extends WidgetType {
     constructor(
-        readonly folder: TreeGridNode,
+        readonly node: TreeGridNode,
         readonly view: EditorView,
-        readonly insertPosProvider: () => number
+        readonly insertPosProvider: () => number,
+        readonly lineInfo: LinePositionInfo,
+        readonly blockInfo: BlockPositionInfo
     ) {
         super();
     }
 
     eq(other: TreeBadgesWidget): boolean {
-        return this.folder.id === other.folder.id;
+        return (
+            this.node.id === other.node.id &&
+            this.node.columns.join('|') === other.node.columns.join('|') &&
+            this.lineInfo.lineNo === other.lineInfo.lineNo
+        );
     }
 
     toDOM(): HTMLElement {
@@ -170,26 +187,40 @@ class TreeBadgesWidget extends WidgetType {
         container.className = 'pakcli-tree-badges';
         container.setAttribute('contenteditable', 'false');
 
-        const fileBadge = document.createElement('span');
-        fileBadge.className = 'pakcli-tree-badge pakcli-badge-file';
-        fileBadge.textContent = '+File';
-        fileBadge.title = `Add file inside ${this.folder.name}`;
+        const isDir = this.node.isDirectory;
+        const hasNote = this.node.columns && this.node.columns.length > 0;
 
-        const folderBadge = document.createElement('span');
-        folderBadge.className = 'pakcli-tree-badge pakcli-badge-folder';
-        folderBadge.textContent = '+Folder';
-        folderBadge.title = `Add folder inside ${this.folder.name}`;
+        let fileBadge: HTMLElement | null = null;
+        let folderBadge: HTMLElement | null = null;
+
+        if (isDir) {
+            fileBadge = document.createElement('span');
+            fileBadge.className = 'pakcli-tree-badge pakcli-badge-file';
+            fileBadge.textContent = '+File';
+            fileBadge.title = `Add file inside ${this.node.name}`;
+
+            folderBadge = document.createElement('span');
+            folderBadge.className = 'pakcli-tree-badge pakcli-badge-folder';
+            folderBadge.textContent = '+Folder';
+            folderBadge.title = `Add folder inside ${this.node.name}`;
+        }
+
+        const noteBadge = document.createElement('span');
+        noteBadge.className = 'pakcli-tree-badge pakcli-badge-note';
+        noteBadge.textContent = hasNote ? '✎Note' : '+Note';
+        noteBadge.title = hasNote ? `Edit note for ${this.node.name}` : `Add note to ${this.node.name}`;
 
         let isClosing = false;
         const restoreBadges = () => {
             if (isClosing) return;
             isClosing = true;
             container.empty();
-            container.appendChild(fileBadge);
-            container.appendChild(folderBadge);
+            if (fileBadge) container.appendChild(fileBadge);
+            if (folderBadge) container.appendChild(folderBadge);
+            container.appendChild(noteBadge);
         };
 
-        const activateInput = (isFolderType: boolean) => {
+        const activateChildInput = (isFolderType: boolean) => {
             isClosing = false;
             container.empty();
 
@@ -204,14 +235,14 @@ class TreeBadgesWidget extends WidgetType {
                 const val = input.value.trim();
                 if (val) {
                     try {
-                        const folderPath = getFolderPath(this.folder);
+                        const folderPath = getFolderPath(this.node);
                         if (collapsedFolderPaths.has(folderPath)) {
                             collapsedFolderPaths.delete(folderPath);
                             collapsedVersion++;
                         }
 
                         // Determine indentation for child
-                        const childIndent = '\t'.repeat(this.folder.depth + 1);
+                        const childIndent = '\t'.repeat(this.node.depth + 1);
                         const textToInsert = '\n' + childIndent + val;
 
                         const insertPos = this.insertPosProvider();
@@ -267,28 +298,140 @@ class TreeBadgesWidget extends WidgetType {
             });
         };
 
-        fileBadge.addEventListener('mousedown', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-        });
-        fileBadge.addEventListener('click', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            activateInput(false);
-        });
+        const activateNoteInput = () => {
+            isClosing = false;
+            container.empty();
 
-        folderBadge.addEventListener('mousedown', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-        });
-        folderBadge.addEventListener('click', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            activateInput(true);
-        });
+            const existingNote = hasNote ? this.node.columns.join(' ') : '';
+            const input = document.createElement('input');
+            input.type = 'text';
+            input.className = 'pakcli-tree-inline-input pakcli-note-input';
+            input.placeholder = '# note...';
+            input.value = existingNote;
+            container.appendChild(input);
+            input.focus();
+            input.select();
 
-        container.appendChild(fileBadge);
-        container.appendChild(folderBadge);
+            const handleCommit = () => {
+                const val = input.value.trim();
+                try {
+                    const doc = this.view.state.doc;
+                    const lineNo = this.lineInfo.lineNo;
+                    if (lineNo < 1 || lineNo > doc.lines) {
+                        restoreBadges();
+                        return;
+                    }
+
+                    const targetLine = doc.line(lineNo);
+                    const lineText = targetLine.text;
+
+                    const leadMatch = lineText.match(/^[\t ]*/);
+                    const indent = leadMatch ? leadMatch[0] : '';
+                    const content = lineText.slice(indent.length);
+
+                    const hashMatch = /(?:[ \t]+\|[ \t]*|[ \t]+)#|\s+##+\s*|(?<=\S)#/.exec(content);
+                    const name = hashMatch ? content.slice(0, hashMatch.index).trim() : content.trim();
+
+                    const cleanNote = val.replace(/^[#\s]+/, '').trim();
+                    let updatedLine = indent + name;
+                    if (cleanNote) {
+                        updatedLine += `   # ${cleanNote}`;
+                    }
+
+                    // Collect all interior lines of this codeblock
+                    const blockLines: string[] = [];
+                    for (let l = this.blockInfo.startLine + 1; l < this.blockInfo.endLine; l++) {
+                        const curText = doc.line(l).text;
+                        blockLines.push(l === lineNo ? updatedLine : curText);
+                    }
+
+                    const aligned = alignTreeBlockNotes(blockLines);
+
+                    const blockStartPos = doc.line(this.blockInfo.startLine + 1).from;
+                    const blockEndPos = doc.line(this.blockInfo.endLine - 1).to;
+
+                    const scroller = this.view.scrollDOM;
+                    const savedScrollTop = scroller ? scroller.scrollTop : null;
+
+                    this.view.dispatch({
+                        changes: {
+                            from: blockStartPos,
+                            to: blockEndPos,
+                            insert: aligned.join('\n'),
+                        },
+                    });
+
+                    if (scroller && savedScrollTop !== null) {
+                        scroller.scrollTop = savedScrollTop;
+                    }
+
+                    new Notice(cleanNote ? `✓ Note saved & aligned` : `✓ Note cleared`);
+                    restoreBadges();
+                    this.view.focus();
+                } catch (err) {
+                    console.warn('[PakCLI Tree] Failed to save note:', err);
+                    restoreBadges();
+                }
+            };
+
+            input.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    handleCommit();
+                } else if (e.key === 'Escape') {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    restoreBadges();
+                    this.view.focus();
+                }
+            });
+
+            input.addEventListener('blur', () => {
+                setTimeout(() => {
+                    if (isClosing) return;
+                    handleCommit();
+                }, 100);
+            });
+        };
+
+        if (fileBadge) {
+            fileBadge.addEventListener('mousedown', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+            });
+            fileBadge.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                activateChildInput(false);
+            });
+            container.appendChild(fileBadge);
+        }
+
+        if (folderBadge) {
+            folderBadge.addEventListener('mousedown', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+            });
+            folderBadge.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                activateChildInput(true);
+            });
+            container.appendChild(folderBadge);
+        }
+
+        noteBadge.addEventListener('mousedown', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+        });
+        noteBadge.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            activateNoteInput();
+        });
+        container.appendChild(noteBadge);
+
         return container;
     }
 
@@ -534,27 +677,52 @@ function buildDecorations(view: EditorView, plugin: any): DecorationSet {
                     );
                 }
 
-                // 3. If folder, add Badges at the END of the sentence/line (word word [badge])
-                if (node.isDirectory) {
-                    const text = bl.text;
-                    const trimmedEndOffset = text.replace(/[\t ]+$/, '').length;
-                    const safePos = Math.max(bl.from + leadLen, Math.min(bl.to, bl.from + trimmedEndOffset));
+                // 3. Post-it Note Tag (Decoration.mark on "# note") when cursor is not on this line
+                const text = bl.text;
+                const trimmedEndOffset = text.replace(/[\t ]+$/, '').length;
+                const safePos = Math.max(bl.from + leadLen, Math.min(bl.to, bl.from + trimmedEndOffset));
 
-                    const insertPosProvider = () => {
-                        const last = getLastSubtreeNode(node);
-                        const info = lineByNode.get(last);
-                        return info ? info.to : bl.to;
-                    };
-
-                    builder.add(
-                        safePos,
-                        safePos,
-                        Decoration.widget({
-                            widget: new TreeBadgesWidget(node, view, insertPosProvider),
-                            side: 1,
-                        })
-                    );
+                if (!isCursorOnLine && node.columns && node.columns.length > 0) {
+                    const hashMatch = /(?:[ \t]+\|[ \t]*|[ \t]+)#|\s+##+\s*|(?<=\S)#/.exec(text);
+                    if (hashMatch) {
+                        const hashIdxInMatch = hashMatch[0].indexOf('#');
+                        const hashOffset = hashMatch.index + (hashIdxInMatch >= 0 ? hashIdxInMatch : 0);
+                        const markFrom = Math.min(bl.to, bl.from + hashOffset);
+                        const markTo = safePos;
+                        if (markFrom < markTo) {
+                            builder.add(
+                                markFrom,
+                                markTo,
+                                Decoration.mark({
+                                    class: 'pakcli-tree-postit-tag',
+                                    attributes: { title: 'Click to edit note' },
+                                })
+                            );
+                        }
+                    }
                 }
+
+                // 4. Badges (+File, +Folder, +Note) at the END of the sentence/line (word word [badge])
+                const insertPosProvider = () => {
+                    const last = getLastSubtreeNode(node);
+                    const info = lineByNode.get(last);
+                    return info ? info.to : bl.to;
+                };
+
+                builder.add(
+                    safePos,
+                    safePos,
+                    Decoration.widget({
+                        widget: new TreeBadgesWidget(
+                            node,
+                            view,
+                            insertPosProvider,
+                            { lineNo: pl.blockLine.lineNo, from: pl.blockLine.from, to: pl.blockLine.to },
+                            { startLine: block.startLine, endLine: block.endLine }
+                        ),
+                        side: 1,
+                    })
+                );
             }
         }
 
