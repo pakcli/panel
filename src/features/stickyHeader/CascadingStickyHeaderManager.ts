@@ -424,8 +424,10 @@ export class CascadingStickyHeaderManager {
     // Strategy 1: Ultra-fast CodeMirror 6 lineBlockAtHeight (in-memory height map, zero DOM hit-testing)
     if (cm && typeof cm.lineBlockAtHeight === 'function' && cm.state?.doc) {
       try {
-        const scrollTop = scroller.scrollTop;
-        const block = cm.lineBlockAtHeight(scrollTop + barHeight + 18);
+        const scrollerRect = scroller.getBoundingClientRect();
+        const docTop = typeof cm.documentTop === 'number' ? cm.documentTop : (scrollerRect.top - scroller.scrollTop);
+        const targetY = Math.max(0, (scrollerRect.top + barHeight + 18) - docTop);
+        const block = cm.lineBlockAtHeight(targetY);
         if (block && typeof block.from === 'number') {
           return cm.state.doc.lineAt(block.from).number - 1;
         }

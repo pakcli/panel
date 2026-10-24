@@ -30,13 +30,11 @@ interface TreeCascadingSession {
     barEl: HTMLElement;
     boundScrollEl: HTMLElement | null;
     scrollListener: (() => void) | null;
-    captureListener: (() => void) | null;
     lastChainKey: string;
     cachedDoc?: any;
     cachedMtime?: number;
     cachedTreeBlocks?: ParsedBlockTree[];
     cachedTopPx?: number;
-    lastTopCheck?: number;
 }
 
 interface ParsedBlockTree {
@@ -128,7 +126,6 @@ export class TreeCascadingManager {
                 this.sessions.delete(view);
             } else {
                 session.cachedTopPx = undefined;
-                session.lastTopCheck = 0;
             }
         }
 
@@ -161,16 +158,11 @@ export class TreeCascadingManager {
             barEl.style.display = 'none';
             view.contentEl.prepend(barEl);
 
-            // Capture-phase scroll listener on view.contentEl guarantees ALL inner scroll events trigger update
-            const captureListener = () => this.scheduleUpdate(view);
-            view.contentEl.addEventListener('scroll', captureListener, { capture: true, passive: true });
-
             session = {
                 view,
                 barEl,
                 boundScrollEl: null,
                 scrollListener: null,
-                captureListener,
                 lastChainKey: '',
             };
             this.sessions.set(view, session);
@@ -281,19 +273,22 @@ export class TreeCascadingManager {
             return;
         }
 
-        // Pure property read: zero layout reflow
-        const scrollTop = scroller.scrollTop;
         let topOffset = 0;
         const headingBar = view.contentEl.querySelector('.pakcli-cascading-sticky-bar') as HTMLElement | null;
         if (headingBar && headingBar.style.display !== 'none' && headingBar.offsetHeight > 0) {
             topOffset = headingBar.offsetHeight;
         }
-        const scrollTarget = scrollTop + topOffset;
+
+        // The top anchor where sticky cascading pins (Fixed viewport anchor, never oscillates)
+        const scrollerRect = scroller.getBoundingClientRect();
+        const anchorY = scrollerRect.top + topOffset;
+        const docTop = typeof cm.documentTop === 'number' ? cm.documentTop : (scrollerRect.top - scroller.scrollTop);
+        const targetY = Math.max(0, anchorY - docTop);
 
         // Ultra-fast single lookup in CodeMirror height map: O(log N)
         let currentLb: any = null;
         try {
-            currentLb = cm.lineBlockAtHeight(scrollTarget);
+            currentLb = cm.lineBlockAtHeight(targetY);
         } catch { /* fallback */ }
 
         if (!currentLb) {
@@ -301,7 +296,6 @@ export class TreeCascadingManager {
             return;
         }
 
-        const totalDocLines = cm.state.doc.lines;
         const currentDocLine = cm.state.doc.lineAt(currentLb.from).number; // 1-indexed
         const currentLine = currentDocLine - 1; // 0-indexed
 
@@ -312,25 +306,17 @@ export class TreeCascadingManager {
             return;
         }
 
-        // 1. Strict Zero Duplication: Check if root folder has scrolled past scrollTarget
-        const rootNode = activeBlock.rootNodes[0];
-        const rootLine = activeBlock.nodeLineMap.get(rootNode) ?? (activeBlock.startLine + 1);
-
-        if (currentLine <= rootLine) {
-            this.hideBar(session);
-            return;
-        }
-
-        // 2. Find the current deepest active node scrolling past scrollTarget
+        // 1. Find the current active node at or above currentLine in activeBlock
         let activeNode: TreeGridNode | null = null;
-        for (let l = currentLine; l >= rootLine; l--) {
+        for (let l = currentLine; l >= activeBlock.startLine; l--) {
             if (activeBlock.nodesByLine.has(l)) {
                 activeNode = activeBlock.nodesByLine.get(l)!;
                 break;
             }
         }
         if (!activeNode) {
-            activeNode = rootNode;
+            this.hideBar(session);
+            return;
         }
 
         const targetFolder = activeNode.isDirectory ? activeNode : (activeNode.parent || activeNode);
@@ -343,6 +329,15 @@ export class TreeCascadingManager {
             curr = curr.parent;
         }
 
+        // 2. Strict Zero Duplication: Check if root folder has scrolled past anchorY
+        const rootNode = ancestors[0];
+        const rootLine = activeBlock.nodeLineMap.get(rootNode) ?? (activeBlock.startLine + 1);
+
+        if (currentLine < rootLine || (currentLine === rootLine && currentLb.bottom > targetY)) {
+            this.hideBar(session);
+            return;
+        }
+
         // 3. Monotonic Level Thresholds (Zero-Jitter Architecture)
         const lineHeight = 24;
         const chain: TreeCrumbItem[] = [];
@@ -350,16 +345,16 @@ export class TreeCascadingManager {
             const node = ancestors[k];
             const nodeLine = activeBlock.nodeLineMap.get(node) ?? (activeBlock.startLine + 1);
 
-            let nodeBottom = 0;
-            try {
-                const nodeDocLine = Math.max(1, Math.min(totalDocLines, nodeLine + 1));
-                const nodeLb = cm.lineBlockAt(cm.state.doc.line(nodeDocLine).from);
-                nodeBottom = nodeLb.bottom;
-            } catch {
-                nodeBottom = (nodeLine + 1) * lineHeight;
+            let isPast = false;
+            if (nodeLine < currentLine) {
+                isPast = true;
+            } else if (nodeLine === currentLine) {
+                isPast = (currentLb.bottom <= targetY + (k * lineHeight));
+            } else {
+                isPast = false;
             }
 
-            if (nodeBottom <= scrollTarget + (k * lineHeight)) {
+            if (isPast) {
                 chain.push({
                     name: node.name,
                     node: node,
@@ -386,7 +381,7 @@ export class TreeCascadingManager {
             return;
         }
 
-        this.renderChain(session, visibleChain, view, activeBlock);
+        this.renderChain(session, visibleChain, view, activeBlock, topOffset);
     }
 
     private updateReadingView(
@@ -501,7 +496,7 @@ export class TreeCascadingManager {
             return;
         }
 
-        this.renderChain(session, visibleChain, view, activeBlock);
+        this.renderChain(session, visibleChain, view, activeBlock, topOffset);
     }
 
     private parseAllTreeBlocks(content: string): ParsedBlockTree[] {
@@ -631,18 +626,19 @@ export class TreeCascadingManager {
         session: TreeCascadingSession,
         chain: TreeCrumbItem[],
         view: MarkdownView,
-        block: ParsedBlockTree
+        block: ParsedBlockTree,
+        topOffset: number = 0
     ): void {
+        this.updateBarVerticalPosition(session, topOffset);
+
         // If an input is currently active in the sticky bar, do not destroy the DOM
         const activeInput = session.barEl.querySelector('input');
         if (activeInput && document.activeElement === activeInput) {
-            this.updateBarVerticalPosition(session, view);
             return;
         }
 
         const chainKey = chain.map((c) => `${c.lineNo}:${c.name}`).join('>');
         if (chainKey === session.lastChainKey && session.barEl.style.display !== 'none') {
-            this.updateBarVerticalPosition(session, view);
             return;
         }
 
@@ -872,39 +868,13 @@ export class TreeCascadingManager {
             });
         }
 
-        this.updateBarVerticalPosition(session, view);
         session.barEl.style.display = 'block';
     }
 
-    private updateBarVerticalPosition(session: TreeCascadingSession, view: MarkdownView): void {
-        const now = Date.now();
-        if (session.cachedTopPx !== undefined && session.lastTopCheck && (now - session.lastTopCheck < 150)) {
-            return;
-        }
-        session.lastTopCheck = now;
-
-        const contentRect = view.contentEl.getBoundingClientRect();
-        const headingBar = view.contentEl.querySelector('.pakcli-cascading-sticky-bar') as HTMLElement | null;
-
-        let topPx = 0;
-        if (headingBar && headingBar.style.display !== 'none' && headingBar.offsetHeight > 0) {
-            const headingRect = headingBar.getBoundingClientRect();
-            topPx = Math.max(0, Math.ceil(headingRect.bottom - contentRect.top));
-        } else {
-            // Check if scroller or content starts with an offset (e.g. in themes with floating/absolute pane headers)
-            const scroller = view.contentEl.querySelector('.cm-scroller, .markdown-preview-view') as HTMLElement | null;
-            if (scroller) {
-                const scrollerRect = scroller.getBoundingClientRect();
-                const offset = Math.round(scrollerRect.top - contentRect.top);
-                if (offset > 0 && offset < 100) {
-                    topPx = offset;
-                }
-            }
-        }
-
-        if (session.cachedTopPx !== topPx) {
-            session.cachedTopPx = topPx;
-            session.barEl.style.top = `${topPx}px`;
+    private updateBarVerticalPosition(session: TreeCascadingSession, topOffset: number): void {
+        if (session.cachedTopPx !== topOffset) {
+            session.cachedTopPx = topOffset;
+            session.barEl.style.top = `${topOffset}px`;
         }
     }
 
@@ -1127,10 +1097,6 @@ export class TreeCascadingManager {
             session.boundScrollEl.removeEventListener('scroll', session.scrollListener);
             session.boundScrollEl = null;
             session.scrollListener = null;
-        }
-        if (session.captureListener) {
-            session.view.contentEl.removeEventListener('scroll', session.captureListener, { capture: true });
-            session.captureListener = null;
         }
         if (session.barEl && session.barEl.parentNode) {
             session.barEl.remove();
