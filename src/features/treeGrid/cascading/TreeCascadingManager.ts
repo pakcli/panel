@@ -279,11 +279,9 @@ export class TreeCascadingManager {
             topOffset = headingBar.offsetHeight;
         }
 
-        // The top anchor where sticky cascading pins (Fixed viewport anchor, never oscillates)
-        const scrollerRect = scroller.getBoundingClientRect();
-        const anchorY = scrollerRect.top + topOffset;
-        const docTop = typeof cm.documentTop === 'number' ? cm.documentTop : (scrollerRect.top - scroller.scrollTop);
-        const targetY = Math.max(0, anchorY - docTop);
+        // Ultra-fast zero-reflow target height (cm.contentDOM.offsetTop accounts for banner & inline title)
+        const contentTop = (cm.contentDOM as HTMLElement)?.offsetTop ?? 0;
+        const targetY = Math.max(0, scroller.scrollTop + topOffset - contentTop);
 
         // Ultra-fast single lookup in CodeMirror height map: O(log N)
         let currentLb: any = null;

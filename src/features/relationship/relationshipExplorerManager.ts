@@ -51,6 +51,9 @@ export class RelationshipExplorerManager {
             this.scrollTimer = null;
         }
         if (this.scrollBoundHandler) {
+            if (this.navFilesContainer) {
+                this.navFilesContainer.removeEventListener('scroll', this.scrollBoundHandler);
+            }
             window.removeEventListener('scroll', this.scrollBoundHandler, { capture: true } as any);
             window.removeEventListener('wheel', this.scrollBoundHandler);
             this.scrollBoundHandler = null;
@@ -209,8 +212,8 @@ export class RelationshipExplorerManager {
                     this.scrollTimer = null;
                 }, 250);
             };
-            window.addEventListener('scroll', this.scrollBoundHandler, { capture: true, passive: true });
-            window.addEventListener('wheel', this.scrollBoundHandler, { passive: true });
+            this.navFilesContainer.addEventListener('scroll', this.scrollBoundHandler, { passive: true });
+
         }
 
         if (!this.mutationObserver && this.navFilesContainer) {

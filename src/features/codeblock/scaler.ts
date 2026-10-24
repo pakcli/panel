@@ -3,6 +3,7 @@ import { EditorView, ViewPlugin, ViewUpdate } from '@codemirror/view';
 import type PakCLIPlugin from '../../main';
 import { SanitizerEngine } from '../sanitizer';
 import { buildCodeblockPrompt } from './codeblockPromptTemplates';
+import { isTreeBlockAlias } from '../treeGrid/treeParser';
 
 export interface CodeblockLanguageRule {
 	id: string;
@@ -38,11 +39,8 @@ export function createCodeblockLivePreviewPlugin(scaler: CodeblockScaler) {
 				if (update.docChanged) {
 					scaler.processContainer(update.view.dom, update.view);
 				} else if (
-					update.viewportChanged ||
 					update.geometryChanged ||
-					update.heightChanged ||
-					update.focusChanged ||
-					update.selectionSet
+					update.heightChanged
 				) {
 					if (!this.rafPending) {
 						this.rafPending = true;
@@ -192,17 +190,19 @@ export class CodeblockScaler {
 			this.rescaleAll();
 		});
 
-		// 5. DOM MutationObserver: Catches asynchronously rendered codeblock preview widgets
+		// 5. DOM MutationObserver: Catches asynchronously rendered codeblock preview widgets in Reading View
 		try {
 			this.observer = new MutationObserver((mutations) => {
 				for (const mut of mutations) {
 					for (const node of Array.from(mut.addedNodes)) {
 						if (node.nodeType === Node.ELEMENT_NODE) {
 							const el = node as HTMLElement;
+							// Never inspect Live Preview editor elements in global body observer
+							if (el.closest('.cm-editor, .markdown-source-view')) continue;
+
 							if (
 								el.tagName === 'PRE' ||
-								el.querySelector?.('pre') ||
-								el.classList?.contains('HyperMD-codeblock')
+								el.querySelector?.('pre')
 							) {
 								this.processContainer(el);
 							}
@@ -730,8 +730,9 @@ export class CodeblockScaler {
 		return '';
 	}
 
-	getBehaviorForElement(preEl: HTMLElement, codeEl: HTMLElement): 'scalefit' | 'flowclip' | 'wrap' {
+	getBehaviorForElement(preEl: HTMLElement, codeEl: HTMLElement): 'scalefit' | 'flowclip' | 'wrap' | 'none' {
 		const lang = this.getLanguageFromElement(preEl, codeEl);
+		if (isTreeBlockAlias(lang)) return 'none';
 		return this.getBehaviorForLanguage(lang);
 	}
 
@@ -765,6 +766,7 @@ export class CodeblockScaler {
 			}
 			const codeEl = pre.querySelector('code') ?? pre;
 			const behavior = this.getBehaviorForElement(pre, codeEl);
+			if (behavior === 'none') return;
 
 			pre.classList.remove('pakcli-codeblock-wrap', 'pakcli-codeblock-flowclip', 'pakcli-codeblock-scalefit');
 
@@ -1038,13 +1040,18 @@ export class CodeblockScaler {
 
 		const BAR_H = CodeblockScaler.BAR_H;
 
+		const scrollContainer = pre.closest('.markdown-preview-view, .cm-scroller') as HTMLElement | null;
 		let posRaf = 0;
 		const cleanup = () => {
 			if (posRaf) {
 				window.cancelAnimationFrame(posRaf);
 				posRaf = 0;
 			}
-			window.removeEventListener('scroll', onWindowScroll, true);
+			if (scrollContainer) {
+				scrollContainer.removeEventListener('scroll', onWindowScroll);
+			} else {
+				window.removeEventListener('scroll', onWindowScroll);
+			}
 			window.removeEventListener('resize', positionBar);
 			io.disconnect();
 			(pre as any)._pakcliResizeObserver?.disconnect();
@@ -1070,12 +1077,17 @@ export class CodeblockScaler {
 				return;
 			}
 			const rect = pre.getBoundingClientRect();
-			const sw = pre.scrollWidth;
-			const cw = rect.width;
-			const hasOverflow = sw > cw + 2;
 			const viewH = window.innerHeight;
 			const isVisible = rect.top < viewH && rect.bottom > 0;
-			if (!hasOverflow || !isVisible) {
+			if (!isVisible) {
+				bar.style.setProperty('display', 'none', 'important');
+				return;
+			}
+			const sw = (pre as any)._pakcliCachedSw || pre.scrollWidth;
+			(pre as any)._pakcliCachedSw = sw;
+			const cw = rect.width;
+			const hasOverflow = sw > cw + 2;
+			if (!hasOverflow) {
 				bar.style.setProperty('display', 'none', 'important');
 				return;
 			}
@@ -1159,14 +1171,21 @@ export class CodeblockScaler {
 			schedPos();
 		};
 
-		window.addEventListener('scroll', onWindowScroll, { passive: true, capture: true });
+		if (scrollContainer) {
+			scrollContainer.addEventListener('scroll', onWindowScroll, { passive: true });
+		} else {
+			window.addEventListener('scroll', onWindowScroll, { passive: true });
+		}
 		window.addEventListener('resize', schedPos, { passive: true });
 
 		const io = new IntersectionObserver(() => positionBar(), { threshold: 0 });
 		io.observe(pre);
 
 		if (typeof ResizeObserver !== 'undefined') {
-			const ro = new ResizeObserver(positionBar);
+			const ro = new ResizeObserver(() => {
+				(pre as any)._pakcliCachedSw = null;
+				positionBar();
+			});
 			ro.observe(pre);
 			// Also observe the <code> child — its width changing means scrollWidth changed
 			const codeEl = pre.querySelector('code');
@@ -1969,6 +1988,15 @@ export class CodeblockScaler {
 		}
 	}
 
+	private cachedDoc: any = null;
+	private cachedDocBlocks: Array<{
+		startLn: number;
+		endLn: number;
+		lang: string;
+		behavior: 'scalefit' | 'flowclip' | 'wrap';
+		maxLen: number;
+	}> = [];
+
 	private getDocCodeblocks(doc: any): Array<{
 		startLn: number;
 		endLn: number;
@@ -1976,6 +2004,10 @@ export class CodeblockScaler {
 		behavior: 'scalefit' | 'flowclip' | 'wrap';
 		maxLen: number;
 	}> {
+		if (this.cachedDoc === doc && this.cachedDocBlocks) {
+			return this.cachedDocBlocks;
+		}
+
 		const blocks: Array<{
 			startLn: number;
 			endLn: number;
@@ -2013,13 +2045,15 @@ export class CodeblockScaler {
 					/^(`{3,}|~{3,})\s*$/.test(trimmed)
 				) || (fenceChar === '`' && /^(`\s*){3,}$/.test(trimmed));
 				if (isClose) {
-					blocks.push({
-						startLn,
-						endLn: ln,
-						lang,
-						behavior: this.getBehaviorForLanguage(lang),
-						maxLen
-					});
+					if (!isTreeBlockAlias(lang)) {
+						blocks.push({
+							startLn,
+							endLn: ln,
+							lang,
+							behavior: this.getBehaviorForLanguage(lang),
+							maxLen
+						});
+					}
 					inBlock = false;
 					lang = '';
 					maxLen = 0;
@@ -2028,15 +2062,19 @@ export class CodeblockScaler {
 		}
 
 		if (inBlock) {
-			blocks.push({
-				startLn,
-				endLn: totalLines,
-				lang,
-				behavior: this.getBehaviorForLanguage(lang),
-				maxLen
-			});
+			if (!isTreeBlockAlias(lang)) {
+				blocks.push({
+					startLn,
+					endLn: totalLines,
+					lang,
+					behavior: this.getBehaviorForLanguage(lang),
+					maxLen
+				});
+			}
 		}
 
+		this.cachedDoc = doc;
+		this.cachedDocBlocks = blocks;
 		return blocks;
 	}
 
@@ -2946,6 +2984,8 @@ export class CodeblockScaler {
 	}
 
 	clearCache(): void {
+		this.cachedDoc = null;
+		this.cachedDocBlocks = [];
 		this.blockMaxScrollWidthCache.clear();
 		this.blockCurrentScrollLeft.clear();
 		this.activeCmBars.forEach((bar) => bar.remove());
