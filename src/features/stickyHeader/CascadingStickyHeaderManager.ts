@@ -419,28 +419,28 @@ export class CascadingStickyHeaderManager {
     if (!scroller) return 0;
 
     const barHeight = session.barEl.offsetHeight || 32;
-    const scrollerRect = scroller.getBoundingClientRect();
     const cm = (view.editor as any)?.cm;
 
-    // Strategy 1: Probe posAtCoords (CodeMirror 6 EditorView)
+    // Strategy 1: Ultra-fast CodeMirror 6 lineBlockAtHeight (in-memory height map, zero DOM hit-testing)
+    if (cm && typeof cm.lineBlockAtHeight === 'function' && cm.state?.doc) {
+      try {
+        const scrollTop = scroller.scrollTop;
+        const block = cm.lineBlockAtHeight(scrollTop + barHeight + 18);
+        if (block && typeof block.from === 'number') {
+          return cm.state.doc.lineAt(block.from).number - 1;
+        }
+      } catch {}
+    }
+
+    // Strategy 2: Fallback probe posAtCoords (CodeMirror 6 EditorView)
     if (cm && typeof cm.posAtCoords === 'function') {
       try {
+        const scrollerRect = scroller.getBoundingClientRect();
         const testX = scrollerRect.left + Math.min(80, Math.max(30, scrollerRect.width / 4));
         const testY = scrollerRect.top + barHeight + 18;
         const coordsPos = cm.posAtCoords({ x: testX, y: testY });
         if (coordsPos && typeof coordsPos.pos === 'number') {
           return view.editor.offsetToPos(coordsPos.pos).line;
-        }
-      } catch {}
-    }
-
-    // Strategy 2: CodeMirror 6 lineBlockAtHeight
-    if (cm && typeof cm.lineBlockAtHeight === 'function') {
-      try {
-        const scrollTop = scroller.scrollTop;
-        const block = cm.lineBlockAtHeight(scrollTop + barHeight + 18);
-        if (block && typeof block.from === 'number') {
-          return view.editor.offsetToPos(block.from).line;
         }
       } catch {}
     }

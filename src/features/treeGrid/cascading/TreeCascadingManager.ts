@@ -262,7 +262,7 @@ export class TreeCascadingManager {
 
         const scroller = view.contentEl.querySelector('.cm-scroller') as HTMLElement | null;
         const cm = this.getEditorView(view);
-        if (!scroller || !cm || !cm.state?.doc || typeof cm.lineBlockAt !== 'function') {
+        if (!scroller || !cm || !cm.state?.doc || typeof cm.lineBlockAtHeight !== 'function') {
             this.hideBar(session);
             return;
         }
@@ -281,100 +281,49 @@ export class TreeCascadingManager {
             return;
         }
 
-        const scrollerRect = scroller.getBoundingClientRect();
+        // Pure property read: zero layout reflow
+        const scrollTop = scroller.scrollTop;
         let topOffset = 0;
         const headingBar = view.contentEl.querySelector('.pakcli-cascading-sticky-bar') as HTMLElement | null;
         if (headingBar && headingBar.style.display !== 'none' && headingBar.offsetHeight > 0) {
             topOffset = headingBar.offsetHeight;
         }
+        const scrollTarget = scrollTop + topOffset;
 
-        // The top anchor where sticky cascading pins (Fixed viewport anchor, never oscillates)
-        const anchorY = scrollerRect.top + topOffset;
-        const docTop = cm.documentTop;
-        const totalDocLines = cm.state.doc.lines;
-
-        // Measure line height dynamically from CodeMirror
-        let sampleLb: any = null;
+        // Ultra-fast single lookup in CodeMirror height map: O(log N)
+        let currentLb: any = null;
         try {
-            sampleLb = cm.lineBlockAt(cm.state.doc.line(1).from);
+            currentLb = cm.lineBlockAtHeight(scrollTarget);
         } catch { /* fallback */ }
-        const lineHeight = Math.max(18, Math.round(sampleLb ? (sampleLb.bottom - sampleLb.top) : 24));
 
-        // Find which tree block is active at anchorY
-        let activeBlock: ParsedBlockTree | null = null;
-        for (const block of treeBlocks) {
-            const startDocLine = Math.max(1, Math.min(totalDocLines, block.startLine + 1));
-            const endDocLine = Math.max(1, Math.min(totalDocLines, block.endLine + 1));
-
-            const startLb = cm.lineBlockAt(cm.state.doc.line(startDocLine).from);
-            const endLb = cm.lineBlockAt(cm.state.doc.line(endDocLine).from);
-
-            const startBottom = docTop + startLb.bottom;
-            const endBottom = docTop + endLb.bottom;
-
-            if (startBottom <= anchorY && endBottom > anchorY + lineHeight) {
-                activeBlock = block;
-                break;
-            }
+        if (!currentLb) {
+            this.hideBar(session);
+            return;
         }
 
+        const totalDocLines = cm.state.doc.lines;
+        const currentDocLine = cm.state.doc.lineAt(currentLb.from).number; // 1-indexed
+        const currentLine = currentDocLine - 1; // 0-indexed
+
+        // O(1) Active Block check: does currentLine fall inside any block?
+        const activeBlock = treeBlocks.find((b) => currentLine >= b.startLine && currentLine <= b.endLine);
         if (!activeBlock || activeBlock.rootNodes.length === 0) {
             this.hideBar(session);
             return;
         }
 
-        // 1. Strict Zero Duplication: Check if root folder has scrolled past anchorY
-        // If root folder is still visible on the content page, NO sticky bar!
+        // 1. Strict Zero Duplication: Check if root folder has scrolled past scrollTarget
         const rootNode = activeBlock.rootNodes[0];
         const rootLine = activeBlock.nodeLineMap.get(rootNode) ?? (activeBlock.startLine + 1);
-        const rootDocLine = Math.max(1, Math.min(totalDocLines, rootLine + 1));
-        const rootLb = cm.lineBlockAt(cm.state.doc.line(rootDocLine).from);
-        const rootBottom = docTop + rootLb.bottom;
 
-        if (rootBottom > anchorY) {
+        if (currentLine <= rootLine) {
             this.hideBar(session);
             return;
         }
 
-        // 2. Find the current deepest active node scrolling past anchorY in O(1) or O(log N)
-        let firstLineAtOrBelowAnchor = activeBlock.endLine;
-        let resolvedViaHeight = false;
-
-        if (typeof cm.lineBlockAtHeight === 'function') {
-            try {
-                const targetHeight = Math.max(0, anchorY - docTop);
-                const lb = cm.lineBlockAtHeight(targetHeight);
-                if (lb) {
-                    const docLine = cm.state.doc.lineAt(lb.from).number; // 1-indexed
-                    const lineIdx = docLine - 1; // 0-indexed
-                    if (lineIdx >= rootLine && lineIdx <= activeBlock.endLine) {
-                        firstLineAtOrBelowAnchor = lineIdx;
-                        resolvedViaHeight = true;
-                    }
-                }
-            } catch {
-                resolvedViaHeight = false;
-            }
-        }
-
-        if (!resolvedViaHeight) {
-            let low = rootLine;
-            let high = activeBlock.endLine;
-            while (low <= high) {
-                const mid = (low + high) >> 1;
-                const docLine = Math.max(1, Math.min(totalDocLines, mid + 1));
-                const lb = cm.lineBlockAt(cm.state.doc.line(docLine).from);
-                if (docTop + lb.bottom > anchorY) {
-                    firstLineAtOrBelowAnchor = mid;
-                    high = mid - 1;
-                } else {
-                    low = mid + 1;
-                }
-            }
-        }
-
+        // 2. Find the current deepest active node scrolling past scrollTarget
         let activeNode: TreeGridNode | null = null;
-        for (let l = firstLineAtOrBelowAnchor; l >= rootLine; l--) {
+        for (let l = currentLine; l >= rootLine; l--) {
             if (activeBlock.nodesByLine.has(l)) {
                 activeNode = activeBlock.nodesByLine.get(l)!;
                 break;
@@ -394,21 +343,23 @@ export class TreeCascadingManager {
             curr = curr.parent;
         }
 
-        // 3. Monotonic Level Thresholds (Zero-Jitter Architecture):
-        // Level k pins only when that folder has scrolled above (anchorY + k * lineHeight).
-        // Each level k occupies a fixed vertical slot of lineHeight.
-        // Once a folder is above its threshold, it has scrolled under the header and pins.
-        // If a folder's bottom is below its threshold, it is visible on the page, so it does NOT pin.
+        // 3. Monotonic Level Thresholds (Zero-Jitter Architecture)
+        const lineHeight = 24;
         const chain: TreeCrumbItem[] = [];
         for (let k = 0; k < ancestors.length; k++) {
             const node = ancestors[k];
-            const thresholdK = anchorY + (k * lineHeight);
             const nodeLine = activeBlock.nodeLineMap.get(node) ?? (activeBlock.startLine + 1);
-            const nodeDocLine = Math.max(1, Math.min(totalDocLines, nodeLine + 1));
-            const nodeLb = cm.lineBlockAt(cm.state.doc.line(nodeDocLine).from);
-            const nodeBottom = docTop + nodeLb.bottom;
 
-            if (nodeBottom <= thresholdK) {
+            let nodeBottom = 0;
+            try {
+                const nodeDocLine = Math.max(1, Math.min(totalDocLines, nodeLine + 1));
+                const nodeLb = cm.lineBlockAt(cm.state.doc.line(nodeDocLine).from);
+                nodeBottom = nodeLb.bottom;
+            } catch {
+                nodeBottom = (nodeLine + 1) * lineHeight;
+            }
+
+            if (nodeBottom <= scrollTarget + (k * lineHeight)) {
                 chain.push({
                     name: node.name,
                     node: node,
@@ -417,8 +368,6 @@ export class TreeCascadingManager {
                     isFolder: true,
                 });
             } else {
-                // Folder is still visible on the content page below Level (k-1)'s sticky line.
-                // Stop cascading here to guarantee zero duplication without layout feedback.
                 break;
             }
         }

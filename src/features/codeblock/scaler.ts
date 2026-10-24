@@ -1038,7 +1038,12 @@ export class CodeblockScaler {
 
 		const BAR_H = CodeblockScaler.BAR_H;
 
+		let posRaf = 0;
 		const cleanup = () => {
+			if (posRaf) {
+				window.cancelAnimationFrame(posRaf);
+				posRaf = 0;
+			}
 			window.removeEventListener('scroll', onWindowScroll, true);
 			window.removeEventListener('resize', positionBar);
 			io.disconnect();
@@ -1140,14 +1145,22 @@ export class CodeblockScaler {
 			if (maxScroll > 0) this.saveScrollState(key, bar.scrollLeft / maxScroll);
 		}, { passive: true });
 
+		const schedPos = () => {
+			if (posRaf) return;
+			posRaf = window.requestAnimationFrame(() => {
+				posRaf = 0;
+				positionBar();
+			});
+		};
+
 		const onWindowScroll = (e: Event) => {
 			const t = e.target as HTMLElement;
 			if (t === bar || t === pre || bar.contains(t) || pre.contains(t)) return;
-			positionBar();
+			schedPos();
 		};
 
 		window.addEventListener('scroll', onWindowScroll, { passive: true, capture: true });
-		window.addEventListener('resize', positionBar, { passive: true });
+		window.addEventListener('resize', schedPos, { passive: true });
 
 		const io = new IntersectionObserver(() => positionBar(), { threshold: 0 });
 		io.observe(pre);
