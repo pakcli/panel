@@ -19,6 +19,7 @@ import { RangeSetBuilder, Prec, Extension } from '@codemirror/state';
 import { Plugin, Notice } from 'obsidian';
 import { isFileName, getExtension, extractNameAndColumns, getRawLeadingWhitespace, isLastChild, isTreeBlockAlias, alignTreeBlockNotes, getTreeBlockTargetCol } from './treeParser';
 import { TreeGridNode } from './types';
+import { buildCodeblockPrompt } from '../codeblock/codeblockPromptTemplates';
 
 // Track collapsed folders by unique path (e.g. "data/asset/player")
 const collapsedFolderPaths = new Set<string>();
@@ -464,6 +465,101 @@ class TreeBadgesWidget extends WidgetType {
     }
 }
 
+class TreeCodeblockHeaderActionsWidget extends WidgetType {
+    constructor(
+        readonly lang: string,
+        readonly view: EditorView,
+        readonly plugin: any,
+        readonly getContent: () => string
+    ) {
+        super();
+    }
+
+    eq(_other: TreeCodeblockHeaderActionsWidget): boolean {
+        return false;
+    }
+
+    toDOM(): HTMLElement {
+        const wrap = document.createElement('span');
+        wrap.className = 'pakcli-tree-header-actions';
+
+        const COPY_ICON = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>`;
+        const PROMPT_ICON = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z"/><path d="M19 3v4"/><path d="M21 5h-4"/></svg>`;
+
+        // Prompt Button (.pakcli-cb-prompt-btn)
+        const promptBtn = wrap.createEl('button', {
+            cls: 'pakcli-cb-prompt-btn',
+            attr: {
+                title: `Copy AI Prompt (${this.lang || 'panel-tree'})`,
+                'aria-label': `Copy AI Prompt (${this.lang || 'panel-tree'})`
+            }
+        });
+        promptBtn.innerHTML = PROMPT_ICON;
+        promptBtn.onclick = async (e: MouseEvent) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const content = this.getContent();
+            const promptText = buildCodeblockPrompt(content, this.lang || 'panel-tree');
+            const flash = () => {
+                promptBtn.classList.add('pakcli-cb-prompt-btn--done');
+                setTimeout(() => promptBtn.classList.remove('pakcli-cb-prompt-btn--done'), 1200);
+            };
+            try {
+                if (this.plugin?.codeblockScaler) {
+                    await this.plugin.codeblockScaler.writeToClipboard(promptText);
+                } else {
+                    await navigator.clipboard.writeText(promptText);
+                }
+                flash();
+                new Notice(`✨ Copied ${this.lang || 'panel-tree'} AI Prompt to clipboard!`, 2000);
+            } catch {
+                flash();
+                new Notice(`✨ Copied ${this.lang || 'panel-tree'} AI Prompt to clipboard!`, 2000);
+            }
+        };
+
+        // Copy Button (.pakcli-cb-copy-btn)
+        const copyBtn = wrap.createEl('button', {
+            cls: 'pakcli-cb-copy-btn',
+            attr: {
+                title: 'Copy tree content',
+                'aria-label': 'Copy tree content'
+            }
+        });
+        copyBtn.innerHTML = COPY_ICON;
+        copyBtn.onclick = async (e: MouseEvent) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const content = this.getContent();
+            const flash = () => {
+                copyBtn.classList.add('pakcli-cb-copy-btn--done');
+                setTimeout(() => copyBtn.classList.remove('pakcli-cb-copy-btn--done'), 1200);
+            };
+            try {
+                if (this.plugin?.codeblockScaler) {
+                    await this.plugin.codeblockScaler.writeToClipboard(content);
+                } else {
+                    await navigator.clipboard.writeText(content);
+                }
+                flash();
+                new Notice('📋 Copied tree content to clipboard!', 2000);
+            } catch {
+                flash();
+                new Notice('📋 Copied tree content to clipboard!', 2000);
+            }
+        };
+
+        return wrap;
+    }
+
+    ignoreEvent(e: Event): boolean {
+        if (e.type === 'click' || e.type === 'mousedown') {
+            return false;
+        }
+        return true;
+    }
+}
+
 function buildDecorations(view: EditorView, plugin: any): DecorationSet {
     try {
         if (!view || !view.state || !view.state.doc || view.state.doc.length === 0) {
@@ -491,9 +587,9 @@ function buildDecorations(view: EditorView, plugin: any): DecorationSet {
             to: number;
             text: string;
         }
-        const blocks: { startLine: number; endLine: number; lines: BlockLine[] }[] = [];
+        const blocks: { startLine: number; endLine: number; lang: string; lines: BlockLine[] }[] = [];
         let inBlock = false;
-        let currentBlock: { startLine: number; endLine: number; lines: BlockLine[] } | null = null;
+        let currentBlock: { startLine: number; endLine: number; lang: string; lines: BlockLine[] } | null = null;
 
         for (let l = 1; l <= doc.lines; l++) {
             const line = doc.line(l);
@@ -503,7 +599,7 @@ function buildDecorations(view: EditorView, plugin: any): DecorationSet {
                 const m = text.match(/^```+\s*([a-zA-Z0-9_-]+)/);
                 if (m && isTreeBlockAlias(m[1], aliases)) {
                     inBlock = true;
-                    currentBlock = { startLine: l, endLine: l, lines: [] };
+                    currentBlock = { startLine: l, endLine: l, lang: m[1], lines: [] };
                 }
             } else {
                 if (text.match(/^```+\s*$/)) {
@@ -535,6 +631,22 @@ function buildDecorations(view: EditorView, plugin: any): DecorationSet {
         }
 
         for (const block of blocks) {
+            // 1. Add Codeblock Header Action Buttons Widget (Prompt + Copy) to the start fence line!
+            const startLineObj = doc.line(block.startLine);
+            builder.add(
+                startLineObj.to,
+                startLineObj.to,
+                Decoration.widget({
+                    widget: new TreeCodeblockHeaderActionsWidget(
+                        block.lang,
+                        view,
+                        plugin,
+                        () => block.lines.map((bl) => bl.text).join('\n')
+                    ),
+                    side: 1,
+                })
+            );
+
             if (block.lines.length === 0) continue;
 
             interface ParsedLineInfo {

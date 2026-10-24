@@ -24,6 +24,7 @@ import {
     getTreeBlockTargetCol
 } from '../treeParser';
 import { TreeCascadingSettings, DEFAULT_TREE_CASCADING_SETTINGS, TreeCrumbItem } from './types';
+import { buildCodeblockPrompt } from '../../codeblock/codeblockPromptTemplates';
 
 interface TreeCascadingSession {
     view: MarkdownView;
@@ -40,6 +41,8 @@ interface TreeCascadingSession {
 interface ParsedBlockTree {
     startLine: number; // 0-indexed document line of ```panel-tree
     endLine: number;   // 0-indexed document line of closing ```
+    lang?: string;
+    rawLines?: string[];
     rootNodes: TreeGridNode[];
     nodesByLine: Map<number, TreeGridNode>;
     nodeLineMap: Map<TreeGridNode, number>;
@@ -515,6 +518,7 @@ export class TreeCascadingManager {
 
         let inBlock = false;
         let startLine = -1;
+        let currentLang = '';
         let blockLines: { lineNo: number; text: string }[] = [];
 
         for (let l = 0; l < lines.length; l++) {
@@ -524,12 +528,13 @@ export class TreeCascadingManager {
                 if (m && isTreeBlockAlias(m[1], customAliases)) {
                     inBlock = true;
                     startLine = l;
+                    currentLang = m[1];
                     blockLines = [];
                 }
             } else {
                 if (text.match(/^```+\s*$/)) {
                     inBlock = false;
-                    const parsed = this.parseTreeNodes(blockLines, startLine, l);
+                    const parsed = this.parseTreeNodes(blockLines, startLine, l, currentLang);
                     blocks.push(parsed);
                 } else {
                     blockLines.push({ lineNo: l, text });
@@ -538,14 +543,19 @@ export class TreeCascadingManager {
         }
 
         if (inBlock && blockLines.length > 0) {
-            const parsed = this.parseTreeNodes(blockLines, startLine, lines.length - 1);
+            const parsed = this.parseTreeNodes(blockLines, startLine, lines.length - 1, currentLang);
             blocks.push(parsed);
         }
 
         return blocks;
     }
 
-    private parseTreeNodes(lines: { lineNo: number; text: string }[], startLine: number, endLine: number): ParsedBlockTree {
+    private parseTreeNodes(
+        lines: { lineNo: number; text: string }[],
+        startLine: number,
+        endLine: number,
+        lang?: string
+    ): ParsedBlockTree {
         const rootNodes: TreeGridNode[] = [];
         const nodesByLine = new Map<number, TreeGridNode>();
         const nodeLineMap = new Map<TreeGridNode, number>();
@@ -619,7 +629,7 @@ export class TreeCascadingManager {
         const rawLines = lines.map((l) => l.text);
         const targetCol = getTreeBlockTargetCol(rawLines, noteSpacing ?? this.settings.treeNoteSpacing);
 
-        return { startLine, endLine, rootNodes, nodesByLine, nodeLineMap, noteSpacing, targetCol };
+        return { startLine, endLine, lang, rawLines, rootNodes, nodesByLine, nodeLineMap, noteSpacing, targetCol };
     }
 
     private renderChain(
@@ -648,6 +658,72 @@ export class TreeCascadingManager {
         session.barEl.style.minHeight = '0px';
 
         const innerEl = session.barEl.createDiv({ cls: 'pakcli-tree-cascading-inner' });
+
+        // Companion Quick Actions: AI Prompt button (✨) & Copy button (📋)
+        const actionsEl = session.barEl.createDiv({ cls: 'pakcli-tree-cascading-actions' });
+        const PROMPT_ICON = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z"/><path d="M19 3v4"/><path d="M21 5h-4"/></svg>`;
+        const COPY_ICON = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>`;
+
+        const promptBtn = actionsEl.createEl('button', {
+            cls: 'pakcli-tree-cascading-btn pakcli-cb-prompt-btn',
+            attr: {
+                title: `Copy AI Prompt (${block.lang || 'panel-tree'})`,
+                'aria-label': `Copy AI Prompt (${block.lang || 'panel-tree'})`,
+            },
+        });
+        promptBtn.innerHTML = PROMPT_ICON;
+        promptBtn.onclick = async (e: MouseEvent) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const content = (block.rawLines || []).join('\n');
+            const promptText = buildCodeblockPrompt(content, block.lang || 'panel-tree');
+            const flash = () => {
+                promptBtn.classList.add('pakcli-cb-prompt-btn--done');
+                setTimeout(() => promptBtn.classList.remove('pakcli-cb-prompt-btn--done'), 1200);
+            };
+            try {
+                if (this.plugin?.codeblockScaler) {
+                    await this.plugin.codeblockScaler.writeToClipboard(promptText);
+                } else {
+                    await navigator.clipboard.writeText(promptText);
+                }
+                flash();
+                new Notice(`✨ Copied ${block.lang || 'panel-tree'} AI Prompt to clipboard!`, 2000);
+            } catch {
+                flash();
+                new Notice(`✨ Copied ${block.lang || 'panel-tree'} AI Prompt to clipboard!`, 2000);
+            }
+        };
+
+        const copyBtn = actionsEl.createEl('button', {
+            cls: 'pakcli-tree-cascading-btn pakcli-cb-copy-btn',
+            attr: {
+                title: 'Copy tree content',
+                'aria-label': 'Copy tree content',
+            },
+        });
+        copyBtn.innerHTML = COPY_ICON;
+        copyBtn.onclick = async (e: MouseEvent) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const content = (block.rawLines || []).join('\n');
+            const flash = () => {
+                copyBtn.classList.add('pakcli-cb-copy-btn--done');
+                setTimeout(() => copyBtn.classList.remove('pakcli-cb-copy-btn--done'), 1200);
+            };
+            try {
+                if (this.plugin?.codeblockScaler) {
+                    await this.plugin.codeblockScaler.writeToClipboard(content);
+                } else {
+                    await navigator.clipboard.writeText(content);
+                }
+                flash();
+                new Notice('📋 Copied tree content to clipboard!', 2000);
+            } catch {
+                flash();
+                new Notice('📋 Copied tree content to clipboard!', 2000);
+            }
+        };
 
         for (let i = 0; i < chain.length; i++) {
             const item = chain[i];

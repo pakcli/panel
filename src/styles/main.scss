@@ -3596,11 +3596,69 @@ pre:has(.pakcli-cb-copy-btn) .copy-code-button {
 }
 
 /* Shift flair left so it doesn't collide with copy & prompt buttons */
+.cm-line:has(.pakcli-tree-header-actions) .code-block-flair,
+.HyperMD-codeblock-begin:has(.pakcli-tree-header-actions) .code-block-flair,
 .cm-line:has(.pakcli-cb-copy-btn) .code-block-flair,
 .HyperMD-codeblock-begin:has(.pakcli-cb-copy-btn) .code-block-flair,
 pre:has(.pakcli-cb-copy-btn) .code-block-flair,
 .cm-embed-block:has(.pakcli-cb-copy-btn) .code-block-flair {
   right: 72px !important;
+}
+
+/* Tree Codeblock Live Preview Header Actions (.pakcli-tree-header-actions) */
+.pakcli-tree-header-actions {
+  position: absolute !important;
+  top: 4px !important;
+  right: 8px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 4px !important;
+  z-index: 999999 !important;
+  pointer-events: auto !important;
+  user-select: none !important;
+
+  .pakcli-cb-prompt-btn,
+  .pakcli-cb-copy-btn {
+    position: static !important;
+    top: auto !important;
+    right: auto !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    width: 26px !important;
+    height: 26px !important;
+    padding: 0 !important;
+    border: 1px solid var(--background-modifier-border) !important;
+    border-radius: 5px !important;
+    background: var(--background-primary) !important;
+    cursor: pointer !important;
+    opacity: 0.9 !important;
+    pointer-events: auto !important;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.15) !important;
+    transition: opacity 0.15s ease, color 0.15s ease, background 0.15s ease, border-color 0.15s ease !important;
+
+    &:hover {
+      opacity: 1 !important;
+      background: var(--background-modifier-hover) !important;
+      border-color: var(--interactive-accent) !important;
+    }
+  }
+
+  .pakcli-cb-prompt-btn {
+    color: var(--text-accent, #6366f1) !important;
+  }
+
+  .pakcli-cb-copy-btn {
+    color: var(--text-muted) !important;
+  }
+
+  .pakcli-cb-prompt-btn--done,
+  .pakcli-cb-copy-btn--done {
+    color: var(--color-green, #4caf50) !important;
+    background: var(--background-modifier-success, rgba(76,175,80,0.1)) !important;
+    border-color: var(--color-green, #4caf50) !important;
+    opacity: 1 !important;
+  }
 }
 
 .pakcli-cb-copy-btn {
@@ -3619,7 +3677,7 @@ pre:has(.pakcli-cb-copy-btn) .code-block-flair,
   background: var(--background-primary) !important;
   color: var(--text-muted) !important;
   cursor: pointer !important;
-  opacity: 0;
+  opacity: 0.85 !important;
   transition: opacity 0.15s ease, color 0.15s ease, background 0.15s ease;
   box-shadow: 0 1px 4px rgba(0,0,0,0.15);
   overflow: visible !important;
@@ -3672,7 +3730,7 @@ pre:hover .pakcli-cb-copy-btn,
   background: var(--background-primary) !important;
   color: var(--text-accent, #6366f1) !important;
   cursor: pointer !important;
-  opacity: 0;
+  opacity: 0.85 !important;
   transition: opacity 0.15s ease, color 0.15s ease, background 0.15s ease, border-color 0.15s ease;
   box-shadow: 0 1px 4px rgba(0,0,0,0.15);
   overflow: visible !important;

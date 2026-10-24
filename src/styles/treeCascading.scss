@@ -32,6 +32,62 @@
   overflow: hidden;
   color: var(--text-normal) !important;
 
+  .pakcli-tree-cascading-actions {
+    position: absolute;
+    top: 6px;
+    right: 12px;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    z-index: 100;
+    pointer-events: auto;
+
+    .pakcli-tree-cascading-btn {
+      position: static !important;
+      display: inline-flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+      width: 24px !important;
+      height: 24px !important;
+      padding: 0 !important;
+      margin: 0 !important;
+      background: var(--background-primary) !important;
+      border: 1px solid var(--background-modifier-border) !important;
+      border-radius: 4px !important;
+      color: var(--text-muted) !important;
+      cursor: pointer !important;
+      opacity: 0.9 !important;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12) !important;
+      transition: all 0.15s ease !important;
+
+      &:hover {
+        opacity: 1 !important;
+        background: var(--background-modifier-hover) !important;
+        color: var(--text-normal) !important;
+        border-color: var(--interactive-accent) !important;
+      }
+
+      &.pakcli-cb-prompt-btn {
+        color: var(--text-accent, #6366f1) !important;
+      }
+
+      &.pakcli-cb-prompt-btn--done,
+      &.pakcli-cb-copy-btn--done {
+        color: var(--color-green, #4caf50) !important;
+        border-color: var(--color-green, #4caf50) !important;
+        background: var(--background-modifier-success, rgba(76,175,80,0.1)) !important;
+        opacity: 1 !important;
+      }
+
+      svg {
+        width: 14px;
+        height: 14px;
+        display: block;
+        pointer-events: none;
+      }
+    }
+  }
+
   .pakcli-tree-cascading-inner {
     max-width: var(--file-line-width, var(--line-width, 700px));
     margin: 0 auto;
