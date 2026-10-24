@@ -2,11 +2,50 @@
  * codeblockPromptTemplates.ts
  * Generates actionable, production-grade AI prompt templates for any codeblock.
  * Supports tree architecture scaffolding, language-specific refactoring, and query analysis.
+ *
+ * Rules:
+ * - If codeblock is EMPTY: Asks AI to design and create a complete, production-grade example.
+ * - If codeblock is an INSTRUCTION/SURUHAN (e.g. comments/prompt): Asks AI to fulfill the instruction and build the architecture.
+ * - If codeblock has CODE/STRUCTURE: Scaffolds, refactors, or analyzes the declared structure and follows any directives.
  */
 
-export function buildCodeblockPrompt(code: string, rawLang: string): string {
+interface PromptInputState {
+    cleanCode: string;
+    lang: string;
+    isEmpty: boolean;
+    isInstructionOnly: boolean;
+    instruction: string;
+}
+
+function analyzePromptInput(code: string, rawLang: string): PromptInputState {
     const cleanCode = (code || '').trim();
     const lang = (rawLang || '').toLowerCase().trim();
+
+    if (!cleanCode) {
+        return { cleanCode, lang, isEmpty: true, isInstructionOnly: false, instruction: '' };
+    }
+
+    const lines = cleanCode.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+    const allComments = lines.every((l) => /^(\/\/|#|--|\/\*|\*|<!--)/.test(l));
+    if (allComments) {
+        const instruction = lines
+            .map((l) => l.replace(/^(\/\/|#|--|\/\*|\*|<!--|-->|\*\/)\s*/, '').trim())
+            .filter(Boolean)
+            .join(' ');
+        return { cleanCode, lang, isEmpty: false, isInstructionOnly: true, instruction };
+    }
+
+    // Single brief instruction line without dots or slashes
+    if (lines.length === 1 && !lines[0].includes('.') && !lines[0].includes('/') && lines[0].length < 120) {
+        return { cleanCode, lang, isEmpty: false, isInstructionOnly: true, instruction: lines[0] };
+    }
+
+    return { cleanCode, lang, isEmpty: false, isInstructionOnly: false, instruction: '' };
+}
+
+export function buildCodeblockPrompt(code: string, rawLang: string): string {
+    const state = analyzePromptInput(code, rawLang);
+    const { cleanCode, lang, isEmpty, isInstructionOnly, instruction } = state;
 
     // 1. Panel Tree & Tree Architecture Scaffolding
     if (
@@ -16,21 +55,72 @@ export function buildCodeblockPrompt(code: string, rawLang: string): string {
         lang === 'structure' ||
         lang.includes('cascading')
     ) {
+        if (isEmpty) {
+            return `Act as a Principal Software Engineer. The project architecture codeblock is currently empty.
+
+Please design and generate a complete, production-grade example project architecture using declarative \`panel-tree\` format with frontmatter directives (\`f?dependencies:\`, \`f?status:\`, \`f?tier:\`, \`f?tags:\`, \`f?priority:\`).
+
+Please provide:
+1. A rich, realistic folder and file hierarchy (source files, data models, assets, and documentation).
+2. Clean column-aligned \`#\` notes and inline \`f?\` directives wiring up dependencies.
+3. Clean, production-ready boilerplate code scaffolding for each file.
+4. Accurately resolve and wire up internal imports based on the declared \`f?dependencies:\` lists.
+5. Preserve all declared frontmatter properties (tags, status, priority, tier) in the generated notes/files.
+6. A concise summary of the module relationships (with an architectural flowchart or ER diagram).`;
+        }
+
+        if (isInstructionOnly) {
+            return `Act as a Principal Software Engineer. Based on the following project requirement / instruction:
+
+> "${instruction}"
+
+Please design and generate a complete, production-grade project architecture using declarative \`panel-tree\` format with frontmatter directives (\`f?dependencies:\`, \`f?status:\`, \`f?tier:\`, \`f?tags:\`, \`f?priority:\`).
+
+Please perform the following tasks:
+1. Fulfill the specified requirements and expand the architecture into a full, production-ready design.
+2. Scaffold each file with clean, production-ready boilerplate code.
+3. Accurately resolve and wire up internal imports based on the declared \`f?dependencies:\` lists.
+4. Preserve all declared frontmatter properties (tags, status, priority, tier) in the generated notes/files.
+5. Provide a concise summary of the module relationships.`;
+        }
+
         return `Act as a Principal Software Engineer. Based on the following declarative project architecture with frontmatter directives:
 
 \`\`\`panel-tree
 ${cleanCode}
 \`\`\`
 
-Please perform the following tasks:
+Please execute any instructions specified in the notes and perform the following tasks:
 1. Scaffold each file with clean, production-ready boilerplate code.
 2. Accurately resolve and wire up internal imports based on the declared \`f?dependencies:\` lists.
 3. Preserve all declared frontmatter properties (tags, status, priority, tier) in the generated notes/files.
-4. Provide a concise summary of the module relationships.`;
+4. Adhere strictly to any custom instructions or architectural directives noted in the tree.
+5. Provide a concise summary of the module relationships.`;
     }
 
     // 2. SQL & Database Queries
     if (['sql', 'sqlite', 'mysql', 'postgres', 'postgresql', 'cst'].includes(lang)) {
+        if (isEmpty) {
+            return `Act as a Principal Database Engineer. The query block is currently empty.
+
+Please generate a comprehensive, production-grade SQL schema and query example demonstrating:
+1. Normalized relational tables with primary/foreign keys, check constraints, and indexes.
+2. Realistic seed data.
+3. Advanced, optimized queries using CTEs, Window Functions, and aggregations.
+4. Performance analysis and indexing recommendations.`;
+        }
+
+        if (isInstructionOnly) {
+            return `Act as a Principal Database Engineer. Based on the following requirement:
+
+> "${instruction}"
+
+Please provide:
+1. Complete, production-grade SQL schema design matching this requirement.
+2. Optimized queries with proper indexing and constraints.
+3. Performance and correctness analysis.`;
+        }
+
         return `Act as a Principal Database Engineer. Analyze the following SQL query/schema:
 
 \`\`\`sql
@@ -46,6 +136,20 @@ Please review and provide:
     // 3. TypeScript & JavaScript
     if (['typescript', 'ts', 'tsx', 'javascript', 'js', 'jsx'].includes(lang)) {
         const langTag = lang.includes('ts') ? 'typescript' : 'javascript';
+        if (isEmpty) {
+            return `Act as a Senior Software Engineer. The codeblock is currently empty.
+
+Please generate a complete, production-grade ${langTag} example demonstrating modern software architecture, strict type-safety, clean modular design, and robust error handling.`;
+        }
+
+        if (isInstructionOnly) {
+            return `Act as a Senior Software Engineer. Based on the following requirement:
+
+> "${instruction}"
+
+Please provide a clean, production-ready ${langTag} implementation adhering to best practices, strict type-safety, and robust error handling.`;
+        }
+
         return `Act as a Senior Software Engineer. Analyze the following ${langTag} code:
 
 \`\`\`${langTag}
@@ -53,13 +157,27 @@ ${cleanCode}
 \`\`\`
 
 Please review and provide:
-1. Production implementation / clean refactoring.
+1. Production implementation / clean refactoring following any inline instructions.
 2. Type-safety improvements and robust error handling.
 3. Edge cases and performance considerations.`;
     }
 
     // 4. Python
     if (['python', 'py'].includes(lang)) {
+        if (isEmpty) {
+            return `Act as a Senior Python Engineer. The codeblock is currently empty.
+
+Please generate a complete, production-grade Python example adhering to PEP 8, with type annotations (mypy compatible), comprehensive docstrings, and robust error handling.`;
+        }
+
+        if (isInstructionOnly) {
+            return `Act as a Senior Python Engineer. Based on the following requirement:
+
+> "${instruction}"
+
+Please provide a clean, pythonic implementation adhering to PEP 8, with type hints, docstrings, and robust error handling.`;
+        }
+
         return `Act as a Senior Python Engineer. Analyze the following Python code:
 
 \`\`\`python
@@ -67,13 +185,27 @@ ${cleanCode}
 \`\`\`
 
 Please review and provide:
-1. Pythonic refactoring adhering to PEP 8.
+1. Pythonic refactoring adhering to PEP 8 and following any inline instructions.
 2. Type annotations (mypy compatible) and docstrings.
 3. Robust error handling and optimizations.`;
     }
 
     // 5. JSON, JSON5, YAML Data Schemas
     if (['json', 'json5', 'jsonl', 'yaml', 'yml'].includes(lang)) {
+        if (isEmpty) {
+            return `Act as a Data & Schema Engineer. The block is currently empty.
+
+Please generate a comprehensive, production-grade ${lang.toUpperCase()} data specification and schema example, accompanied by matching TypeScript interface definitions.`;
+        }
+
+        if (isInstructionOnly) {
+            return `Act as a Data & Schema Engineer. Based on the following requirement:
+
+> "${instruction}"
+
+Please provide a complete ${lang.toUpperCase()} schema and data example, along with TypeScript type definitions.`;
+        }
+
         return `Act as a Data & Schema Engineer. Analyze the following structured data:
 
 \`\`\`${lang}
@@ -89,6 +221,20 @@ Please provide:
     // 6. Shell & Bash Scripts
     if (['bash', 'sh', 'shell', 'zsh', 'powershell', 'ps1'].includes(lang)) {
         const shellTag = lang.includes('ps') ? 'powershell' : 'bash';
+        if (isEmpty) {
+            return `Act as a DevOps & Systems Engineer. The script block is currently empty.
+
+Please generate a production-grade ${shellTag} script example with strict mode safety (e.g. \`set -euo pipefail\`), robust logging, idempotent execution, and error handling.`;
+        }
+
+        if (isInstructionOnly) {
+            return `Act as a DevOps & Systems Engineer. Based on the following requirement:
+
+> "${instruction}"
+
+Please write a production-grade, secure ${shellTag} automation script with proper error handling and logging.`;
+        }
+
         return `Act as a DevOps & Systems Engineer. Analyze the following ${shellTag} script:
 
 \`\`\`${shellTag}
@@ -98,11 +244,25 @@ ${cleanCode}
 Please review and provide:
 1. Robust error handling, strict mode safety, and idempotency check.
 2. Platform compatibility and security audit (injection, variable escaping).
-3. Optimized production-grade version.`;
+3. Optimized production-grade version adhering to any instructions.`;
     }
 
     // 7. Systems Languages (Rust, Go, C++, C, Java)
     if (['rust', 'rs', 'go', 'golang', 'cpp', 'c', 'java'].includes(lang)) {
+        if (isEmpty) {
+            return `Act as a Senior Systems Engineer. The codeblock is currently empty.
+
+Please generate an idiomatic, production-grade ${lang} implementation example with clean concurrency, memory efficiency, and robust error handling.`;
+        }
+
+        if (isInstructionOnly) {
+            return `Act as a Senior Systems Engineer. Based on the following requirement:
+
+> "${instruction}"
+
+Please provide an idiomatic, production-ready ${lang} implementation with robust error handling and tests.`;
+        }
+
         return `Act as a Senior Systems Engineer. Analyze the following ${lang} code:
 
 \`\`\`${lang}
@@ -117,6 +277,20 @@ Please review and provide:
 
     // 8. Markdown & Documentation
     if (['markdown', 'md'].includes(lang)) {
+        if (isEmpty) {
+            return `Act as an expert technical editor. The document block is currently empty.
+
+Please generate a complete, structured technical documentation template in Markdown with executive summary, specifications, tables, and mermaid diagrams.`;
+        }
+
+        if (isInstructionOnly) {
+            return `Act as an expert technical editor. Based on the following requirement:
+
+> "${instruction}"
+
+Please draft a complete, professional Markdown document covering this topic in depth.`;
+        }
+
         return `Act as an expert technical editor. Review the following Markdown document:
 
 \`\`\`markdown
@@ -129,6 +303,20 @@ Please provide:
     }
 
     // 9. Generic Fallback
+    if (isEmpty) {
+        return `Act as an expert software engineer. The codeblock is currently empty.
+
+Please generate a complete, production-grade code example demonstrating best practices, clean architecture, and thorough documentation.`;
+    }
+
+    if (isInstructionOnly) {
+        return `Act as an expert software engineer. Based on the following requirement:
+
+> "${instruction}"
+
+Please provide a clean, production-ready code implementation adhering to best practices and robust error handling.`;
+    }
+
     return `Act as an expert software engineer. Analyze the following code snippet:
 
 \`\`\`${lang || 'text'}
@@ -136,7 +324,7 @@ ${cleanCode}
 \`\`\`
 
 Please review and provide:
-1. Production implementation and clean refactoring.
+1. Production implementation and clean refactoring following any specified instructions.
 2. Edge cases, potential bugs, and performance optimizations.
 3. Best practices and explanatory documentation.`;
 }
