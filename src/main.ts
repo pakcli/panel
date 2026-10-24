@@ -2280,6 +2280,11 @@ export default class PakCLITablePlugin extends Plugin {
 			});
 		}
 
+		// Auto-upgrade legacy stickyHeaderMaxDepth default of 3 up to 6 so full hierarchy (e.g. src/dist/xx/xx) is preserved
+		if (this.settings.stickyHeaderMaxDepth === 3 || this.settings.stickyHeaderMaxDepth === undefined) {
+			this.settings.stickyHeaderMaxDepth = 6;
+		}
+
 		if (this.syncSpecialFoldersToCaptainRules()) {
 			await this.saveSettings();
 		} else {
@@ -4223,7 +4228,7 @@ export default class PakCLITablePlugin extends Plugin {
 					.setDesc('Maximum number of heading levels to pin simultaneously (1 - 6).')
 					.addSlider((slider) => {
 						slider.setLimits(1, 6, 1)
-							.setValue(this.settings.stickyHeaderMaxDepth ?? 3)
+							.setValue(this.settings.stickyHeaderMaxDepth ?? 6)
 							.setDynamicTooltip()
 							.onChange(async (val) => {
 								this.settings.stickyHeaderMaxDepth = val;

@@ -72,9 +72,14 @@ export class CascadingStickyHeaderManager {
 
   private get settings(): StickyHeaderSettings {
     const s = this.plugin.settings as any;
+    const rawDepth = typeof s?.stickyHeaderMaxDepth === 'number' && s.stickyHeaderMaxDepth > 0
+      ? s.stickyHeaderMaxDepth
+      : DEFAULT_STICKY_HEADER_SETTINGS.stickyHeaderMaxDepth;
+    // Auto-upgrade legacy default of 3 to 6 so full hierarchy (e.g. src/dist/xx/xx) is preserved
+    const depth = rawDepth === 3 ? 6 : rawDepth;
     return {
       enableCascadingStickyHeaders: s?.enableCascadingStickyHeaders !== false,
-      stickyHeaderMaxDepth: typeof s?.stickyHeaderMaxDepth === 'number' ? s.stickyHeaderMaxDepth : DEFAULT_STICKY_HEADER_SETTINGS.stickyHeaderMaxDepth,
+      stickyHeaderMaxDepth: depth,
       stickyHeaderShowBadges: s?.stickyHeaderShowBadges !== false,
     };
   }
@@ -319,7 +324,10 @@ export class CascadingStickyHeaderManager {
     }
 
     if (chain.length > maxDepth) {
-      return chain.slice(-maxDepth);
+      if (maxDepth <= 1) {
+        return chain.slice(-1);
+      }
+      return [chain[0], ...chain.slice(-(maxDepth - 1))];
     }
     return chain;
   }

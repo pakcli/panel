@@ -13,6 +13,6 @@ export interface StickyHeaderSettings {
 
 export const DEFAULT_STICKY_HEADER_SETTINGS: StickyHeaderSettings = {
   enableCascadingStickyHeaders: true,
-  stickyHeaderMaxDepth: 3,
+  stickyHeaderMaxDepth: 6,
   stickyHeaderShowBadges: true,
 };

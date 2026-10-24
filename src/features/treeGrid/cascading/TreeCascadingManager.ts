@@ -373,7 +373,7 @@ export class TreeCascadingManager {
         }
 
         const maxDepth = this.settings.treeCascadingMaxDepth;
-        const visibleChain = (chain.length > maxDepth ? chain.slice(-maxDepth) : chain)
+        const visibleChain = (chain.length > maxDepth ? (maxDepth <= 1 ? chain.slice(-1) : [chain[0], ...chain.slice(-(maxDepth - 1))]) : chain)
             .filter((c) => c && c.name && c.name.trim().length > 0);
 
         if (visibleChain.length === 0) {
@@ -488,7 +488,7 @@ export class TreeCascadingManager {
         }
 
         const maxDepth = this.settings.treeCascadingMaxDepth;
-        const visibleChain = (chain.length > maxDepth ? chain.slice(-maxDepth) : chain)
+        const visibleChain = (chain.length > maxDepth ? (maxDepth <= 1 ? chain.slice(-1) : [chain[0], ...chain.slice(-(maxDepth - 1))]) : chain)
             .filter((c) => c && c.name && c.name.trim().length > 0);
 
         if (visibleChain.length === 0) {

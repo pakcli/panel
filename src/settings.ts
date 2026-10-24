@@ -403,7 +403,7 @@ export const DEFAULT_TABLE_SETTINGS: PakCLITableSettings = {
     tabTitleMaxChars: 15,
     panelTreeAliases: 'panel-tree, panel-tree-cascading, tree-cascading, panel-tree-structure, tree-structure, tree-interactive, panel-tree-cascading-note-sticky, panel-tree-cascading-sticky-note, panel-tree-cascading-postit, panel-tree-postit-cascading',
     enableCascadingStickyHeaders: true,
-    stickyHeaderMaxDepth: 3,
+    stickyHeaderMaxDepth: 6,
     stickyHeaderShowBadges: true,
     enableTreeCascading: true,
     treeCascadingStyle: 'auto',
