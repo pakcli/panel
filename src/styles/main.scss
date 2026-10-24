@@ -3595,6 +3595,14 @@ pre:has(.pakcli-cb-copy-btn) .copy-code-button {
   display: none !important;
 }
 
+/* Shift flair left so it doesn't collide with copy & prompt buttons */
+.cm-line:has(.pakcli-cb-copy-btn) .code-block-flair,
+.HyperMD-codeblock-begin:has(.pakcli-cb-copy-btn) .code-block-flair,
+pre:has(.pakcli-cb-copy-btn) .code-block-flair,
+.cm-embed-block:has(.pakcli-cb-copy-btn) .code-block-flair {
+  right: 72px !important;
+}
+
 .pakcli-cb-copy-btn {
   position: absolute !important;
   top: 4px !important;
@@ -3620,8 +3628,10 @@ pre:has(.pakcli-cb-copy-btn) .copy-code-button {
 
 pre:hover .pakcli-cb-copy-btn,
 .cm-line:hover .pakcli-cb-copy-btn,
-.HyperMD-codeblock:hover .pakcli-cb-copy-btn {
-  opacity: 1;
+.HyperMD-codeblock:hover .pakcli-cb-copy-btn,
+.HyperMD-codeblock-begin:hover .pakcli-cb-copy-btn,
+.pakcli-cb-copy-btn:hover {
+  opacity: 1 !important;
 }
 
 .pakcli-cb-copy-btn:hover {
@@ -3671,8 +3681,10 @@ pre:hover .pakcli-cb-copy-btn,
 
 pre:hover .pakcli-cb-prompt-btn,
 .cm-line:hover .pakcli-cb-prompt-btn,
-.HyperMD-codeblock:hover .pakcli-cb-prompt-btn {
-  opacity: 1;
+.HyperMD-codeblock:hover .pakcli-cb-prompt-btn,
+.HyperMD-codeblock-begin:hover .pakcli-cb-prompt-btn,
+.pakcli-cb-prompt-btn:hover {
+  opacity: 1 !important;
 }
 
 .pakcli-cb-prompt-btn:hover {

@@ -71,6 +71,9 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
         containerEl.addClass('pakcli-tree-raw-container');
         const pre = containerEl.createEl('pre', { cls: 'language-panel-tree HyperMD-codeblock' });
         pre.createEl('code', { text: this.source, cls: 'language-panel-tree' });
+        if (this.plugin?.codeblockScaler) {
+            this.plugin.codeblockScaler.processContainer(pre);
+        }
     }
 
     private measureCharWidth(): void {

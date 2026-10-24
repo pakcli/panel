@@ -766,6 +766,10 @@ export class CodeblockScaler {
 			}
 			const codeEl = pre.querySelector('code') ?? pre;
 			const behavior = this.getBehaviorForElement(pre, codeEl);
+
+			// Always inject clipboard button and companion AI prompt button overlay
+			this.injectClipboardButton(pre, codeEl);
+
 			if (behavior === 'none') return;
 
 			pre.classList.remove('pakcli-codeblock-wrap', 'pakcli-codeblock-flowclip', 'pakcli-codeblock-scalefit');
@@ -940,6 +944,18 @@ export class CodeblockScaler {
 			// Inject clipboard button overlay (once per pre)
 			this.injectClipboardButton(pre, codeEl);
 		});
+
+		// 1b. Live Preview CodeMirror begin fence lines (.HyperMD-codeblock-begin)
+		const beginLines = container.matches?.('.HyperMD-codeblock-begin')
+			? [container]
+			: Array.from(container.querySelectorAll?.('.HyperMD-codeblock-begin') ?? []);
+
+		if (beginLines.length > 0) {
+			const ev = editorView || (container.closest('.cm-editor') as any)?.cmView?.view;
+			for (const bl of beginLines) {
+				this.injectLivePreviewCodeblockButtons(bl as HTMLElement, ev);
+			}
+		}
 
 		// 2. Live Preview CodeMirror lines
 		const cmContents = container.matches?.('.cm-content')
@@ -1867,6 +1883,13 @@ export class CodeblockScaler {
 			nativeBtn.style.display = 'none';
 		}
 
+		// Shift flair if present so it doesn't collide with buttons
+		const flair = (pre.parentElement?.querySelector('.code-block-flair, .code-block-header span') ||
+			pre.querySelector('.code-block-flair, .code-block-header span')) as HTMLElement | null;
+		if (flair) {
+			flair.style.setProperty('right', '72px', 'important');
+		}
+
 		if (getComputedStyle(pre).position === 'static') {
 			pre.style.position = 'relative';
 		}
@@ -1988,6 +2011,152 @@ export class CodeblockScaler {
 		}
 	}
 
+	/** Injects copy and companion AI prompt buttons on Live Preview CodeMirror begin fence lines */
+	private injectLivePreviewCodeblockButtons(beginLine: HTMLElement, editorView?: EditorView): void {
+		if (!beginLine || !beginLine.isConnected) return;
+
+		const flair = beginLine.querySelector('.code-block-flair') as HTMLElement | null;
+		let lang = flair?.textContent?.trim().toLowerCase().split(/\s+/)[0] || '';
+		if (!lang || lang === 'copy') {
+			const m = (beginLine.textContent || '').match(/`{3,}\s*([a-zA-Z0-9_-]+)/);
+			if (m) lang = m[1].toLowerCase();
+		}
+		if (!lang) lang = 'code';
+
+		if (flair) {
+			flair.style.setProperty('right', '72px', 'important');
+		}
+
+		beginLine.style.setProperty('position', 'relative', 'important');
+		beginLine.style.setProperty('overflow-y', 'visible', 'important');
+
+		const rules = this.plugin?.settings?.codeblockLanguageRules || [];
+		const matched = this.findMatchingRule(lang, rules);
+		const script = matched?.onClipboard?.trim() || '';
+
+		const COPY_ICON = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>`;
+		const SCRIPT_ICON = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>`;
+		const PROMPT_ICON = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z"/><path d="M19 3v4"/><path d="M21 5h-4"/></svg>`;
+
+		const getContent = (): string => {
+			try {
+				const ev = editorView || (beginLine.closest('.cm-editor') as any)?.cmView?.view || (this.plugin.app.workspace.getActiveViewOfType(MarkdownView)?.editor as any)?.cm;
+				if (ev?.state?.doc) {
+					const doc = ev.state.doc;
+					const startNo = doc.lineAt(ev.posAtDOM(beginLine)).number;
+					const open = doc.line(startNo).text.trim().match(/^(`{3,}|~{3,})/);
+					if (open) {
+						const out: string[] = [];
+						for (let i = startNo + 1; i <= doc.lines; i++) {
+							const tt = doc.line(i).text;
+							if (/^(`{3,}|~{3,})\s*$/.test(tt.trim()) && tt.trim().startsWith(open[1][0])) break;
+							out.push(tt);
+						}
+						if (out.length > 0) return out.join('\n');
+					}
+				}
+			} catch (err) {
+				// fallback
+			}
+			const codeLines: string[] = [];
+			let nextLine = beginLine.nextElementSibling as HTMLElement | null;
+			while (nextLine && nextLine.classList.contains('cm-line')) {
+				if (nextLine.classList.contains('HyperMD-codeblock-end') || nextLine.textContent?.trim().startsWith('```')) {
+					break;
+				}
+				const clone = nextLine.cloneNode(true) as HTMLElement;
+				clone.querySelectorAll('.copy-code-button, .pakcli-cb-copy-btn, .pakcli-cb-prompt-btn, .code-block-flair, button').forEach((el) => el.remove());
+				codeLines.push(clone.textContent ?? '');
+				nextLine = nextLine.nextElementSibling as HTMLElement | null;
+			}
+			return codeLines.join('\n');
+		};
+
+		// 1. Copy Button (.pakcli-cb-copy-btn)
+		let copyBtn = beginLine.querySelector('.pakcli-cb-copy-btn') as HTMLButtonElement | null;
+		if (copyBtn) {
+			const hasScript = !!script;
+			copyBtn.innerHTML = hasScript ? SCRIPT_ICON : COPY_ICON;
+			copyBtn.title = hasScript ? `Custom ${lang} clipboard action` : 'Copy code';
+			copyBtn.setAttribute('aria-label', hasScript ? `Copy with ${lang} clipboard template` : 'Copy to clipboard');
+		} else {
+			copyBtn = document.createElement('button');
+			copyBtn.className = 'pakcli-cb-copy-btn';
+			const hasScript = !!script;
+			copyBtn.innerHTML = hasScript ? SCRIPT_ICON : COPY_ICON;
+			copyBtn.title = hasScript ? `Custom ${lang} clipboard action` : 'Copy code';
+			copyBtn.setAttribute('aria-label', hasScript ? `Copy with ${lang} clipboard template` : 'Copy to clipboard');
+
+			copyBtn.onclick = async (e) => {
+				e.stopPropagation();
+				e.preventDefault();
+				const content = getContent();
+				const curRules = this.plugin?.settings?.codeblockLanguageRules || [];
+				const curRule = this.findMatchingRule(lang, curRules);
+				const curScript = curRule?.onClipboard?.trim() || '';
+
+				let transformed = curScript ? this.transformClipboardContent(content, curScript, lang, curRule?.replaceExisting !== false) : content;
+				const sanitized = this.applyClipboardSanitizer(transformed, 'codeblock-btn');
+				if (sanitized.replacementsCount > 0) {
+					transformed = sanitized.text;
+					new Notice(`🛡️ Sanitized ${sanitized.replacementsCount} string(s) in clipboard!`, 2500);
+				}
+
+				const flash = () => {
+					copyBtn?.classList.add('pakcli-cb-copy-btn--done');
+					setTimeout(() => copyBtn?.classList.remove('pakcli-cb-copy-btn--done'), 1200);
+				};
+
+				try {
+					this.pendingClipboardTransform = null;
+					await this.writeToClipboard(transformed);
+					flash();
+					if (curScript) {
+						new Notice(`[PakCLI] Copied with ${lang} (${this.formatTemplateNoticeLabel(curScript)}) template!`, 2000);
+					}
+				} catch {
+					flash();
+				}
+			};
+			beginLine.appendChild(copyBtn);
+		}
+
+		// 2. Companion AI Prompt Button (.pakcli-cb-prompt-btn)
+		let promptBtn = beginLine.querySelector('.pakcli-cb-prompt-btn') as HTMLButtonElement | null;
+		if (promptBtn) {
+			promptBtn.title = `Copy AI Prompt (${lang || 'code'})`;
+			promptBtn.setAttribute('aria-label', `Copy AI Prompt (${lang || 'code'})`);
+		} else {
+			promptBtn = document.createElement('button');
+			promptBtn.className = 'pakcli-cb-prompt-btn';
+			promptBtn.innerHTML = PROMPT_ICON;
+			promptBtn.title = `Copy AI Prompt (${lang || 'code'})`;
+			promptBtn.setAttribute('aria-label', `Copy AI Prompt (${lang || 'code'})`);
+
+			promptBtn.onclick = async (e) => {
+				e.stopPropagation();
+				e.preventDefault();
+				const content = getContent();
+				const promptText = buildCodeblockPrompt(content, lang);
+
+				const flash = () => {
+					promptBtn?.classList.add('pakcli-cb-prompt-btn--done');
+					setTimeout(() => promptBtn?.classList.remove('pakcli-cb-prompt-btn--done'), 1200);
+				};
+
+				try {
+					await this.writeToClipboard(promptText);
+					flash();
+					new Notice(`✨ Copied ${lang || 'code'} AI Prompt to clipboard!`, 2000);
+				} catch {
+					flash();
+					new Notice(`✨ Copied ${lang || 'code'} AI Prompt to clipboard!`, 2000);
+				}
+			};
+			beginLine.appendChild(promptBtn);
+		}
+	}
+
 	private cachedDoc: any = null;
 	private cachedDocBlocks: Array<{
 		startLn: number;
@@ -2087,6 +2256,13 @@ export class CodeblockScaler {
 			const activeMdView = this.plugin.app.workspace.getActiveViewOfType(MarkdownView);
 			if (activeMdView) {
 				editorView = (activeMdView.editor as any)?.cm as EditorView | undefined;
+			}
+		}
+
+		// Inject copy & companion AI prompt buttons on any rendered begin fence lines
+		for (const el of cmLines) {
+			if (el.classList.contains('HyperMD-codeblock-begin')) {
+				this.injectLivePreviewCodeblockButtons(el, editorView);
 			}
 		}
 
