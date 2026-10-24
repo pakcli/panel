@@ -268,8 +268,7 @@ export class CascadingStickyHeaderManager {
 
     const scroller = previewEl.querySelector('.markdown-preview-view') as HTMLElement || previewEl;
     const scrollerRect = scroller.getBoundingClientRect();
-    const barHeight = session.barEl.offsetHeight || 32;
-    const threshold = scrollerRect.top + barHeight + 15;
+    const threshold = scrollerRect.top + 4;
 
     const headingEls = Array.from(previewEl.querySelectorAll<HTMLElement>('h1, h2, h3, h4, h5, h6'));
     if (headingEls.length === 0) {
@@ -424,8 +423,9 @@ export class CascadingStickyHeaderManager {
     // Strategy 1: Ultra-fast CodeMirror 6 lineBlockAtHeight (in-memory height map, zero DOM hit-testing)
     if (cm && typeof cm.lineBlockAtHeight === 'function' && cm.state?.doc) {
       try {
-        const contentTop = (cm.contentDOM as HTMLElement)?.offsetTop ?? 0;
-        const targetY = Math.max(0, scroller.scrollTop + barHeight + 18 - contentTop);
+        const scrollerRect = scroller.getBoundingClientRect();
+        const docTop = typeof cm.documentTop === 'number' ? cm.documentTop : (scrollerRect.top - scroller.scrollTop);
+        const targetY = Math.max(0, (scrollerRect.top + 4) - docTop);
         const block = cm.lineBlockAtHeight(targetY);
         if (block && typeof block.from === 'number') {
           return cm.state.doc.lineAt(block.from).number - 1;
@@ -438,7 +438,7 @@ export class CascadingStickyHeaderManager {
       try {
         const scrollerRect = scroller.getBoundingClientRect();
         const testX = scrollerRect.left + Math.min(80, Math.max(30, scrollerRect.width / 4));
-        const testY = scrollerRect.top + barHeight + 18;
+        const testY = scrollerRect.top + 4;
         const coordsPos = cm.posAtCoords({ x: testX, y: testY });
         if (coordsPos && typeof coordsPos.pos === 'number') {
           return view.editor.offsetToPos(coordsPos.pos).line;
