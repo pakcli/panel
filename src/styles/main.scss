@@ -358,6 +358,31 @@ body.pakcli-flowclip {
         box-sizing: border-box !important;
     }
 
+    /* Suppress CodeMirror trailing break forcing 43.85px double line height on blank/empty lines */
+    .markdown-source-view.mod-cm6 .cm-scroller .cm-content .cm-line.HyperMD-codeblock:has(> br:only-child),
+    .markdown-source-view.mod-cm6 .cm-content .cm-line.HyperMD-codeblock:has(> br:only-child),
+    .markdown-source-view.mod-cm6 .cm-line.HyperMD-codeblock:has(> br:only-child),
+    .cm-line.HyperMD-codeblock:has(> br:only-child),
+    .cm-line.HyperMD-codeblock:empty,
+    .cm-line.pakcli-tree-line-blank {
+        white-space: pre-wrap !important;
+        height: 24px !important;
+        min-height: 24px !important;
+        max-height: 24px !important;
+        line-height: 24px !important;
+        box-sizing: border-box !important;
+
+        br {
+            line-height: 24px !important;
+        }
+        .cm-fold-indicator {
+            display: none !important;
+        }
+        img.cm-widgetBuffer {
+            display: none !important;
+        }
+    }
+
     &:not(.flowclip-mode-per-line) {
         .markdown-source-view.mod-cm6 .cm-scroller .cm-content.cm-lineWrapping .cm-line.HyperMD-codeblock,
         .markdown-source-view.mod-cm6 .cm-content.cm-lineWrapping .cm-line.HyperMD-codeblock,
@@ -402,6 +427,31 @@ body.pakcli-wrap {
         box-sizing: border-box !important;
     }
 
+    /* Suppress CodeMirror trailing break forcing 43.85px double line height on blank/empty lines */
+    .markdown-source-view.mod-cm6 .cm-scroller .cm-content .cm-line.HyperMD-codeblock:has(> br:only-child),
+    .markdown-source-view.mod-cm6 .cm-content .cm-line.HyperMD-codeblock:has(> br:only-child),
+    .markdown-source-view.mod-cm6 .cm-line.HyperMD-codeblock:has(> br:only-child),
+    .cm-line.HyperMD-codeblock:has(> br:only-child),
+    .cm-line.HyperMD-codeblock:empty,
+    .cm-line.pakcli-tree-line-blank {
+        white-space: pre-wrap !important;
+        height: 24px !important;
+        min-height: 24px !important;
+        max-height: 24px !important;
+        line-height: 24px !important;
+        box-sizing: border-box !important;
+
+        br {
+            line-height: 24px !important;
+        }
+        .cm-fold-indicator {
+            display: none !important;
+        }
+        img.cm-widgetBuffer {
+            display: none !important;
+        }
+    }
+
     .markdown-source-view.mod-cm6 .cm-content .cm-line.HyperMD-codeblock,
     .markdown-source-view.mod-cm6 .cm-line.HyperMD-codeblock {
         white-space: pre-wrap !important;
@@ -414,6 +464,31 @@ body.pakcli-wrap {
         min-width: 0 !important;
         contain: none !important;
         box-sizing: border-box !important;
+    }
+
+    /* Suppress CodeMirror trailing break forcing 43.85px double line height on blank/empty lines */
+    .markdown-source-view.mod-cm6 .cm-scroller .cm-content .cm-line.HyperMD-codeblock:has(> br:only-child),
+    .markdown-source-view.mod-cm6 .cm-content .cm-line.HyperMD-codeblock:has(> br:only-child),
+    .markdown-source-view.mod-cm6 .cm-line.HyperMD-codeblock:has(> br:only-child),
+    .cm-line.HyperMD-codeblock:has(> br:only-child),
+    .cm-line.HyperMD-codeblock:empty,
+    .cm-line.pakcli-tree-line-blank {
+        white-space: pre-wrap !important;
+        height: 24px !important;
+        min-height: 24px !important;
+        max-height: 24px !important;
+        line-height: 24px !important;
+        box-sizing: border-box !important;
+
+        br {
+            line-height: 24px !important;
+        }
+        .cm-fold-indicator {
+            display: none !important;
+        }
+        img.cm-widgetBuffer {
+            display: none !important;
+        }
     }
 }
 
@@ -3430,6 +3505,33 @@ pre,
 .cm-line.HyperMD-codeblock:not(.HyperMD-codeblock-begin) {
   position: relative !important;
   z-index: 1 !important;
+}
+
+/* Ensure blank / empty lines inside codeblocks strictly take 1 single line height (prevent 43.85px double line space) */
+.markdown-source-view.mod-cm6 .cm-line.HyperMD-codeblock:has(> br:only-child),
+.markdown-source-view.mod-cm6 .cm-line.HyperMD-codeblock:empty,
+.cm-line.HyperMD-codeblock:has(> br:only-child),
+.cm-line.HyperMD-codeblock:empty,
+.cm-line.pakcli-tree-line-blank {
+  white-space: pre-wrap !important;
+  height: 24px !important;
+  min-height: 24px !important;
+  max-height: 24px !important;
+  line-height: 24px !important;
+  margin: 0 !important;
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
+  box-sizing: border-box !important;
+
+  br {
+    line-height: 24px !important;
+  }
+  .cm-fold-indicator {
+    display: none !important;
+  }
+  img.cm-widgetBuffer {
+    display: none !important;
+  }
 }
 
 /* Ensure Reading View pre containers keep button on the absolute toppest layer */

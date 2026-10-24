@@ -26,7 +26,7 @@ let collapsedVersion = 0;
 
 export function isGhostLine(raw: string): boolean {
     const trimmed = raw.trim();
-    if (!trimmed) return true;
+    if (!trimmed) return false;
     if (trimmed.toLowerCase().includes('add item')) return true;
 
     // Strip leading ASCII branch symbols, pipes, chevrons, etc.
@@ -543,6 +543,7 @@ function buildDecorations(view: EditorView, plugin: any): DecorationSet {
                 rawIndent: number;
                 leadingWhitespace: string;
                 isGhost: boolean;
+                isBlank?: boolean;
             }
 
             const parsedLines: ParsedLineInfo[] = [];
@@ -552,6 +553,18 @@ function buildDecorations(view: EditorView, plugin: any): DecorationSet {
             for (const bl of block.lines) {
                 const raw = bl.text;
                 const trimmed = raw.trim();
+
+                if (trimmed === '') {
+                    parsedLines.push({
+                        blockLine: bl,
+                        node: null,
+                        rawIndent: 0,
+                        leadingWhitespace: '',
+                        isGhost: false,
+                        isBlank: true,
+                    });
+                    continue;
+                }
 
                 if (isGhostLine(raw)) {
                     parsedLines.push({
@@ -658,6 +671,15 @@ function buildDecorations(view: EditorView, plugin: any): DecorationSet {
                     ? (selection.head >= bl.from && selection.head <= bl.to)
                     : (selection.from <= bl.to && selection.to >= bl.from);
                 const isCursorOnLine = view.hasFocus && isLineSelected;
+
+                if (pl.isBlank) {
+                    builder.add(
+                        bl.from,
+                        bl.from,
+                        Decoration.line({ attributes: { class: 'pakcli-tree-line pakcli-tree-line-blank' } })
+                    );
+                    continue;
+                }
 
                 const shouldHide = (pl.isGhost && !isCursorOnLine) || (pl.node && isNodeHidden(pl.node));
 
