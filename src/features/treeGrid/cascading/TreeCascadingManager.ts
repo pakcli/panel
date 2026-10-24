@@ -406,7 +406,7 @@ export class TreeCascadingManager {
         }
         const anchorY = containerRect.top + topOffset;
 
-        const treePres = Array.from(previewEl.querySelectorAll('pre[class*="language-"]'));
+        const treePres = Array.from(previewEl.querySelectorAll('.pakcli-tree-card-container, .pakcli-tree-root-container, pre[class*="language-"]'));
         let activeBlock: ParsedBlockTree | null = null;
         let activePre: HTMLElement | null = null;
 

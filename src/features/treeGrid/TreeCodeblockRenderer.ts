@@ -59,10 +59,21 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
     }
 
     onload(): void {
-        this.renderRaw();
+        this.render();
+        requestAnimationFrame(() => {
+            this.measureCharWidth();
+            this.renderTopHUD();
+        });
 
-        // ⚡ Dynamic Listener: Reacts to Live Editing & updates RAW codeblock in real-time
+        // ⚡ Dynamic Listener: Reacts to Live Editing & updates HUD in real-time
         this.setupDynamicLiveListener();
+    }
+
+    onunload(): void {
+        if (this.liveUpdateTimer) {
+            clearTimeout(this.liveUpdateTimer);
+            this.liveUpdateTimer = null;
+        }
     }
 
     private renderRaw(): void {
@@ -119,7 +130,7 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
             if (i === 0) {
                 for (const node of allNodes) {
                     const prefix = getAsciiBranchPrefix(node, this.parsed.rootNodes);
-                    const chevronLen = node.isDirectory ? 2 : (node.depth === 0 ? 2 : 0);
+                    const chevronLen = 2;
                     const len = prefix.length + chevronLen + node.name.length;
                     if (len > maxChars) maxChars = len;
                 }
@@ -171,10 +182,11 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
         const { containerEl } = this;
         containerEl.empty();
         containerEl.addClass('pakcli-tree-root-container');
+        containerEl.addClass('language-panel-tree');
 
         // Card Container holding the Live Preview Codeblock
         this.cardContainerEl = containerEl.createDiv({
-            cls: 'pakcli-tree-card-container HyperMD-codeblock-bg',
+            cls: 'pakcli-tree-card-container language-panel-tree HyperMD-codeblock-bg',
         });
 
         // ══════════════════════════════════════════════════════════════════
@@ -184,27 +196,11 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
             cls: 'pakcli-tree-top-hud',
         });
 
-        // 📋 1-Click Copy Button inside Top HUD
-        new CopyButton({
-            containerEl: this.topHudEl,
-            cls: 'pakcli-tree-copy-btn',
-            tooltip: 'Copy clean formatted tree',
-            textGetter: () => this.getPlainTextForCopy(),
-        });
-
-        // ✨ Copy AI Prompt Button inside Top HUD
-        new CopyButton({
-            containerEl: this.topHudEl,
-            cls: 'pakcli-tree-prompt-btn',
-            label: '✨ Prompt',
-            tooltip: 'Copy AI Prompt to scaffold this tree architecture',
-            textGetter: () => buildCodeblockPrompt(this.getPlainTextForCopy(), 'panel-tree'),
-            successMessage: '✨ Copied Tree AI Prompt to clipboard!',
-        });
+        const leftGroup = this.topHudEl.createDiv({ cls: 'pakcli-tree-hud-left' });
 
         // ⚡ Align # Notes Button inside Top HUD
         const currentGap = resolveNoteSpacing(this.plugin?.settings?.treeNoteSpacing, 1);
-        const alignBtn = this.topHudEl.createSpan({
+        const alignBtn = leftGroup.createSpan({
             cls: 'pakcli-tree-hud-btn pakcli-align-btn',
             text: `⚡ Align # Notes (${currentGap}sp)`,
             attr: { title: `Auto-align all # comments across this tree (longest word + ${currentGap} space). Click to format.` },
@@ -216,7 +212,7 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
         });
 
         // 📏 Gap / Spacing button (number or sentence word count)
-        const gapBtn = this.topHudEl.createSpan({
+        const gapBtn = leftGroup.createSpan({
             cls: 'pakcli-tree-hud-btn pakcli-gap-btn',
             text: `Gap: ${currentGap}`,
             attr: { title: 'Adjust note spacing: enter number (e.g. 1, 4) or sentence (checks word count)' },
@@ -228,6 +224,28 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
             if (val !== null) {
                 await this.alignNotesAction(val);
             }
+        });
+
+        // Right Action Group (Prompt + Copy)
+        const rightGroup = this.topHudEl.createDiv({ cls: 'pakcli-tree-hud-actions' });
+
+        // ✨ Copy AI Prompt Button inside Top HUD
+        new CopyButton({
+            containerEl: rightGroup,
+            cls: 'pakcli-tree-prompt-btn',
+            label: '✨ Prompt',
+            tooltip: 'Copy AI Prompt to scaffold this tree architecture',
+            textGetter: () => buildCodeblockPrompt(this.source || this.getPlainTextForCopy(), 'panel-tree'),
+            successMessage: '✨ Copied Tree AI Prompt to clipboard!',
+        });
+
+        // 📋 1-Click Copy Button inside Top HUD
+        new CopyButton({
+            containerEl: rightGroup,
+            cls: 'pakcli-tree-copy-btn',
+            tooltip: 'Copy clean formatted tree',
+            textGetter: () => this.getPlainTextForCopy() || this.source,
+            successMessage: '📋 Copied tree to clipboard!',
         });
 
         // Main Tree Body (relative wrapper for background wires and code lines)
@@ -287,14 +305,14 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
             const hasChildren = node.isDirectory && node.children && node.children.length > 0;
             const chevronText = node.isDirectory
                 ? (hasChildren ? (node.isExpanded ? 'v ' : '> ') : '  ')
-                : (node.depth === 0 ? '  ' : '');
+                : '  ';
 
             // LAYER 0: Native codeblock content: name + trailingContent (UNTOUCHED! 0% artificial offset!)
             const bodyContent = node.name + (node.trailingContent || '');
 
             if (hasChildren) {
                 if (branchPrefix) {
-                    lineEl.createSpan({ text: branchPrefix });
+                    lineEl.createSpan({ text: branchPrefix, cls: 'pakcli-tree-rails' });
                 }
                 const chevronSpan = lineEl.createSpan({
                     cls: 'pakcli-interactive-chevron-inline',
@@ -305,10 +323,20 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
                     e.stopPropagation();
                     node.isExpanded = !node.isExpanded;
                     this.render();
+                    requestAnimationFrame(() => {
+                        this.measureCharWidth();
+                        this.renderTopHUD();
+                    });
                 };
                 lineEl.createSpan({ text: bodyContent });
             } else {
-                lineEl.textContent = branchPrefix + chevronText + bodyContent;
+                if (branchPrefix) {
+                    lineEl.createSpan({ text: branchPrefix, cls: 'pakcli-tree-rails' });
+                }
+                if (chevronText) {
+                    lineEl.createSpan({ text: chevronText, cls: 'pakcli-tree-spacer' });
+                }
+                lineEl.createSpan({ text: bodyContent });
             }
         }
     }
@@ -325,7 +353,7 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
             const hasChildren = node.isDirectory && node.children && node.children.length > 0;
             const chevronText = node.isDirectory
                 ? (hasChildren ? (node.isExpanded ? 'v ' : '> ') : '  ')
-                : (node.depth === 0 ? '  ' : '');
+                : '  ';
             const bodyContent = node.name + (node.trailingContent || '');
             lines.push(branchPrefix + chevronText + bodyContent);
         }
@@ -480,7 +508,11 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
                                     this.source = newSource;
                                     this.parsed = parseTreeGrid(newSource);
                                     this.initColumns();
-                                    this.renderRaw();
+                                    this.render();
+                                    requestAnimationFrame(() => {
+                                        this.measureCharWidth();
+                                        this.renderTopHUD();
+                                    });
                                 }
                             }
                         }
@@ -599,7 +631,7 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
         if (colIndex === 0) {
             for (const node of visibleNodes) {
                 const prefix = getAsciiBranchPrefix(node, this.parsed.rootNodes);
-                const chevronLen = node.isDirectory ? 2 : (node.depth === 0 ? 2 : 0);
+                const chevronLen = 2;
                 const len = prefix.length + chevronLen + node.name.length;
                 if (len > maxChars) maxChars = len;
             }
