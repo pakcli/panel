@@ -55,12 +55,15 @@ export function buildCodeblockPrompt(code: string, rawLang: string): string {
         lang === 'structure' ||
         lang.includes('cascading')
     ) {
+        const isNoteOrPostitLang = /(note|postit)/i.test(lang);
+
         if (isEmpty) {
-            return `Act as a Principal Software Engineer. The project architecture codeblock is currently empty.
+            if (isNoteOrPostitLang) {
+                return `Act as a Principal Software Engineer. The project architecture codeblock is currently empty.
 
-Please design and generate a complete, production-grade example project architecture using the declarative \`panel-tree\` format with frontmatter directives (\`f?dependencies:\`, \`f?status:\`, \`f?tier:\`, \`f?tags:\`, \`f?priority:\`).
+Please design and generate a complete, production-grade example project architecture using declarative \`panel-tree\` format with column-aligned notes and frontmatter dependencies (\`f?dependencies:\`, \`f?status:\`, \`f?tier:\`, \`f?tags:\`, \`f?priority:\`).
 
-### 📖 Panel-Tree Syntax & Notation Guide (#NOTE GUIDE)
+### 📖 Panel-Tree Syntax & Notation Guide (#NOTE & POSTIT GUIDE)
 When generating the architecture, strictly adhere to these rules:
 
 1. **GUIDE TAB USAGE (Hierarchical Depth)**:
@@ -76,19 +79,46 @@ When generating the architecture, strictly adhere to these rules:
    - **Inline Frontmatter Directives (f?...:)**: Directives such as \`f?dependencies:[...]\`, \`f?tags:[...]\`, \`f?status:active\`, \`f?priority:high\`.
 
 ### 🚨 OUTPUT INSTRUCTION:
+- Generate a rich, realistic directory tree including column-aligned \`#\` notes and inline \`f?dependencies:[...]\` directives.
 - Do NOT provide conversational fluff or explanations.
 - Do NOT generate boilerplate code or separate files.
-- Output ONLY the single, complete, copy-pasteable \`\`\`panel-tree\`\`\` codeblock directly, ready to be pasted into Obsidian!`;
+- Output ONLY the single, complete, copy-pasteable \`\`\`${rawLang || 'panel-tree'}\`\`\` codeblock directly, ready to be pasted into Obsidian!`;
+            } else {
+                return `Act as a Principal Software Engineer. The project architecture codeblock is currently empty.
+
+Please design and generate a complete, realistic example project architecture using declarative \`panel-tree\` format.
+
+### 📖 Panel-Tree Syntax & Notation Guide:
+When generating the architecture, strictly adhere to these rules:
+
+1. **GUIDE TAB USAGE (Hierarchical Depth)**:
+   - **Level 0 (0 Tabs)**: Root-level files and root-level directories.
+   - **Level 1 (1 Tab \`\\t\`)**: Direct children of root directories.
+   - **Level N (N Tabs)**: Deeply nested tree hierarchy. Every child node strictly belongs to its immediate un-indented parent folder above it. Do NOT flatten.
+
+2. **ELEMENTS (ONLY TREE STRUCTURE)**:
+   - **Folder Node**: A line without a file extension (e.g., \`src\`, \`components\`, \`assets\`). Must be created as a directory.
+   - **File Node**: A line with a file extension or explicit filename (e.g., \`main.ts\`, \`config.json\`, \`README.md\`).
+
+### 🚨 OUTPUT INSTRUCTION:
+- Generate ONLY the directory and file tree structure (pure folders and files with proper tab indentation).
+- Do NOT include \`#\` notes, comments, or post-it notes.
+- Do NOT include \`f?\` frontmatter directives or dependencies.
+- Do NOT provide conversational fluff or explanations.
+- Do NOT generate boilerplate code or separate files.
+- Output ONLY the single, complete, copy-pasteable \`\`\`${rawLang || 'panel-tree'}\`\`\` codeblock directly, ready to be pasted into Obsidian!`;
+            }
         }
 
         if (isInstructionOnly) {
-            return `Act as a Principal Software Engineer. Based on the following project requirement / instruction:
+            if (isNoteOrPostitLang) {
+                return `Act as a Principal Software Engineer. Based on the following project requirement / instruction:
 
 > "${instruction}"
 
-Please design and generate a complete, production-grade project architecture using the declarative \`panel-tree\` format.
+Please design and generate a complete, production-grade project architecture using declarative \`panel-tree\` format with column-aligned notes and dependencies.
 
-### 📖 Panel-Tree Syntax & Notation Guide (#NOTE GUIDE)
+### 📖 Panel-Tree Syntax & Notation Guide (#NOTE & POSTIT GUIDE)
 1. **GUIDE TAB USAGE (Hierarchical Depth)**:
    - **Level 0 (0 Tabs)**: Root files & directories.
    - **Level 1 (1 Tab \`\\t\`)**: Direct children of root directories.
@@ -103,12 +133,36 @@ Please design and generate a complete, production-grade project architecture usi
 
 ### 🚨 OUTPUT INSTRUCTION:
 - Do NOT write conversational explanations.
-- Output ONLY the single, complete, copy-pasteable \`\`\`panel-tree\`\`\` codeblock fulfilling the instruction above, ready to be pasted into Obsidian!`;
+- Output ONLY the single, complete, copy-pasteable \`\`\`${rawLang || 'panel-tree'}\`\`\` codeblock fulfilling the instruction above with notes and \`f?dependencies:\`, ready to be pasted into Obsidian!`;
+            } else {
+                return `Act as a Principal Software Engineer. Based on the following project requirement / instruction:
+
+> "${instruction}"
+
+Please design and generate a complete, realistic project architecture using declarative \`panel-tree\` format.
+
+### 📖 Panel-Tree Syntax & Notation Guide:
+1. **GUIDE TAB USAGE (Hierarchical Depth)**:
+   - **Level 0 (0 Tabs)**: Root files & directories.
+   - **Level 1 (1 Tab \`\\t\`)**: Direct children of root directories.
+   - **Level N (N Tabs)**: Deeply nested hierarchy. Every child node strictly belongs to its immediate parent. Do NOT flatten.
+
+2. **ELEMENTS (ONLY TREE STRUCTURE)**:
+   - **Folder Node**: Line without file extension (e.g., \`src\`, \`components\`).
+   - **File Node**: Line with extension (e.g., \`app.ts\`, \`schema.json\`).
+
+### 🚨 OUTPUT INSTRUCTION:
+- Generate ONLY the directory and file tree structure (pure folders and files with proper tab indentation).
+- Do NOT include \`#\` notes, comments, or post-it notes.
+- Do NOT include \`f?\` frontmatter directives or dependencies.
+- Do NOT write conversational explanations.
+- Output ONLY the single, complete, copy-pasteable \`\`\`${rawLang || 'panel-tree'}\`\`\` codeblock fulfilling the instruction above, ready to be pasted into Obsidian!`;
+            }
         }
 
         // Conditional feature detection inside the panel-tree codeblock
-        const hasNotesOrPostit = /(#|postit:|note:|f\?note:)/i.test(cleanCode);
-        const hasFrontmatter = /f\?[a-z0-9_-]+:/i.test(cleanCode);
+        const hasNotesOrPostit = isNoteOrPostitLang || /(#|postit:|note:|f\?note:)/i.test(cleanCode);
+        const hasFrontmatter = isNoteOrPostitLang || /f\?[a-z0-9_-]+:/i.test(cleanCode);
 
         // 1. Build Guide Rules
         const guideRules: string[] = [
@@ -123,14 +177,14 @@ Please design and generate a complete, production-grade project architecture usi
         ];
 
         let ruleIdx = 3;
-        // JIKA ADA POST-IT / NOTE -> INCLUDE; JIKA TIDAK ADA -> EXCLUDE
+        // JIKA ADA POST-IT / NOTE (ATAU SUFFIX note/postit) -> INCLUDE; JIKA TIDAK ADA -> EXCLUDE
         if (hasNotesOrPostit) {
             guideRules.push(`${ruleIdx++}. **POST-IT & ARCHITECTURAL NOTES (# / postit / note)**:
    - Inline notes following \`#\` or \`postit:\` contain explicit architectural constraints, business logic, or developer instructions for that specific node.
    - You MUST strictly implement the exact requirements described in these notes.`);
         }
 
-        // JIKA ADA FRONTMATTER DIRECTIVES -> INCLUDE; JIKA TIDAK ADA -> EXCLUDE
+        // JIKA ADA FRONTMATTER DIRECTIVES (ATAU SUFFIX note/postit) -> INCLUDE; JIKA TIDAK ADA -> EXCLUDE
         if (hasFrontmatter) {
             guideRules.push(`${ruleIdx++}. **FRONTMATTER DIRECTIVES (f?...)**:
    - \`f?tags: [...]\` -> Map directly to YAML frontmatter tags.
@@ -158,14 +212,14 @@ Please design and generate a complete, production-grade project architecture usi
 
         return `Act as a Principal Software Engineer. Based on the following declarative project architecture:
 
-### 📖 Panel-Tree Syntax & Notation Guide (#NOTE GUIDE)
+### 📖 Panel-Tree Syntax & Notation Guide
 When interpreting the declarative tree below, strictly adhere to these rules:
 
 ${guideRules.join('\n\n')}
 
 ---
 
-\`\`\`panel-tree
+\`\`\`${rawLang || 'panel-tree'}
 ${cleanCode}
 \`\`\`
 
