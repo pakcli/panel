@@ -195,7 +195,8 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
         promptBtn.onclick = async (e: MouseEvent) => {
             e.preventDefault();
             e.stopPropagation();
-            const promptText = buildCodeblockPrompt(this.source || this.getPlainTextForCopy(), 'panel-tree');
+            const rawTree = this.getRawTreeText();
+            const promptText = buildCodeblockPrompt(rawTree, 'panel-tree');
             try {
                 if (this.plugin?.codeblockScaler) {
                     await this.plugin.codeblockScaler.writeToClipboard(promptText);
@@ -219,7 +220,7 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
         copyBtn.onclick = async (e: MouseEvent) => {
             e.preventDefault();
             e.stopPropagation();
-            const textToCopy = this.source || this.getPlainTextForCopy();
+            const textToCopy = this.getRawTreeText();
             try {
                 if (this.plugin?.codeblockScaler) {
                     await this.plugin.codeblockScaler.writeToClipboard(textToCopy);
@@ -328,6 +329,23 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
             lines.push(branchPrefix + chevronText + bodyContent);
         }
         return lines.join('\n');
+    }
+
+    /**
+     * Returns raw, declarative panel-tree syntax with intact tab indentation
+     * rather than flattened or ASCII-branched text.
+     */
+    public getRawTreeText(): string {
+        if (this.source && this.source.trim().length > 0) {
+            return this.source.replace(/\r\n/g, '\n');
+        }
+        const allNodes = this.getAllNodes(this.parsed.rootNodes);
+        if (allNodes.length === 0) return '';
+        return allNodes.map((n) => {
+            const tabs = '\t'.repeat(n.depth);
+            const trailing = n.trailingContent ? ` ${n.trailingContent}` : '';
+            return `${tabs}${n.name}${trailing}`;
+        }).join('\n');
     }
 
     /**
