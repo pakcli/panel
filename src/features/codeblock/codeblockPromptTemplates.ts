@@ -58,7 +58,7 @@ export function buildCodeblockPrompt(code: string, rawLang: string): string {
         if (isEmpty) {
             return `Act as a Principal Software Engineer. The project architecture codeblock is currently empty.
 
-Please design and generate a complete, production-grade example project architecture using declarative \`panel-tree\` format with frontmatter directives (\`f?dependencies:\`, \`f?status:\`, \`f?tier:\`, \`f?tags:\`, \`f?priority:\`).
+Please design and generate a complete, production-grade example project architecture using the declarative \`panel-tree\` format with frontmatter directives (\`f?dependencies:\`, \`f?status:\`, \`f?tier:\`, \`f?tags:\`, \`f?priority:\`).
 
 ### 📖 Panel-Tree Syntax & Notation Guide (#NOTE GUIDE)
 When generating the architecture, strictly adhere to these rules:
@@ -69,19 +69,16 @@ When generating the architecture, strictly adhere to these rules:
    - **Level N (N Tabs)**: Deeply nested tree hierarchy. Every child node strictly belongs to its immediate un-indented parent folder above it. Do NOT flatten.
 
 2. **EXAMPLE OF EACH ELEMENT**:
-   - **Folder Node**: A line without a file extension (e.g., \`script\`, \`powershell\`, \`module\`). Must be created as a directory.
-   - **File Node**: A line with a file extension or explicit filename (e.g., \`_mainmenu.ps1_\`, \`_mainmenu.json_\`). Must be scaffolded with production-ready boilerplate code.
+   - **Folder Node**: A line without a file extension (e.g., \`src\`, \`components\`, \`assets\`). Must be created as a directory.
+   - **File Node**: A line with a file extension or explicit filename (e.g., \`main.ts\`, \`config.json\`, \`schema.sql\`).
    - **Interactive Script**: Nodes indicating interactive execution (e.g., \`inifiledragndropableinteractive\`) accept dragged file paths via parameters.
    - **Inline Architectural Notes (# ... / postit:)**: Column-aligned comments explaining purpose or constraints.
-   - **Inline Frontmatter Directives (f?...:)**: Directives wiring dependencies, tags, and lifecycle.
+   - **Inline Frontmatter Directives (f?...:)**: Directives such as \`f?dependencies:[...]\`, \`f?tags:[...]\`, \`f?status:active\`, \`f?priority:high\`.
 
-Please provide:
-1. A rich, realistic folder and file hierarchy (source files, data models, assets, and documentation).
-2. Clean column-aligned \`#\` notes and inline \`f?\` directives wiring up dependencies.
-3. Clean, production-ready boilerplate code scaffolding for each file.
-4. Accurately resolve and wire up internal imports based on the declared \`f?dependencies:\` lists.
-5. Preserve all declared frontmatter properties (tags, status, priority, tier) in the generated notes/files.
-6. A concise summary of the module relationships (with an architectural flowchart or ER diagram).`;
+### 🚨 OUTPUT INSTRUCTION:
+- Do NOT provide conversational fluff or explanations.
+- Do NOT generate boilerplate code or separate files.
+- Output ONLY the single, complete, copy-pasteable \`\`\`panel-tree\`\`\` codeblock directly, ready to be pasted into Obsidian!`;
         }
 
         if (isInstructionOnly) {
@@ -89,25 +86,24 @@ Please provide:
 
 > "${instruction}"
 
-Please design and generate a complete, production-grade project architecture using declarative \`panel-tree\` format.
+Please design and generate a complete, production-grade project architecture using the declarative \`panel-tree\` format.
 
 ### 📖 Panel-Tree Syntax & Notation Guide (#NOTE GUIDE)
 1. **GUIDE TAB USAGE (Hierarchical Depth)**:
    - **Level 0 (0 Tabs)**: Root files & directories.
    - **Level 1 (1 Tab \`\\t\`)**: Direct children of root directories.
-   - **Level N (N Tabs)**: Deeply nested hierarchy. Every child node strictly belongs to its parent. Do NOT flatten.
+   - **Level N (N Tabs)**: Deeply nested hierarchy. Every child node strictly belongs to its immediate parent. Do NOT flatten.
 
 2. **EXAMPLE OF EACH ELEMENT**:
-   - **Folder Node**: Line without file extension (e.g., \`script\`, \`powershell\`, \`module\`). Must be created as a directory.
-   - **File Node**: Line with extension (e.g., \`_mainmenu.ps1_\`, \`_mainmenu.json_\`). Must be scaffolded with production-ready boilerplate code.
-   - **Interactive Script**: Nodes like \`inifiledragndropableinteractive\` accepting dragged file paths via parameters.
+   - **Folder Node**: Line without file extension (e.g., \`src\`, \`components\`).
+   - **File Node**: Line with extension (e.g., \`app.ts\`, \`schema.json\`).
+   - **Interactive Script**: Nodes like \`inifiledragndropableinteractive\` accepting dragged file paths.
+   - **Inline Architectural Notes (# ... / postit:)**: Column-aligned comments explaining purpose.
+   - **Inline Frontmatter Directives (f?...:)**: Directives wiring dependencies, tags, and lifecycle.
 
-Please perform the following tasks:
-1. Fulfill the specified requirements and expand the architecture into a full, production-ready design.
-2. Scaffold each file with clean, production-ready boilerplate code.
-3. Accurately resolve and wire up internal imports based on the declared \`f?dependencies:\` lists.
-4. Preserve all declared frontmatter properties (tags, status, priority, tier) in the generated notes/files.
-5. Provide a concise summary of the module relationships.`;
+### 🚨 OUTPUT INSTRUCTION:
+- Do NOT write conversational explanations.
+- Output ONLY the single, complete, copy-pasteable \`\`\`panel-tree\`\`\` codeblock fulfilling the instruction above, ready to be pasted into Obsidian!`;
         }
 
         // Conditional feature detection inside the panel-tree codeblock
