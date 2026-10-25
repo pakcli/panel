@@ -7209,21 +7209,11 @@ export default class PakCLITablePlugin extends Plugin {
 	}
 
 	private registerTreeGridProcessors(): void {
-		const rawAliases = this.settings.panelTreeAliases || 'panel-tree, panel-tree-cascading, tree-cascading, panel-tree-structure, tree-structure, tree-interactive, panel-tree-cascading-note-sticky, panel-tree-cascading-sticky-note, panel-tree-cascading-postit, panel-tree-postit-cascading';
-		const aliases = rawAliases
-			.split(',')
-			.map((a) => a.trim().toLowerCase())
-			.filter((a) => a.length > 0);
-
-		for (const alias of aliases) {
-			try {
-				this.registerMarkdownCodeBlockProcessor(alias, (source, el, ctx) => {
-					ctx.addChild(new TreeCodeblockRenderer(el, source, ctx, this));
-				});
-			} catch {
-				// Prevent crashing if already registered
-			}
-		}
+		// NOTE: Tree codeblocks (panel-tree, panel-tree-cascading, etc.) are handled as native live-editing rows
+		// via TreeLivePreviewPlugin and TreeCascadingManager.
+		// Registering them via registerMarkdownCodeBlockProcessor forces Obsidian Live Preview
+		// to embed them into a flattened cm-embed-block widget, destroying line-by-line live editing and native interaction.
+		// Therefore, we deliberately keep them as native live-editing rows matching panel-tree-cascading.
 	}
 
 	renderSanitizerSettings(containerEl: HTMLElement): void {

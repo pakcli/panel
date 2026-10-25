@@ -6,9 +6,37 @@
    ========================================================================== */
 
 /* 0. Raw Codeblock Container (Pure Native Monospace, Zero Widget Blocking) */
-.pakcli-tree-raw-container {
+.pakcli-tree-raw-container,
+.pakcli-tree-codeblock {
     margin: 1em 0;
     position: relative;
+    font-family: var(--font-monospace, monospace);
+    font-size: var(--code-size, 0.85rem);
+
+    .pakcli-tree-fence-line {
+        position: relative;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        font-family: var(--font-monospace, monospace);
+        user-select: none;
+        padding: 4px 8px;
+
+        .code-block-flair {
+            opacity: 0.7;
+        }
+
+        .pakcli-tree-header-actions {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+    }
+
+    .pakcli-tree-lines-body,
+    .pakcli-code-lines {
+        position: relative;
+    }
 
     pre {
         margin: 0 !important;

@@ -31,16 +31,11 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
     private columns: TreeGridColumn[] = [];
 
     // DOM Elements
-    private cardContainerEl!: HTMLElement;
-    private topHudEl!: HTMLElement;
-    private bodyEl!: HTMLElement;
     private linesContainerEl!: HTMLElement;
-    private svgOverlayEl!: SVGSVGElement;
 
     // Metrics
     private charWidthPx = 8.6;
     private readonly ROW_HEIGHT_PX = 24;
-    private paddingLeftPx = 10;
     private isSyncing = false;
 
     constructor(
@@ -60,12 +55,8 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
 
     onload(): void {
         this.render();
-        requestAnimationFrame(() => {
-            this.measureCharWidth();
-            this.renderTopHUD();
-        });
 
-        // ⚡ Dynamic Listener: Reacts to Live Editing & updates HUD in real-time
+        // ⚡ Dynamic Listener: Reacts to Live Editing & updates codeblock lines in real-time
         this.setupDynamicLiveListener();
     }
 
@@ -176,94 +167,82 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
     }
 
     /**
-     * Master Render: Builds Card, Top HUD, Background SVG Wires, and Native Codeblock Lines
+     * Master Render: Builds authentic codeblock lines matching panel-tree-cascading live-editing rows:
+     * - Opening fence row with ✨ Prompt and 📋 Copy buttons
+     * - Authentic CodeMirror line rows (.cm-line.pakcli-tree-line) with rails and interactive fold chevrons
+     * - Closing fence row
+     * Zero card wrappers, zero Top HUD ruler, zero SVG wires, zero flattening!
      */
     private render(): void {
         const { containerEl } = this;
         containerEl.empty();
-        containerEl.addClass('pakcli-tree-root-container');
+        containerEl.addClass('pakcli-tree-codeblock');
         containerEl.addClass('language-panel-tree');
 
-        // Card Container holding the Live Preview Codeblock
-        this.cardContainerEl = containerEl.createDiv({
-            cls: 'pakcli-tree-card-container language-panel-tree HyperMD-codeblock-bg',
+        // Opening fence line with action buttons (✨ Prompt + 📋 Copy)
+        const beginLine = containerEl.createDiv({
+            cls: 'cm-line HyperMD-codeblock HyperMD-codeblock-begin pakcli-tree-fence-line',
         });
+        beginLine.createSpan({ text: '```panel-tree', cls: 'code-block-flair' });
 
-        // ══════════════════════════════════════════════════════════════════
-        // TOP HUD (top huio): Top Ruler, Column Controls (- < > :: +), Copy
-        // ══════════════════════════════════════════════════════════════════
-        this.topHudEl = this.cardContainerEl.createDiv({
-            cls: 'pakcli-tree-top-hud',
+        const actionsWrap = beginLine.createSpan({ cls: 'pakcli-tree-header-actions' });
+        const PROMPT_ICON = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3Z"/><path d="M19 3v4"/><path d="M21 5h-4"/></svg>`;
+        const promptBtn = actionsWrap.createEl('button', {
+            cls: 'pakcli-cb-prompt-btn',
+            attr: { title: 'Copy AI Prompt (panel-tree)', 'aria-label': 'Copy AI Prompt (panel-tree)' },
         });
-
-        const leftGroup = this.topHudEl.createDiv({ cls: 'pakcli-tree-hud-left' });
-
-        // ⚡ Align # Notes Button inside Top HUD
-        const currentGap = resolveNoteSpacing(this.plugin?.settings?.treeNoteSpacing, 1);
-        const alignBtn = leftGroup.createSpan({
-            cls: 'pakcli-tree-hud-btn pakcli-align-btn',
-            text: `⚡ Align # Notes (${currentGap}sp)`,
-            attr: { title: `Auto-align all # comments across this tree (longest word + ${currentGap} space). Click to format.` },
-        });
-        alignBtn.addEventListener('click', (e) => {
+        promptBtn.innerHTML = PROMPT_ICON;
+        promptBtn.onclick = async (e: MouseEvent) => {
             e.preventDefault();
             e.stopPropagation();
-            this.alignNotesAction();
-        });
-
-        // 📏 Gap / Spacing button (number or sentence word count)
-        const gapBtn = leftGroup.createSpan({
-            cls: 'pakcli-tree-hud-btn pakcli-gap-btn',
-            text: `Gap: ${currentGap}`,
-            attr: { title: 'Adjust note spacing: enter number (e.g. 1, 4) or sentence (checks word count)' },
-        });
-        gapBtn.addEventListener('click', async (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            const val = prompt('Set note spacing:\nEnter number (e.g. 1, 4) or sentence (word count is used):', String(currentGap));
-            if (val !== null) {
-                await this.alignNotesAction(val);
+            const promptText = buildCodeblockPrompt(this.source || this.getPlainTextForCopy(), 'panel-tree');
+            try {
+                if (this.plugin?.codeblockScaler) {
+                    await this.plugin.codeblockScaler.writeToClipboard(promptText);
+                } else {
+                    await navigator.clipboard.writeText(promptText);
+                }
+            } catch {
+                await navigator.clipboard.writeText(promptText);
             }
+            promptBtn.classList.add('pakcli-cb-prompt-btn--done');
+            setTimeout(() => promptBtn.classList.remove('pakcli-cb-prompt-btn--done'), 1200);
+            new Notice('✨ Copied panel-tree AI Prompt to clipboard!', 2000);
+        };
+
+        const COPY_ICON = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>`;
+        const copyBtn = actionsWrap.createEl('button', {
+            cls: 'pakcli-cb-copy-btn',
+            attr: { title: 'Copy tree content', 'aria-label': 'Copy tree content' },
         });
+        copyBtn.innerHTML = COPY_ICON;
+        copyBtn.onclick = async (e: MouseEvent) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const textToCopy = this.source || this.getPlainTextForCopy();
+            try {
+                if (this.plugin?.codeblockScaler) {
+                    await this.plugin.codeblockScaler.writeToClipboard(textToCopy);
+                } else {
+                    await navigator.clipboard.writeText(textToCopy);
+                }
+            } catch {
+                await navigator.clipboard.writeText(textToCopy);
+            }
+            copyBtn.classList.add('pakcli-cb-copy-btn--done');
+            setTimeout(() => copyBtn.classList.remove('pakcli-cb-copy-btn--done'), 1200);
+            new Notice('📋 Copied tree to clipboard!', 2000);
+        };
 
-        // Right Action Group (Prompt + Copy)
-        const rightGroup = this.topHudEl.createDiv({ cls: 'pakcli-tree-hud-actions' });
-
-        // ✨ Copy AI Prompt Button inside Top HUD
-        new CopyButton({
-            containerEl: rightGroup,
-            cls: 'pakcli-tree-prompt-btn',
-            label: '✨ Prompt',
-            tooltip: 'Copy AI Prompt to scaffold this tree architecture',
-            textGetter: () => buildCodeblockPrompt(this.source || this.getPlainTextForCopy(), 'panel-tree'),
-            successMessage: '✨ Copied Tree AI Prompt to clipboard!',
-        });
-
-        // 📋 1-Click Copy Button inside Top HUD
-        new CopyButton({
-            containerEl: rightGroup,
-            cls: 'pakcli-tree-copy-btn',
-            tooltip: 'Copy clean formatted tree',
-            textGetter: () => this.getPlainTextForCopy() || this.source,
-            successMessage: '📋 Copied tree to clipboard!',
-        });
-
-        // Main Tree Body (relative wrapper for background wires and code lines)
-        this.bodyEl = this.cardContainerEl.createDiv({ cls: 'pakcli-tree-body' });
-
-        // Background Guideline SVG Wire Layer (strictly pointer-events: none)
-        this.svgOverlayEl = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-        this.svgOverlayEl.setAttribute('class', 'pakcli-tree-svg-overlay');
-        this.bodyEl.appendChild(this.svgOverlayEl);
-
-        // ══════════════════════════════════════════════════════════════════
-        // LAYER 0 + LAYER 1: Codeblock Lines (100% Copy-Pasteable Authentic Text)
-        // ══════════════════════════════════════════════════════════════════
-        this.linesContainerEl = this.bodyEl.createDiv({ cls: 'pakcli-code-lines' });
+        // Render code lines
+        this.linesContainerEl = containerEl.createDiv({ cls: 'pakcli-code-lines' });
         this.renderCodeLines();
 
-        // Render Top HUD items and guideline wires
-        this.renderTopHUD();
+        // Closing fence line
+        const endLine = containerEl.createDiv({
+            cls: 'cm-line HyperMD-codeblock HyperMD-codeblock-end pakcli-tree-fence-line',
+        });
+        endLine.createSpan({ text: '```', cls: 'code-block-flair' });
     }
 
     /**
@@ -285,7 +264,7 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
 
         for (const node of visibleNodes) {
             const lineEl = this.linesContainerEl.createDiv({
-                cls: 'cm-line HyperMD-codeblock HyperMD-codeblock-bg pakcli-code-line',
+                cls: 'cm-line HyperMD-codeblock HyperMD-codeblock-bg pakcli-tree-line pakcli-code-line',
             });
             lineEl.dataset.nodeId = node.id;
             lineEl.style.height = `${this.ROW_HEIGHT_PX}px`;
@@ -300,22 +279,22 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
             // LAYER 1: Authentic ASCII tree branch prefix: ├── , └── , │
             const branchPrefix = getAsciiBranchPrefix(node, this.parsed.rootNodes);
 
-
             // Folder chevron indicator: v  or >  (or spaces for alignment/leaf files)
             const hasChildren = node.isDirectory && node.children && node.children.length > 0;
             const chevronText = node.isDirectory
                 ? (hasChildren ? (node.isExpanded ? 'v ' : '> ') : '  ')
                 : '  ';
 
-            // LAYER 0: Native codeblock content: name + trailingContent (UNTOUCHED! 0% artificial offset!)
+            // LAYER 0: Native codeblock content: name + trailingContent
             const bodyContent = node.name + (node.trailingContent || '');
 
+            if (branchPrefix) {
+                lineEl.createSpan({ text: branchPrefix, cls: 'pakcli-tree-rails' });
+            }
+
             if (hasChildren) {
-                if (branchPrefix) {
-                    lineEl.createSpan({ text: branchPrefix, cls: 'pakcli-tree-rails' });
-                }
                 const chevronSpan = lineEl.createSpan({
-                    cls: 'pakcli-interactive-chevron-inline',
+                    cls: 'pakcli-interactive-chevron-inline pakcli-tree-chevron',
                     text: chevronText,
                 });
                 chevronSpan.title = node.isExpanded ? 'Click to collapse folder' : 'Click to expand folder';
@@ -323,21 +302,12 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
                     e.stopPropagation();
                     node.isExpanded = !node.isExpanded;
                     this.render();
-                    requestAnimationFrame(() => {
-                        this.measureCharWidth();
-                        this.renderTopHUD();
-                    });
                 };
-                lineEl.createSpan({ text: bodyContent });
-            } else {
-                if (branchPrefix) {
-                    lineEl.createSpan({ text: branchPrefix, cls: 'pakcli-tree-rails' });
-                }
-                if (chevronText) {
-                    lineEl.createSpan({ text: chevronText, cls: 'pakcli-tree-spacer' });
-                }
-                lineEl.createSpan({ text: bodyContent });
+            } else if (chevronText) {
+                lineEl.createSpan({ text: chevronText, cls: 'pakcli-tree-chevron pakcli-tree-spacer' });
             }
+
+            lineEl.createSpan({ text: bodyContent, cls: 'pakcli-tree-node-text' });
         }
     }
 
@@ -391,92 +361,7 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
         new Notice(`✓ Added ${trimmed}`);
     }
 
-    /**
-     * TOP HUD (top huio):
-     * Draws column guideline wires & places controls (- < > :: +) aligned with detected columns.
-     */
-    private renderTopHUD(): void {
-        const existingPills = this.topHudEl.querySelectorAll('.pakcli-column-controls-pill, .pakcli-wire-hitbox');
-        existingPills.forEach((p) => p.remove());
 
-        while (this.svgOverlayEl.firstChild) {
-            this.svgOverlayEl.removeChild(this.svgOverlayEl.firstChild);
-        }
-
-        const visibleNodes = this.getFlattenedVisibleNodes();
-        if (visibleNodes.length === 0) return;
-
-        // Size SVG canvas to match content
-        const bodyWidth = Math.max(this.bodyEl.scrollWidth, this.bodyEl.offsetWidth, 400);
-        const bodyHeight = this.bodyEl.scrollHeight || (visibleNodes.length * this.ROW_HEIGHT_PX);
-        this.svgOverlayEl.setAttribute('width', `${bodyWidth}`);
-        this.svgOverlayEl.setAttribute('height', `${bodyHeight}`);
-        this.svgOverlayEl.style.width = `${bodyWidth}px`;
-        this.svgOverlayEl.style.height = `${bodyHeight}px`;
-
-        // Detect column positions dynamically from node trailingContent
-        const allNodes = this.getAllNodes(this.parsed.rootNodes);
-        let detectedColStartChar = 0;
-        for (const node of allNodes) {
-            if (node.trailingContent) {
-                const match = node.trailingContent.match(/\S/);
-                if (match && match.index !== undefined) {
-                    const branchPrefix = getAsciiBranchPrefix(node, this.parsed.rootNodes);
-                    const chevronLen = node.isDirectory ? 2 : (node.depth === 0 ? 2 : 0);
-                    const charPos = branchPrefix.length + chevronLen + node.name.length + match.index;
-                    if (charPos > detectedColStartChar) {
-                        detectedColStartChar = charPos;
-                    }
-                }
-            }
-        }
-
-        if (detectedColStartChar > 0) {
-            const detectedWidth = Math.round(detectedColStartChar * this.charWidthPx);
-            if (this.columns[0]) {
-                this.columns[0].width = Math.max(this.columns[0].minWidth, detectedWidth);
-            }
-        }
-
-        // Draw guideline wires & HUD control pills
-        let currentLeft = this.paddingLeftPx;
-        for (let c = 0; c < this.columns.length - 1; c++) {
-            currentLeft += this.columns[c].width;
-            const wireX = currentLeft;
-
-            // Background Guideline Wire (strictly pointer-events: none)
-            const wireLine = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-            wireLine.setAttribute('x1', `${wireX}`);
-            wireLine.setAttribute('y1', `0`);
-            wireLine.setAttribute('x2', `${wireX}`);
-            wireLine.setAttribute('y2', `${bodyHeight}`);
-            wireLine.setAttribute('class', 'pakcli-svg-wire');
-            this.svgOverlayEl.appendChild(wireLine);
-
-            // Draggable Resizer Hitbox inside Top HUD
-            const wireHit = this.topHudEl.createDiv({ cls: 'pakcli-wire-hitbox' });
-            wireHit.style.left = `${wireX - 6}px`;
-            wireHit.style.top = `0px`;
-            wireHit.style.height = `28px`;
-            wireHit.title = 'Drag to adjust column width • Double-click to auto-fit';
-            this.wireGuidelineResizer(wireHit, c);
-
-            // Column controls (- < > :: +) inside Top HUD
-            const pill = new PillGroup({
-                containerEl: this.topHudEl,
-                cls: 'pakcli-column-controls-pill',
-                items: [
-                    { id: 'del', label: '-', tooltip: 'Delete column', onClick: () => this.deleteColumn(c + 1) },
-                    { id: 'left', label: '<', tooltip: 'Move left', disabled: c === 0, onClick: () => { if (c > 0) this.moveColumn(c + 1, c); } },
-                    { id: 'right', label: '>', tooltip: 'Move right', disabled: c === this.columns.length - 2, onClick: () => { if (c < this.columns.length - 2) this.moveColumn(c + 1, c + 2); } },
-                    { id: 'drag', label: '::', tooltip: 'Drag to reorder', isHandle: true },
-                    { id: 'add', label: '+', tooltip: 'Add new column (Alt+click to duplicate)', onClick: (e) => this.addColumn(c + 1, e.altKey) },
-                ],
-            });
-            pill.containerEl.style.left = `${wireX + 10}px`;
-            pill.containerEl.style.top = '2px';
-        }
-    }
 
     private liveUpdateTimer: any = null;
 
@@ -509,10 +394,6 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
                                     this.parsed = parseTreeGrid(newSource);
                                     this.initColumns();
                                     this.render();
-                                    requestAnimationFrame(() => {
-                                        this.measureCharWidth();
-                                        this.renderTopHUD();
-                                    });
                                 }
                             }
                         }
@@ -522,136 +403,7 @@ export class TreeCodeblockRenderer extends MarkdownRenderChild {
         );
     }
 
-    private wireGuidelineResizer(wireHitEl: HTMLElement, colIndex: number): void {
-        wireHitEl.addEventListener('mousedown', (e: MouseEvent) => {
-            e.preventDefault();
-            e.stopPropagation();
 
-            const startX = e.clientX;
-            const startWidth = this.columns[colIndex].width;
-            const colDef = this.columns[colIndex];
-            const minWidth = colDef.minWidth;
-
-            document.body.addClass('pakcli-is-col-resizing');
-
-            const onMouseMove = (moveEvent: MouseEvent) => {
-                const deltaX = moveEvent.clientX - startX;
-                const newWidth = Math.max(minWidth, startWidth + deltaX);
-                colDef.width = newWidth;
-
-                this.renderTopHUD();
-            };
-
-            const onMouseUp = () => {
-                document.body.removeClass('pakcli-is-col-resizing');
-                document.removeEventListener('mousemove', onMouseMove);
-                document.removeEventListener('mouseup', onMouseUp);
-
-                this.syncChangesToNote();
-            };
-
-            document.addEventListener('mousemove', onMouseMove);
-            document.addEventListener('mouseup', onMouseUp);
-        });
-
-        wireHitEl.addEventListener('dblclick', (e) => {
-            e.stopPropagation();
-            e.preventDefault();
-            this.autoFitColumn(colIndex);
-        });
-    }
-
-    private moveColumn(fromColIdx: number, toColIdx: number): void {
-        if (fromColIdx < 1 || toColIdx < 1 || fromColIdx === toColIdx) return;
-        if (fromColIdx >= this.columns.length || toColIdx >= this.columns.length) return;
-
-        const allNodes = this.getAllNodes(this.parsed.rootNodes);
-        const fromDataIdx = fromColIdx - 1;
-        const toDataIdx = toColIdx - 1;
-
-        for (const node of allNodes) {
-            while (node.columns.length <= Math.max(fromDataIdx, toDataIdx)) {
-                node.columns.push('');
-            }
-            const moved = node.columns.splice(fromDataIdx, 1)[0];
-            node.columns.splice(toDataIdx, 0, moved);
-        }
-
-        const movedCol = this.columns.splice(fromColIdx, 1)[0];
-        this.columns.splice(toColIdx, 0, movedCol);
-
-        this.syncChangesToNote();
-        this.render();
-    }
-
-    private deleteColumn(colIdx: number): void {
-        if (colIdx < 1 || colIdx >= this.columns.length) return;
-        const allNodes = this.getAllNodes(this.parsed.rootNodes);
-        const dataIdx = colIdx - 1;
-
-        for (const node of allNodes) {
-            if (node.columns.length > dataIdx) {
-                node.columns.splice(dataIdx, 1);
-            }
-        }
-
-        this.columns.splice(colIdx, 1);
-        this.parsed.totalColumns = Math.max(1, this.columns.length);
-
-        this.syncChangesToNote();
-        this.render();
-    }
-
-    private addColumn(afterColIdx: number, duplicate = false): void {
-        const allNodes = this.getAllNodes(this.parsed.rootNodes);
-        const targetDataIdx = Math.max(0, afterColIdx);
-
-        for (const node of allNodes) {
-            while (node.columns.length < targetDataIdx) {
-                node.columns.push('');
-            }
-            const newVal = duplicate && afterColIdx > 0 && node.columns[afterColIdx - 1]
-                ? node.columns[afterColIdx - 1]
-                : '';
-            node.columns.splice(targetDataIdx, 0, newVal);
-        }
-
-        this.parsed.totalColumns = Math.min(11, this.columns.length + 1);
-        this.initColumns();
-        this.syncChangesToNote();
-        this.render();
-    }
-
-    public autoFitColumn(colIndex: number): void {
-        if (colIndex < 0 || colIndex >= this.columns.length) return;
-
-        const visibleNodes = this.getFlattenedVisibleNodes();
-        let maxChars = this.columns[colIndex].title.length;
-
-        if (colIndex === 0) {
-            for (const node of visibleNodes) {
-                const prefix = getAsciiBranchPrefix(node, this.parsed.rootNodes);
-                const chevronLen = 2;
-                const len = prefix.length + chevronLen + node.name.length;
-                if (len > maxChars) maxChars = len;
-            }
-        } else {
-            for (const node of visibleNodes) {
-                const rawVal = node.columns[colIndex - 1] || '';
-                const clean = rawVal.replace(/^#+\s*/, '').trim();
-                if (clean) {
-                    const len = clean.length;
-                    if (len > maxChars) maxChars = len;
-                }
-            }
-        }
-
-        const fittedWidth = Math.max(this.columns[colIndex].minWidth, Math.ceil((maxChars + 6) * this.charWidthPx));
-        this.columns[colIndex].width = fittedWidth;
-
-        this.renderTopHUD();
-        this.syncChangesToNote();
-    }
 
     public async alignNotesAction(customGap?: unknown): Promise<void> {
         const gap = customGap ?? this.plugin?.settings?.treeNoteSpacing ?? 1;
